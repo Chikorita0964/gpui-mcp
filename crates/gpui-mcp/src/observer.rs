@@ -539,4 +539,62 @@ mod tests {
         titles.sort();
         assert_eq!(titles, ["Console", "Hierarchy"]);
     }
+
+    /// A view whose two nested element ids spell, when joined, an element id
+    /// another node already owns outright.
+    struct NestedPanel;
+
+    impl Render for NestedPanel {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div().id("q").child(div().id("y"))
+        }
+    }
+
+    struct SeparatorFixture {
+        nested: Entity<NestedPanel>,
+    }
+
+    impl Render for SeparatorFixture {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("dock-area")
+                .role(Role::Group)
+                .size_full()
+                .child(div().id("q.y"))
+                .child(self.nested.clone())
+                .child(div().id("other").child(div().id("y")))
+        }
+    }
+
+    #[gpui::test]
+    fn a_qualified_identity_never_spells_one_already_given_out(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, cx| {
+            automation_for_window.attach(window);
+            SeparatorFixture {
+                nested: cx.new(|_| NestedPanel),
+            }
+        });
+        visual.run_until_parked();
+
+        let tree = automation.snapshot();
+        assert_eq!(tree.diagnostics, []);
+        assert_eq!(tree.nodes["dock-area"].children.len(), 3);
+        assert!(
+            tree.nodes.contains_key("q.y"),
+            "the element that owns this id outright must keep it"
+        );
+        assert!(
+            tree.nodes.contains_key("other.y"),
+            "a repeated id is qualified by its parent when that separates it"
+        );
+        assert!(
+            tree.nodes
+                .keys()
+                .any(|id| id.ends_with(".q.y") && id != "q.y"),
+            "the nested pair must be pushed past the id it would otherwise spell, got {:?}",
+            tree.nodes.keys().collect::<Vec<_>>()
+        );
+    }
 }

@@ -6,7 +6,7 @@
 
 use crate::{App, Bounds, GlobalElementId, Pixels, Window};
 use accesskit::{Node, NodeId, Role, TreeUpdate};
-use collections::FxHashMap;
+use collections::{FxHashMap, FxHashSet};
 use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 
 /// Interaction details that are meaningful to visual tooling but are not
@@ -377,11 +377,15 @@ impl FrameBuilder {
     fn identities(&self) -> Vec<String> {
         let mut identities = vec![String::new(); self.nodes.len()];
         let mut unresolved = (0..self.nodes.len()).collect::<Vec<_>>();
+        let mut taken = FxHashSet::<String>::default();
+        let mut settled = Vec::new();
         let mut depth = 1;
         while !unresolved.is_empty() {
             let mut counts = FxHashMap::<&str, usize>::default();
-            for node in &self.nodes {
-                *counts.entry(node.path_suffix(depth)).or_default() += 1;
+            for index in &unresolved {
+                *counts
+                    .entry(self.nodes[*index].path_suffix(depth))
+                    .or_default() += 1;
             }
             // Two nodes can only share a complete path if a caller rendered one
             // element ID twice, which GPUI rejects in a debug build. Number them
@@ -389,19 +393,27 @@ impl FrameBuilder {
             let exhausted = unresolved
                 .iter()
                 .all(|index| self.nodes[*index].path_suffix(depth) == self.nodes[*index].path);
+            settled.clear();
             unresolved.retain(|index| {
                 let node = &self.nodes[*index];
                 let suffix = node.path_suffix(depth);
-                if counts.get(suffix).copied() == Some(1) {
+                // An element ID may contain the separator, so a longer run can
+                // spell a shorter one already given to another node.
+                if counts.get(suffix).copied() == Some(1) && !taken.contains(suffix) {
                     identities[*index] = suffix.to_owned();
+                    settled.push(*index);
                     return false;
                 }
                 if exhausted {
                     identities[*index] = format!("{}#{index}", node.path);
+                    settled.push(*index);
                     return false;
                 }
                 true
             });
+            for index in &settled {
+                taken.insert(identities[*index].clone());
+            }
             depth += 1;
         }
         identities
