@@ -7,7 +7,8 @@ gpui-mcp carries four focused additions that are not available from upstream
 GPUI yet:
 
 - read-only observation of each completed rendered AccessKit tree, with stable
-  GPUI element paths, bounds, text provenance, and an overlay paint pass;
+  GPUI element paths, frame-unique node identities, bounds, text provenance,
+  and an overlay paint pass;
 - programmatic focus and text replacement through GPUI's active input handler;
 - pointer ownership that prevents a stale native mouse position from cancelling
   a synthetic hover before the physical mouse actually moves; and

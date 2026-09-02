@@ -334,8 +334,9 @@ mod tests {
     use std::rc::Rc;
 
     use gpui::{
-        Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
-        StatefulInteractiveElement as _, Styled as _, StyledText, TestAppContext, Window, div, px,
+        AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+        Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _, StyledText,
+        TestAppContext, Window, div, px,
     };
     use gpui_mcp_protocol::{MouseButton, NodeAction, Point, PointerCommand, Role as McpRole};
 
@@ -437,5 +438,105 @@ mod tests {
             );
         });
         assert!(clicked.get());
+    }
+
+    /// One dock panel, rendered as its own view exactly as
+    /// `gpui_component::dock::TabPanel` is. Every instance renders the same
+    /// element ids, so the instances are distinguished only by the view segment
+    /// their entity contributes to the GPUI element path.
+    struct DockPanel {
+        title: SharedString,
+    }
+
+    impl Render for DockPanel {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div().id("tab-panel").size_full().child(
+                div()
+                    .id("tab")
+                    .on_click(|_, _, _| {})
+                    .child(StyledText::new(self.title.clone())),
+            )
+        }
+    }
+
+    struct DockFixture {
+        panels: Vec<Entity<DockPanel>>,
+    }
+
+    impl Render for DockFixture {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("dock-area")
+                .role(Role::Group)
+                .size_full()
+                .children(self.panels.iter().cloned())
+                // An element ID is free to contain the path separator, so a
+                // node that needs no qualifying must not be cut at one.
+                .child(div().id("recent-project-local.e2etest"))
+        }
+    }
+
+    #[gpui::test]
+    fn repeated_element_ids_in_sibling_views_stay_in_the_tree(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, cx| {
+            automation_for_window.attach(window);
+            DockFixture {
+                panels: vec![
+                    cx.new(|_| DockPanel {
+                        title: "Hierarchy".into(),
+                    }),
+                    cx.new(|_| DockPanel {
+                        title: "Console".into(),
+                    }),
+                ],
+            }
+        });
+        visual.run_until_parked();
+
+        let tree = automation.snapshot();
+        assert_eq!(
+            tree.diagnostics,
+            [],
+            "repeating an element id in a sibling view is ordinary GPUI, not a tree defect"
+        );
+
+        let dock = &tree.nodes["dock-area"];
+        assert_eq!(
+            dock.children.len(),
+            3,
+            "the dock area must list both panels, got {:?}",
+            dock.children
+        );
+        assert!(
+            tree.nodes.contains_key("recent-project-local.e2etest"),
+            "an unambiguous element ID keeps its own name whatever it contains"
+        );
+
+        let mut titles = dock
+            .children
+            .iter()
+            .filter(|child| child.as_str() != "recent-project-local.e2etest")
+            .map(|panel| {
+                assert!(
+                    panel.ends_with(".tab-panel"),
+                    "a repeated element ID is qualified by its element path, got {panel}"
+                );
+                let panel = &tree.nodes[panel];
+                assert_eq!(
+                    panel.children.len(),
+                    1,
+                    "each panel must list its tab, got {:?}",
+                    panel.children
+                );
+                tree.nodes[&panel.children[0]]
+                    .label
+                    .clone()
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        titles.sort();
+        assert_eq!(titles, ["Console", "Hierarchy"]);
     }
 }

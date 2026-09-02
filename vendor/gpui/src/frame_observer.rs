@@ -7,7 +7,7 @@
 use crate::{App, Bounds, GlobalElementId, Pixels, Window};
 use accesskit::{Node, NodeId, Role, TreeUpdate};
 use collections::FxHashMap;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 
 /// Interaction details that are meaningful to visual tooling but are not
 /// represented by an AccessKit action.
@@ -28,9 +28,16 @@ pub enum FrameAction {
 /// GPUI-specific provenance associated with one AccessKit node.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrameNode {
+    /// The element ID while the frame is being collected, replaced by the
+    /// frame-unique identity when the frame is finished.
     id: String,
     path: String,
+    /// Byte offset of each path segment within `path`.
+    segment_starts: Vec<usize>,
+    /// The parent's identity, resolved when the frame is finished.
     parent: Option<String>,
+    /// The complete element path of the nearest observed ancestor.
+    parent_path: Option<String>,
     bounds: Bounds<Pixels>,
     actions: Vec<FrameAction>,
     metadata: BTreeMap<String, String>,
@@ -41,7 +48,10 @@ pub struct FrameNode {
 }
 
 impl FrameNode {
-    /// Return the stable element ID used by the rendered GPUI element.
+    /// Return the identity of this node within its frame.
+    ///
+    /// This is the element's own ID wherever that ID names one element, and a
+    /// longer trailing run of the element path wherever it does not.
     pub fn id(&self) -> &str {
         &self.id
     }
@@ -51,9 +61,23 @@ impl FrameNode {
         &self.path
     }
 
-    /// Return the nearest rendered ancestor with a stable element ID.
+    /// Return the identity of the nearest rendered ancestor with an element ID.
     pub fn parent(&self) -> Option<&str> {
         self.parent.as_deref()
+    }
+
+    /// Return the trailing `depth` segments of the complete element path.
+    ///
+    /// Element IDs may contain the path separator, so segments are cut at the
+    /// recorded offsets rather than by splitting the rendered path.
+    fn path_suffix(&self, depth: usize) -> &str {
+        let start = self
+            .segment_starts
+            .len()
+            .checked_sub(depth)
+            .and_then(|index| self.segment_starts.get(index).copied())
+            .unwrap_or(0);
+        &self.path[start..]
     }
 
     /// Return window-relative bounds in logical pixels.
@@ -196,7 +220,6 @@ pub(crate) struct FrameBuilder {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FrameParent {
-    id: String,
     path: String,
 }
 
@@ -227,14 +250,21 @@ impl FrameBuilder {
             (Some(global_id), Some(data)) if self.enabled => (global_id, data),
             _ => return false,
         };
-        let id = global_id
-            .last()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| global_id.to_string());
+        let mut path = String::new();
+        let mut segment_starts = Vec::with_capacity(global_id.len());
+        for segment in global_id.iter() {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            segment_starts.push(path.len());
+            let _ = write!(path, "{segment}");
+        }
+        let id = path[segment_starts.last().copied().unwrap_or(0)..].to_owned();
         let node = FrameNode {
-            id: id.clone(),
-            path: global_id.to_string(),
-            parent: self.parents.last().map(|parent| parent.id.clone()),
+            id,
+            parent: None,
+            parent_path: self.parents.last().map(|parent| parent.path.clone()),
+            segment_starts,
             bounds,
             actions: data.actions,
             metadata: data.metadata,
@@ -242,9 +272,9 @@ impl FrameBuilder {
             content_text: String::new(),
             accessibility_id: global_id.accesskit_node_id(),
             fallback_role: data.fallback_role,
+            path,
         };
         let parent = FrameParent {
-            id,
             path: node.path.clone(),
         };
         self.nodes.push(node);
@@ -336,20 +366,81 @@ impl FrameBuilder {
         );
     }
 
+    /// Name every observed node so that no two nodes share an identity.
+    ///
+    /// GPUI guarantees only that the complete element path is unique: the same
+    /// element ID is free to repeat across sibling subtrees, which is what a
+    /// dock does when it renders several instances of one panel view. A node
+    /// therefore keeps its own element ID only while that ID names it alone,
+    /// and otherwise takes the shortest trailing run of its element path that
+    /// separates it from every other node.
+    fn identities(&self) -> Vec<String> {
+        let mut identities = vec![String::new(); self.nodes.len()];
+        let mut unresolved = (0..self.nodes.len()).collect::<Vec<_>>();
+        let mut depth = 1;
+        while !unresolved.is_empty() {
+            let mut counts = FxHashMap::<&str, usize>::default();
+            for node in &self.nodes {
+                *counts.entry(node.path_suffix(depth)).or_default() += 1;
+            }
+            // Two nodes can only share a complete path if a caller rendered one
+            // element ID twice, which GPUI rejects in a debug build. Number them
+            // rather than loop forever.
+            let exhausted = unresolved
+                .iter()
+                .all(|index| self.nodes[*index].path_suffix(depth) == self.nodes[*index].path);
+            unresolved.retain(|index| {
+                let node = &self.nodes[*index];
+                let suffix = node.path_suffix(depth);
+                if counts.get(suffix).copied() == Some(1) {
+                    identities[*index] = suffix.to_owned();
+                    return false;
+                }
+                if exhausted {
+                    identities[*index] = format!("{}#{index}", node.path);
+                    return false;
+                }
+                true
+            });
+            depth += 1;
+        }
+        identities
+    }
+
     pub(crate) fn finish(&mut self, tree: TreeUpdate) -> AccessibilityFrame {
         self.parents.clear();
+        let identities = self.identities();
+        let by_path = self
+            .nodes
+            .iter()
+            .zip(&identities)
+            .map(|(node, identity)| (node.path.as_str(), identity.as_str()))
+            .collect::<FxHashMap<_, _>>();
         let nodes = self
             .nodes
             .iter()
-            .cloned()
-            .map(|node| (node.accessibility_id, node))
+            .zip(&identities)
+            .map(|(node, identity)| {
+                let mut node = node.clone();
+                node.parent = node
+                    .parent_path
+                    .as_deref()
+                    .and_then(|path| by_path.get(path).map(|identity| (*identity).to_owned()));
+                node.id.clone_from(identity);
+                (node.accessibility_id, node)
+            })
             .collect();
         AccessibilityFrame::new(tree, nodes)
     }
 
     pub(crate) fn accessibility_id(&self, id: &str) -> Option<NodeId> {
-        let mut matches = self.nodes.iter().filter(|node| node.id == id);
-        let node_id = matches.next()?.accessibility_id;
+        let identities = self.identities();
+        let mut matches = self
+            .nodes
+            .iter()
+            .zip(&identities)
+            .filter(|(_, identity)| identity.as_str() == id);
+        let node_id = matches.next()?.0.accessibility_id;
         matches.next().is_none().then_some(node_id)
     }
 }
