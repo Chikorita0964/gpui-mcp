@@ -16,9 +16,10 @@ use rmcp::{
     Json, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolResult, ContentBlock, ErrorData, Implementation, ListResourcesResult,
-        PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse,
-        ReadResourceResult, Resource, ResourceContents, ServerCapabilities, ServerInfo,
+        CacheScope, CallToolResult, ContentBlock, ErrorData, Implementation,
+        ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ProtocolVersion,
+        ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+        ResourceContents, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -693,6 +694,50 @@ where
     completed.ok_or_else(|| "frame settlement did not request a refresh".to_owned())
 }
 
+/// SEP-2549 cache hints on the results a peer negotiating protocol version
+/// 2026-07-28 or newer requires them on.
+///
+/// `#[tool_handler]` stamps `tools/list` itself; the resource handlers below are
+/// hand-written, so they carry the hints through this trait.
+trait CacheHints: Sized {
+    /// Borrow this result's `ttlMs` and `cacheScope` fields together.
+    fn cache_hints(&mut self) -> (&mut Option<u64>, &mut Option<CacheScope>);
+
+    /// Mark the result as live, per-application state that no peer may cache.
+    ///
+    /// Peers on older protocol versions keep the legacy shape, which has neither
+    /// field.
+    fn uncacheable(mut self, context: &RequestContext<RoleServer>) -> Self {
+        if context
+            .protocol_version()
+            .is_some_and(|version| version >= ProtocolVersion::V_2026_07_28)
+        {
+            let (ttl_ms, cache_scope) = self.cache_hints();
+            *ttl_ms = Some(0);
+            *cache_scope = Some(CacheScope::Private);
+        }
+        self
+    }
+}
+
+impl CacheHints for ListResourcesResult {
+    fn cache_hints(&mut self) -> (&mut Option<u64>, &mut Option<CacheScope>) {
+        (&mut self.ttl_ms, &mut self.cache_scope)
+    }
+}
+
+impl CacheHints for ListResourceTemplatesResult {
+    fn cache_hints(&mut self) -> (&mut Option<u64>, &mut Option<CacheScope>) {
+        (&mut self.ttl_ms, &mut self.cache_scope)
+    }
+}
+
+impl CacheHints for ReadResourceResult {
+    fn cache_hints(&mut self) -> (&mut Option<u64>, &mut Option<CacheScope>) {
+        (&mut self.ttl_ms, &mut self.cache_scope)
+    }
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GpuiMcp {
     fn get_info(&self) -> ServerInfo {
@@ -711,7 +756,7 @@ impl ServerHandler for GpuiMcp {
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
         let mut resources = vec![apps_resource()];
         if let Ok(client) = self.registry.client().await
@@ -735,13 +780,21 @@ impl ServerHandler for GpuiMcp {
                 ),
             }
         }
-        Ok(ListResourcesResult::with_all_items(resources))
+        Ok(ListResourcesResult::with_all_items(resources).uncacheable(&context))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        Ok(ListResourceTemplatesResult::with_all_items(Vec::new()).uncacheable(&context))
     }
 
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
         if request.uri == "gpui://apps" {
             let apps = self
@@ -755,6 +808,7 @@ impl ServerHandler for GpuiMcp {
             return Ok(ReadResourceResult::new(vec![
                 ResourceContents::text(text, request.uri).with_mime_type("application/json"),
             ])
+            .uncacheable(&context)
             .into());
         }
         let result = self
@@ -773,6 +827,7 @@ impl ServerHandler for GpuiMcp {
             ResourceContents::text(resource.text, resource.descriptor.uri)
                 .with_mime_type(resource.descriptor.mime_type),
         ])
+        .uncacheable(&context)
         .into())
     }
 }
