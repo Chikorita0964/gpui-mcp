@@ -8,10 +8,12 @@
 //! confirm the state moved before capturing anything, and read the oracle out of
 //! the full capture rather than recomputing the server's own region arithmetic.
 //!
-//! The fixture's field draws its focus treatment as a one-pixel ring on its own
-//! bounds, which is the smallest change a crop of exactly those bounds has to
-//! carry, and the assertions are byte equality against the same rectangle of a
-//! full window capture.
+//! Both shapes of change are exercised, because they fail differently: the
+//! fixture's field draws focus as a one-pixel, high-contrast ring on its own
+//! bounds, and hover as a low-contrast fill across its whole interior. A crop
+//! that refreshes on layout but not on paint still passes the second alone. The
+//! assertion in each case is byte equality against the same rectangle of a full
+//! window capture, taken in both capture orders.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -344,10 +346,8 @@ async fn measure(server: &mut Server) -> Result<(), String> {
         "height": height + CROP_MARGIN * 2.0,
     });
 
-    // Park focus on the other field so the measured field starts unfocused.
-    server
-        .call("focus_element", json!({ "id": "filter" }))
-        .await?;
+    let away = (x + width * 2.0, y);
+    return_to_rest(server, away).await?;
     let parked_region = server
         .call_image("screenshot_region", region.clone())
         .await?;
@@ -357,58 +357,79 @@ async fn measure(server: &mut Server) -> Result<(), String> {
         "the region crop does not appear anywhere in the full window capture".to_owned()
     })?;
 
-    // Validate the capture path against a state the application is known to
-    // repaint before trusting any comparison. Without this a crop that never
-    // changes and an application that never changes read the same.
-    server
-        .call("focus_element", json!({ "id": "search" }))
-        .await?;
-    let state = server
-        .call_json("get_element_state", json!({ "id": "search" }))
-        .await?;
-    assert_eq!(
-        state.get("focused").and_then(JsonValue::as_bool),
-        Some(true),
-        "the fixture must agree the field is focused before anything is captured"
-    );
-
-    for region_first in [true, false] {
-        let (focused_region, focused_window) = if region_first {
-            let crop = server
-                .call_image("screenshot_region", region.clone())
+    // Two shapes of change, because they fail differently and one alone is not
+    // insurance: a focus ring is a thin, high-contrast edge on the rectangle's
+    // own bounds, and a hover fill is a large, low-contrast area inside it. A
+    // crop that refreshes on layout but not on paint still passes the second.
+    for (change, tool) in [
+        ("the focus ring", "focus_element"),
+        ("the hover fill", "hover_element"),
+    ] {
+        return_to_rest(server, away).await?;
+        server.call(tool, json!({ "id": "search" })).await?;
+        if tool == "focus_element" {
+            let state = server
+                .call_json("get_element_state", json!({ "id": "search" }))
                 .await?;
-            (crop, server.call_image("screenshot", json!({})).await?)
-        } else {
-            let window = server.call_image("screenshot", json!({})).await?;
-            (
-                server
+            assert_eq!(
+                state.get("focused").and_then(JsonValue::as_bool),
+                Some(true),
+                "the fixture must agree the field is focused before anything is captured"
+            );
+        }
+
+        for region_first in [true, false] {
+            let (changed_region, changed_window) = if region_first {
+                let crop = server
                     .call_image("screenshot_region", region.clone())
-                    .await?,
-                window,
-            )
-        };
+                    .await?;
+                (crop, server.call_image("screenshot", json!({})).await?)
+            } else {
+                let window = server.call_image("screenshot", json!({})).await?;
+                (
+                    server
+                        .call_image("screenshot_region", region.clone())
+                        .await?,
+                    window,
+                )
+            };
 
-        let moved = differing_pixels(&parked_region, &focused_region);
-        assert!(
-            moved > 0,
-            "the focus ring must reach the region crop; it was byte-identical to the unfocused crop"
-        );
+            // Refuse the comparison unless the change reached the crop at all.
+            // Without this a crop that never refreshes and an application that
+            // never repaints read exactly the same.
+            assert!(
+                differing_pixels(&parked_region, &changed_region) > 0,
+                "{change} must reach the region crop; it was byte-identical to the resting crop"
+            );
 
-        let expected = sub_image(
-            &focused_window,
-            anchor.0,
-            anchor.1,
-            focused_region.width(),
-            focused_region.height(),
-        );
-        assert_eq!(
-            differing_pixels(&focused_region, &expected),
-            0,
-            "the region crop must equal the same rectangle of a full window capture \
-             (region captured {} the window)",
-            if region_first { "before" } else { "after" }
-        );
+            let expected = sub_image(
+                &changed_window,
+                anchor.0,
+                anchor.1,
+                changed_region.width(),
+                changed_region.height(),
+            );
+            assert_eq!(
+                differing_pixels(&changed_region, &expected),
+                0,
+                "with {change} applied the region crop must equal the same rectangle of a \
+                 full window capture (region captured {} the window)",
+                if region_first { "before" } else { "after" }
+            );
+        }
     }
 
+    Ok(())
+}
+
+/// Put the measured field back in its resting state: the pointer parked off it
+/// and the keyboard focus on the fixture's other field.
+async fn return_to_rest(server: &mut Server, away: (f64, f64)) -> Result<(), String> {
+    server
+        .call("pointer_move", json!({ "x": away.0, "y": away.1 }))
+        .await?;
+    server
+        .call("focus_element", json!({ "id": "filter" }))
+        .await?;
     Ok(())
 }

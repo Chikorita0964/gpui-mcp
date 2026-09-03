@@ -29,9 +29,11 @@ struct Demo {
     _bridge: BridgeHandle,
 }
 
-/// One keyboard-focusable field whose focus treatment is a one-pixel ring on its
-/// own bounds: the smallest visual change a region crop of exactly those bounds
-/// has to carry.
+/// One keyboard-focusable field carrying the two shapes of visual change a
+/// region crop has to survive: focus draws a one-pixel, high-contrast ring on
+/// the field's own bounds, and hover repaints its whole interior a single step
+/// lighter. A crop that is stale fails the first; a crop that refreshes on
+/// layout but not on paint can still pass the second, so both are needed.
 fn field(
     id: &'static str,
     label: &'static str,
@@ -52,6 +54,7 @@ fn field(
             rgb(0x39_42_53)
         })
         .bg(rgb(0x0b_0e_14))
+        .hover(|style| style.bg(rgb(0x12_16_1e)))
         .child(label)
         .role(Role::TextInput)
         .aria_label(label)
