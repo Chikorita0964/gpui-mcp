@@ -18,6 +18,19 @@ const MAX_STABILITY_DEADLINE: Duration = Duration::from_secs(2);
 const DEFAULT_SETTLE_DEADLINE: Duration = Duration::from_secs(1);
 #[cfg(any(target_os = "windows", test))]
 const MIN_FRESHNESS_SAMPLES: u8 = 3;
+/// Ceiling on the extra budget a measured readback may earn.
+///
+/// The settle deadline bounds how long the capture is willing to *wait* for the
+/// compositor; the readbacks themselves are work, and their cost scales with the
+/// window's pixel count and with whether the server was built optimized. A
+/// 5120x1440 window in a debug build spends most of a second in one readback, so
+/// charging that work to a wait budget made every capture of such a window fail.
+/// The allowance below credits the remaining samples with what the first one
+/// actually cost, which needs no frame-size heuristic because a measured sample
+/// already encodes both the size and the build profile. This ceiling keeps a
+/// pathologically slow machine from widening the budget without limit.
+#[cfg(any(target_os = "windows", test))]
+const MAX_MEASURED_ALLOWANCE: Duration = Duration::from_secs(4);
 
 /// Bounded Windows Graphics Capture freshness policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -690,10 +703,21 @@ fn capture_fresh_frame<T, E: Clone>(
     // sequence of ordered samples and return the newest one. Requiring byte equality is incorrect:
     // native capture borders and legitimate animation may change between every sample.
     let started = now();
-    let Some(deadline) = started.checked_add(options.settle_deadline()) else {
+    let mut latest = capture()?;
+    // The first sample is the measurement. `settle_deadline` is the allowance
+    // for waiting on the compositor, so the readbacks the policy itself demands
+    // must not be paid out of it: a 5120x1440 window in an unoptimized build
+    // spends most of a second inside one readback, and three of those overran a
+    // one-second budget before this frame was ever judged stale. Credit the
+    // remaining samples with what the first actually cost, bounded.
+    let allowance = now()
+        .saturating_duration_since(started)
+        .saturating_mul(u32::from(MIN_FRESHNESS_SAMPLES.saturating_sub(1)))
+        .min(MAX_MEASURED_ALLOWANCE);
+    let Some(deadline) = started.checked_add(options.settle_deadline().saturating_add(allowance))
+    else {
         return Err(unstable_error.clone());
     };
-    let mut latest = capture()?;
     for _ in 1..MIN_FRESHNESS_SAMPLES {
         let current_time = now();
         let Some(remaining) = deadline.checked_duration_since(current_time) else {
@@ -751,7 +775,8 @@ mod tests {
     use gpui_mcp_protocol::{Rect, ScreenshotTarget};
 
     use super::{
-        CaptureFailure, CaptureGeometry, CaptureOptions, RegionMapping, capture_fresh_frame,
+        CaptureFailure, CaptureGeometry, CaptureOptions, DEFAULT_SETTLE_DEADLINE,
+        MAX_MEASURED_ALLOWANCE, MIN_FRESHNESS_SAMPLES, RegionMapping, capture_fresh_frame,
         region_mapping, validate_target,
     };
 
@@ -825,6 +850,115 @@ mod tests {
         assert_eq!(captured, Err(CaptureFailure::UnstableFrame));
         assert_eq!(calls.get(), 2);
         Ok(())
+    }
+
+    /// A 5120x1440 window in an unoptimized build spends most of a second
+    /// inside a single readback, so three of them cannot fit in a budget of one
+    /// second — the debug server could not capture such a window at all.
+    ///
+    /// The frame is really allocated at that size rather than named, and the
+    /// per-sample cost is the one measured against the launcher: three 29 MB
+    /// samples overran a one-second deadline, so each cost at least a third of
+    /// a second. The clock is injected, so the assertion is about the policy
+    /// and not about how fast this machine happens to be today.
+    #[test]
+    fn a_large_frame_survives_a_readback_that_costs_most_of_the_deadline()
+    -> Result<(), CaptureFailure> {
+        let sample_cost = Duration::from_millis(500);
+        let elapsed = Cell::new(Duration::ZERO);
+        let started = Instant::now();
+        let calls = Cell::new(0_usize);
+
+        let captured = capture_fresh_frame(
+            || {
+                elapsed.set(elapsed.get().saturating_add(sample_cost));
+                calls.set(calls.get().saturating_add(1));
+                Ok::<_, CaptureFailure>(image::RgbaImage::new(5_120, 1_440))
+            },
+            CaptureOptions::default(),
+            || started + elapsed.get(),
+            |duration| elapsed.set(elapsed.get().saturating_add(duration)),
+            CaptureFailure::UnstableFrame,
+        )?;
+
+        assert_eq!(captured.dimensions(), (5_120, 1_440));
+        assert_eq!(
+            calls.get(),
+            usize::from(MIN_FRESHNESS_SAMPLES),
+            "every freshness sample must still be taken; widening the budget must not \
+             buy headroom by sampling less"
+        );
+        Ok(())
+    }
+
+    /// The counterpart, and the reason the fix is not simply a longer deadline:
+    /// a window whose readbacks are cheap earns almost no allowance and keeps
+    /// the one-second wait. Here the readback is cheap and the *waiting* is what
+    /// overruns, which is what the settle deadline is for.
+    ///
+    /// This is the guard against the tempting non-fix — raising
+    /// `DEFAULT_SETTLE_DEADLINE`, or granting the allowance unconditionally.
+    /// Either would let this run past a second and fail the bound below.
+    #[test]
+    fn a_cheap_readback_earns_no_headroom_and_keeps_the_one_second_bound() {
+        let elapsed = Cell::new(Duration::ZERO);
+        let started = Instant::now();
+
+        let captured = capture_fresh_frame(
+            || {
+                elapsed.set(elapsed.get().saturating_add(Duration::from_millis(4)));
+                Ok::<_, CaptureFailure>(1_u8)
+            },
+            CaptureOptions::default(),
+            || started + elapsed.get(),
+            // A compositor that will not hand back a newer frame: each wait
+            // costs far more than the poll interval asked for.
+            |_| elapsed.set(elapsed.get().saturating_add(Duration::from_millis(600))),
+            CaptureFailure::UnstableFrame,
+        );
+
+        assert_eq!(captured, Err(CaptureFailure::UnstableFrame));
+        assert!(
+            elapsed.get() < DEFAULT_SETTLE_DEADLINE.saturating_add(Duration::from_millis(600)),
+            "a cheap sample must not buy a long budget; the run took {:?}",
+            elapsed.get()
+        );
+    }
+
+    /// A machine slow enough to make one readback pathological must still give
+    /// up rather than widening the budget without limit. The first sample alone
+    /// blows any bounded budget, so the policy stops there instead of paying for
+    /// two more of them.
+    #[test]
+    fn the_measured_allowance_is_capped() {
+        let elapsed = Cell::new(Duration::ZERO);
+        let started = Instant::now();
+        let calls = Cell::new(0_usize);
+
+        let captured = capture_fresh_frame(
+            || {
+                calls.set(calls.get().saturating_add(1));
+                elapsed.set(elapsed.get().saturating_add(Duration::from_secs(30)));
+                Ok::<_, CaptureFailure>(0_u8)
+            },
+            CaptureOptions::default(),
+            || started + elapsed.get(),
+            |duration| elapsed.set(elapsed.get().saturating_add(duration)),
+            CaptureFailure::UnstableFrame,
+        );
+
+        assert_eq!(captured, Err(CaptureFailure::UnstableFrame));
+        assert_eq!(
+            calls.get(),
+            1,
+            "a sample beyond the cap must end the attempt, not buy two more"
+        );
+        assert!(
+            DEFAULT_SETTLE_DEADLINE.saturating_add(MAX_MEASURED_ALLOWANCE)
+                < Duration::from_secs(30),
+            "this test only means anything while the bounded budget is smaller \
+             than the pathological sample it rejects"
+        );
     }
 
     #[test]

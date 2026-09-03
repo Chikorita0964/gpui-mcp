@@ -7,6 +7,15 @@ Agents can inspect the live UI, click, type, focus, hover, drag, scroll, take
 screenshots, and record video. The bridge works on Windows 11, macOS, and Linux;
 exact-window capture on Linux currently requires X11.
 
+Windows screenshots take a short ordered burst of compositor samples and return
+the newest, because Windows Graphics Capture can hand back an older composited
+frame first. The one-second deadline on that burst bounds how long the capture
+waits for the compositor, not how long the readbacks themselves take: the cost
+of a readback scales with the window's pixel count and with whether the server
+was built optimized, so it is measured on the first sample and credited back to
+the budget, up to a bound. A 5120x1440 window captures from a debug build, and
+an ordinary window keeps the one-second wait.
+
 ## Setup
 
 Install the MCP server:
