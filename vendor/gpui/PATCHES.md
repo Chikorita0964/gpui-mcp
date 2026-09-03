@@ -8,7 +8,15 @@ GPUI yet:
 
 - read-only observation of each completed rendered AccessKit tree, with stable
   GPUI element paths, frame-unique node identities, bounds, text provenance,
-  and an overlay paint pass;
+  and an overlay paint pass. A node keeps its own element id while that id
+  names it alone, and otherwise takes the shortest trailing run of its element
+  path that separates it, so identities are deliberately **not uniform in
+  shape**: two siblings can look nothing alike because one collided and the
+  other did not, and adding a widget to one container can change the shape of
+  identities in a container nobody touched. Consumers must group nodes by
+  `parent`, which is exact and resolved from paths, and never by the form of
+  the identity itself — a matcher keyed on an identity pattern selects exactly
+  the nodes that collided and silently skips the ones that did not;
 - programmatic focus and text replacement through GPUI's active input handler;
 - pointer ownership that prevents a stale native mouse position from cancelling
   a synthetic hover before the physical mouse actually moves; and
