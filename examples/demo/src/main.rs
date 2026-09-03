@@ -34,6 +34,15 @@ struct Demo {
 /// the field's own bounds, and hover repaints its whole interior a single step
 /// lighter. A crop that is stale fails the first; a crop that refreshes on
 /// layout but not on paint can still pass the second, so both are needed.
+///
+/// The focus treatment is a plain conditional border and deliberately not
+/// GPUI's `focus_visible`, which additionally requires
+/// `Window::last_input_was_keyboard()`. A programmatic focus dispatches no
+/// platform input and a programmatic pointer move claims Mouse modality, so a
+/// `focus_visible` ring here would never paint for a driving test that parks
+/// the pointer first, and the region capture test would pass while measuring
+/// nothing. Change this to `focus_visible` only alongside driving the field
+/// with a real keystroke.
 fn field(
     id: &'static str,
     label: &'static str,
