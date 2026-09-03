@@ -1,17 +1,60 @@
 //! Small instrumented GPUI application used to exercise the MCP bridge.
 
 use gpui::{
-    App, Bounds, Context, IntoElement, Render, Role, StatefulInteractiveElement as _, Window,
-    WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
+    App, Bounds, Context, Div, FocusHandle, IntoElement, Render, Role, Stateful,
+    StatefulInteractiveElement as _, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb,
+    size,
 };
 use gpui_mcp::{Automation, BridgeConfig, BridgeHandle};
 
 const TITLE: &str = "GPUI MCP Demo";
 
+/// `--endpoint-dir <absolute path>` keeps a driving test's discovery private to
+/// that test rather than sharing the developer's live endpoint directory.
+fn endpoint_dir() -> Option<std::path::PathBuf> {
+    let mut arguments = std::env::args().skip(1);
+    while let Some(argument) = arguments.next() {
+        if argument == "--endpoint-dir" {
+            return arguments.next().map(std::path::PathBuf::from);
+        }
+    }
+    None
+}
+
 struct Demo {
     count: usize,
+    search: FocusHandle,
+    filter: FocusHandle,
     automation: Automation,
     _bridge: BridgeHandle,
+}
+
+/// One keyboard-focusable field whose focus treatment is a one-pixel ring on its
+/// own bounds: the smallest visual change a region crop of exactly those bounds
+/// has to carry.
+fn field(
+    id: &'static str,
+    label: &'static str,
+    handle: &FocusHandle,
+    focused: bool,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .track_focus(handle)
+        .w(px(240.0))
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .border_1()
+        .border_color(if focused {
+            rgb(0x16_77_ff)
+        } else {
+            rgb(0x39_42_53)
+        })
+        .bg(rgb(0x0b_0e_14))
+        .child(label)
+        .role(Role::TextInput)
+        .aria_label(label)
 }
 
 impl Demo {
@@ -30,8 +73,10 @@ impl Demo {
 }
 
 impl Render for Demo {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let counter = self.count;
+        let searching = self.search.is_focused(window);
+        let filtering = self.filter.is_focused(window);
         div()
             .id("demo-root")
             .flex()
@@ -52,6 +97,13 @@ impl Render for Demo {
                     .id("count")
                     .text_lg()
                     .child(format!("Count: {counter}")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_3()
+                    .child(field("search", "Search", &self.search, searching))
+                    .child(field("filter", "Filter", &self.filter, filtering)),
             )
             .child(
                 div()
@@ -106,17 +158,28 @@ fn main() {
                         std::process::exit(1);
                     }
                 };
-                let bridge =
-                    match BridgeHandle::install(window, cx, BridgeConfig::new(app_id, TITLE)) {
-                        Ok(bridge) => bridge,
+                let mut config = BridgeConfig::new(app_id, TITLE);
+                if let Some(directory) = endpoint_dir() {
+                    config = match config.endpoint_dir(directory) {
+                        Ok(config) => config,
                         Err(error) => {
-                            eprintln!("could not install GPUI MCP bridge: {error}");
+                            eprintln!("invalid endpoint directory: {error}");
                             std::process::exit(1);
                         }
                     };
+                }
+                let bridge = match BridgeHandle::install(window, cx, config) {
+                    Ok(bridge) => bridge,
+                    Err(error) => {
+                        eprintln!("could not install GPUI MCP bridge: {error}");
+                        std::process::exit(1);
+                    }
+                };
                 let automation = bridge.automation();
-                cx.new(|_| Demo {
+                cx.new(|cx| Demo {
                     count: 0,
+                    search: cx.focus_handle(),
+                    filter: cx.focus_handle(),
                     automation,
                     _bridge: bridge,
                 })

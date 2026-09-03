@@ -106,8 +106,9 @@ pub struct NativeFrame {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CaptureGeometry {
     /// Drawable client-area size paired with GPUI's native-window global origin. Some platforms
-    /// report the outer-window origin for a decorated window; the mapper detects that case from
-    /// the captured image and derives the decoration insets without platform constants.
+    /// report the outer-window origin for a decorated window; the mapper derives the leading
+    /// decoration inset from the difference against the native origin, without platform
+    /// constants, and places regions with [`Self::scale_factor`].
     pub content_bounds: Rect,
     /// Semantic viewport size in GPUI logical pixels.
     pub viewport_size: (f32, f32),
@@ -268,11 +269,18 @@ pub fn screenshot(
     validate_target(options.area)?;
     let native = frame(window, options.capture)?;
     let native_origin = native.origin;
+    let reported_size = native.reported_size;
     let mut image = native.image;
 
     if let ScreenshotTarget::Region { rect } = options.area {
         let geometry = options.geometry.ok_or(CaptureFailure::MissingGeometry)?;
-        let mapping = region_mapping(image.width(), image.height(), native_origin, geometry)?;
+        let mapping = region_mapping(
+            image.width(),
+            image.height(),
+            native_origin,
+            reported_size,
+            geometry,
+        )?;
         let left = (mapping.offset_x + rect.x * mapping.scale_x)
             .floor()
             .max(0.0) as u32;
@@ -579,10 +587,12 @@ fn region_mapping(
     image_width: u32,
     image_height: u32,
     native_origin: (i32, i32),
+    reported_size: (u32, u32),
     geometry: CaptureGeometry,
 ) -> Result<RegionMapping, CaptureFailure> {
     let bounds = geometry.content_bounds;
     let (viewport_width, viewport_height) = geometry.viewport_size;
+    let (reported_width, reported_height) = reported_size;
     let scale = geometry.scale_factor;
     if !bounds.is_valid()
         || !scale.is_finite()
@@ -591,12 +601,25 @@ fn region_mapping(
         || !viewport_height.is_finite()
         || viewport_width <= 0.0
         || viewport_height <= 0.0
+        || reported_width == 0
+        || reported_height == 0
     {
         return Err(CaptureFailure::MissingGeometry);
     }
 
-    let offset_x = bounds.x.mul_add(scale, -(native_origin.0 as f32));
-    let offset_y = bounds.y.mul_add(scale, -(native_origin.1 as f32));
+    // The native window API and the captured image do not have to report the same
+    // pixel space. A capture process that is not per-monitor DPI aware reads
+    // virtualized window coordinates while the operating system still hands back a
+    // physical-pixel image, so the origin is converted with the ratio the platform
+    // used to size that image before it is compared against GPUI's own geometry.
+    let native_to_image_x = image_width as f32 / reported_width as f32;
+    let native_to_image_y = image_height as f32 / reported_height as f32;
+    let offset_x = bounds
+        .x
+        .mul_add(scale, -(native_origin.0 as f32 * native_to_image_x));
+    let offset_y = bounds
+        .y
+        .mul_add(scale, -(native_origin.1 as f32 * native_to_image_y));
     if !offset_x.is_finite()
         || !offset_y.is_finite()
         || offset_x < 0.0
@@ -607,21 +630,28 @@ fn region_mapping(
         return Err(CaptureFailure::MissingGeometry);
     }
 
-    let scale_x = (image_width as f32 - offset_x) / viewport_width;
-    let scale_y = (image_height as f32 - offset_y) / viewport_height;
+    // Consistency check only. The client area starts at `offset` inside the image
+    // and the rest of the image is native decoration, so the ratio of what is left
+    // to the logical viewport has to agree with GPUI's device scale.
+    let implied_scale_x = (image_width as f32 - offset_x) / viewport_width;
+    let implied_scale_y = (image_height as f32 - offset_y) / viewport_height;
     let minimum_scale = scale * 0.75;
     let maximum_scale = scale * 1.25;
-    if !(minimum_scale..=maximum_scale).contains(&scale_x)
-        || !(minimum_scale..=maximum_scale).contains(&scale_y)
+    if !(minimum_scale..=maximum_scale).contains(&implied_scale_x)
+        || !(minimum_scale..=maximum_scale).contains(&implied_scale_y)
     {
         return Err(CaptureFailure::MissingGeometry);
     }
 
+    // Regions are placed with GPUI's own device scale rather than that implied
+    // ratio. The ratio carries the window's trailing decoration inset, and using
+    // it stretches every region by that inset over the width of the window, so a
+    // crop picks up a column and a row that are outside the requested rectangle.
     Ok(RegionMapping {
         offset_x,
         offset_y,
-        scale_x,
-        scale_y,
+        scale_x: scale,
+        scale_y: scale,
     })
 }
 
@@ -809,14 +839,15 @@ mod tests {
     fn client_geometry_offsets_regions_below_native_title_chrome() {
         assert_eq!(
             region_mapping(
-                1_435,
-                932,
+                1_442,
+                933,
                 (100, 100),
+                (1_442, 933),
                 CaptureGeometry {
                     content_bounds: Rect {
-                        x: 100.0,
+                        x: 101.0,
                         y: 132.0,
-                        width: 1_435.0,
+                        width: 1_440.0,
                         height: 900.0,
                     },
                     viewport_size: (1_440.0, 900.0),
@@ -824,12 +855,90 @@ mod tests {
                 },
             ),
             Ok(RegionMapping {
-                offset_x: 0.0,
+                offset_x: 1.0,
                 offset_y: 32.0,
-                scale_x: 1_435.0 / 1_440.0,
+                scale_x: 1.0,
                 scale_y: 1.0,
             })
         );
+    }
+
+    /// A trailing decoration inset must not stretch the region. The window below
+    /// carries a one-pixel border on every side and a 31-pixel caption, so the
+    /// image is two pixels wider than the client area; scaling regions by the
+    /// leftover ratio would place the right edge of a region one pixel outside
+    /// the rectangle that was asked for.
+    #[test]
+    fn a_trailing_decoration_inset_does_not_stretch_regions() -> Result<(), CaptureFailure> {
+        let mapping = region_mapping(
+            642,
+            452,
+            (100, 100),
+            (642, 452),
+            CaptureGeometry {
+                content_bounds: Rect {
+                    x: 101.0,
+                    y: 131.0,
+                    width: 640.0,
+                    height: 420.0,
+                },
+                viewport_size: (640.0, 420.0),
+                scale_factor: 1.0,
+            },
+        )?;
+
+        assert_eq!(
+            mapping,
+            RegionMapping {
+                offset_x: 1.0,
+                offset_y: 31.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+            }
+        );
+        // A 104-pixel-wide region at x=32 ends at the 137th image column, not the
+        // 138th that the leftover ratio would have reached.
+        let right = mapping.offset_x + (32.0 + 104.0) * mapping.scale_x;
+        assert!(
+            (right.ceil() - 137.0).abs() < f32::EPSILON,
+            "the right edge of the crop must be the requested edge, got {right}"
+        );
+        Ok(())
+    }
+
+    /// The native window API and the captured image do not have to agree on a
+    /// pixel space. A capture process without per-monitor DPI awareness reads a
+    /// virtualized origin while the image stays physical, and mixing the two
+    /// places the crop hundreds of pixels away from the requested rectangle.
+    #[test]
+    fn a_virtualized_native_origin_is_converted_into_image_pixels() -> Result<(), CaptureFailure> {
+        let mapping = region_mapping(
+            2_160,
+            1_440,
+            (500, 300),
+            (1_440, 960),
+            CaptureGeometry {
+                content_bounds: Rect {
+                    x: 500.0,
+                    y: 300.0,
+                    width: 1_440.0,
+                    height: 960.0,
+                },
+                viewport_size: (1_440.0, 960.0),
+                scale_factor: 1.5,
+            },
+        )?;
+
+        assert_eq!(
+            mapping,
+            RegionMapping {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                scale_x: 1.5,
+                scale_y: 1.5,
+            }
+        );
+        Ok(())
     }
 
     #[test]
@@ -839,6 +948,7 @@ mod tests {
                 1_435,
                 932,
                 (100, 132),
+                (1_435, 932),
                 CaptureGeometry {
                     content_bounds: Rect {
                         x: 100.0,

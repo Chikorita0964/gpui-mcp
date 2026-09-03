@@ -1,0 +1,414 @@
+//! `screenshot_region` against `screenshot`, over the real MCP stdio surface.
+//!
+//! OPE-132 reported that a region crop went on returning the unfocused pixels of
+//! a text field after keyboard focus moved to it, while a full-window capture
+//! taken at the same moment carried the focus ring. The reproduction rule this
+//! test encodes is the one that separates a stale crop from a frame that never
+//! changed: drive one application through one transport, make the application
+//! confirm the state moved before capturing anything, and read the oracle out of
+//! the full capture rather than recomputing the server's own region arithmetic.
+//!
+//! The fixture's field draws its focus treatment as a one-pixel ring on its own
+//! bounds, which is the smallest change a crop of exactly those bounds has to
+//! carry, and the assertions are byte equality against the same rectangle of a
+//! full window capture.
+
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+use base64::Engine as _;
+use image::RgbaImage;
+use serde_json::{Value as JsonValue, json};
+use tempfile::TempDir;
+use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::time::timeout;
+
+const REPLY_TIMEOUT: Duration = Duration::from_mins(1);
+const DISCOVERY_DEADLINE: Duration = Duration::from_secs(45);
+/// The rectangle the fixture's focusable field occupies, grown by a margin, so a
+/// focus treatment drawn just outside the element's own bounds is still inside
+/// the crop and a null reading cannot be blamed on the margin.
+const CROP_MARGIN: f64 = 14.0;
+
+/// A GPUI MCP server child process driven over its real JSON-RPC stdio surface.
+struct Server {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: Lines<BufReader<ChildStdout>>,
+    next_id: i64,
+}
+
+impl Server {
+    fn start(endpoints: &Path, artifacts: &Path) -> Result<Self, String> {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_gpui-mcp"))
+            .arg("--endpoint-dir")
+            .arg(endpoints)
+            .arg("--artifact-dir")
+            .arg(artifacts)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|error| format!("could not spawn the server: {error}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout).lines(),
+            next_id: 1,
+        })
+    }
+
+    async fn send(&mut self, message: &JsonValue) -> Result<(), String> {
+        let mut line = message.to_string();
+        line.push('\n');
+        self.stdin
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|error| format!("could not write to the server: {error}"))?;
+        self.stdin
+            .flush()
+            .await
+            .map_err(|error| format!("could not flush the server stdin: {error}"))
+    }
+
+    async fn request(&mut self, method: &str, params: JsonValue) -> Result<JsonValue, String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
+            .await?;
+        loop {
+            let line = timeout(REPLY_TIMEOUT, self.stdout.next_line())
+                .await
+                .map_err(|_| format!("timed out waiting for the {method} reply"))?
+                .map_err(|error| format!("could not read the {method} reply: {error}"))?
+                .ok_or_else(|| format!("the server closed stdout before replying to {method}"))?;
+            let Ok(message) = serde_json::from_str::<JsonValue>(&line) else {
+                continue;
+            };
+            if message.get("id").and_then(JsonValue::as_i64) != Some(id) {
+                continue;
+            }
+            if let Some(error) = message.get("error") {
+                return Err(format!("{method} failed: {error}"));
+            }
+            return message
+                .get("result")
+                .cloned()
+                .ok_or_else(|| format!("{method} returned neither a result nor an error"));
+        }
+    }
+
+    async fn call(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
+        let result = self
+            .request(
+                "tools/call",
+                json!({ "name": tool, "arguments": arguments }),
+            )
+            .await?;
+        if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
+            let content = result.get("content").cloned().unwrap_or(JsonValue::Null);
+            return Err(format!("{tool} reported an error: {content}"));
+        }
+        Ok(result)
+    }
+
+    /// The structured payload of a tool that answers with JSON.
+    async fn call_json(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
+        let result = self.call(tool, arguments).await?;
+        if let Some(structured) = result.get("structuredContent") {
+            return Ok(structured.clone());
+        }
+        let text = result
+            .get("content")
+            .and_then(JsonValue::as_array)
+            .and_then(|content| {
+                content
+                    .iter()
+                    .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+            })
+            .ok_or_else(|| format!("{tool} returned no JSON payload"))?;
+        serde_json::from_str(text)
+            .map_err(|error| format!("{tool} returned unreadable JSON: {error}"))
+    }
+
+    /// The decoded pixels of a tool that answers with a PNG.
+    async fn call_image(&mut self, tool: &str, arguments: JsonValue) -> Result<RgbaImage, String> {
+        let result = self.call(tool, arguments).await?;
+        let encoded = result
+            .get("content")
+            .and_then(JsonValue::as_array)
+            .and_then(|content| {
+                content
+                    .iter()
+                    .find_map(|entry| entry.get("data").and_then(JsonValue::as_str))
+            })
+            .ok_or_else(|| format!("{tool} returned no image payload"))?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|error| format!("{tool} returned unreadable base64: {error}"))?;
+        image::load_from_memory(&bytes)
+            .map_err(|error| format!("{tool} returned an undecodable PNG: {error}"))
+            .map(image::DynamicImage::into_rgba8)
+    }
+
+    async fn stop(mut self) {
+        drop(self.stdin);
+        let _ = self.child.kill().await;
+    }
+}
+
+/// The instrumented GPUI application the workspace ships as its bridge demo.
+struct Fixture {
+    child: Child,
+}
+
+impl Fixture {
+    fn start(endpoints: &Path) -> Result<Self, String> {
+        let child = Command::new(fixture_executable()?)
+            .arg("--endpoint-dir")
+            .arg(endpoints)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|error| format!("could not spawn the fixture application: {error}"))?;
+        Ok(Self { child })
+    }
+
+    async fn stop(mut self) {
+        let _ = self.child.kill().await;
+    }
+}
+
+/// The demo application is a separate workspace member, so its binary is found
+/// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
+fn fixture_executable() -> Result<PathBuf, String> {
+    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
+    let directory = server
+        .parent()
+        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!(
+            "the demo fixture is not built at {}",
+            path.display()
+        ))
+    }
+}
+
+/// Whether this machine can open a window at all. The Linux CI job runs the test
+/// suite without a display server and drives windowed fixtures under Xvfb from a
+/// separate step.
+fn has_a_desktop_session() -> bool {
+    if cfg!(target_os = "linux") {
+        std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some()
+    } else {
+        true
+    }
+}
+
+fn rectangle(bounds: &JsonValue) -> Result<(f64, f64, f64, f64), String> {
+    let read = |name: &str| {
+        bounds
+            .get(name)
+            .and_then(JsonValue::as_f64)
+            .ok_or_else(|| format!("element bounds carry no {name}"))
+    };
+    Ok((read("x")?, read("y")?, read("width")?, read("height")?))
+}
+
+/// The only position at which `tile` appears in `image`, byte for byte.
+///
+/// This is the oracle for "the same rectangle": it reads the region's place in
+/// the window out of the pixels instead of recomputing the mapping the server
+/// used, so a mapping that crops the wrong rectangle cannot satisfy it.
+fn locate(image: &RgbaImage, tile: &RgbaImage) -> Option<(u32, u32)> {
+    let (width, height) = (image.width(), image.height());
+    let (tile_width, tile_height) = (tile.width(), tile.height());
+    if tile_width > width || tile_height > height {
+        return None;
+    }
+    (0..=height - tile_height)
+        .flat_map(|top| (0..=width - tile_width).map(move |left| (left, top)))
+        .find(|&(left, top)| {
+            (0..tile_height).all(|row| {
+                let from = (top + row) as usize * width as usize + left as usize;
+                let into = row as usize * tile_width as usize;
+                let count = tile_width as usize;
+                image.as_raw()[from * 4..(from + count) * 4]
+                    == tile.as_raw()[into * 4..(into + count) * 4]
+            })
+        })
+}
+
+fn sub_image(image: &RgbaImage, left: u32, top: u32, width: u32, height: u32) -> RgbaImage {
+    image::imageops::crop_imm(image, left, top, width, height).to_image()
+}
+
+fn differing_pixels(left: &RgbaImage, right: &RgbaImage) -> usize {
+    if left.dimensions() != right.dimensions() {
+        return usize::MAX;
+    }
+    left.pixels()
+        .zip(right.pixels())
+        .filter(|(left, right)| left != right)
+        .count()
+}
+
+/// Wait until exactly the fixture is discoverable through the private endpoint
+/// directory, so the measurement is against one application and one target.
+async fn wait_for_the_fixture(server: &mut Server) -> Result<(), String> {
+    let started = Instant::now();
+    let mut last = String::new();
+    while started.elapsed() < DISCOVERY_DEADLINE {
+        match server.call_json("list_apps", json!({})).await {
+            Ok(apps) => {
+                let count = apps.get("count").and_then(JsonValue::as_u64).unwrap_or(0);
+                if count == 1 {
+                    return Ok(());
+                }
+                last = format!("the endpoint directory published {count} applications");
+            }
+            Err(error) => last = error,
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    Err(format!(
+        "the fixture did not become discoverable within {DISCOVERY_DEADLINE:?}: {last}"
+    ))
+}
+
+#[tokio::test]
+async fn a_region_crop_carries_the_focus_ring_the_full_window_capture_carries() -> Result<(), String>
+{
+    if !has_a_desktop_session() {
+        eprintln!("skipping: this machine has no desktop session to open a window on");
+        return Ok(());
+    }
+    let directory = TempDir::new()
+        .map_err(|error| format!("could not create a temporary directory: {error}"))?;
+    let endpoints = directory.path().join("endpoints");
+    std::fs::create_dir_all(&endpoints)
+        .map_err(|error| format!("could not create the endpoint directory: {error}"))?;
+    let fixture = Fixture::start(&endpoints)?;
+    let mut server = Server::start(&endpoints, &directory.path().join("artifacts"))?;
+
+    let outcome = measure(&mut server).await;
+
+    server.stop().await;
+    fixture.stop().await;
+    outcome
+}
+
+async fn measure(server: &mut Server) -> Result<(), String> {
+    server
+        .request(
+            "initialize",
+            json!({
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "gpui-mcp-region-capture-test", "version": "0.0.0" },
+            }),
+        )
+        .await?;
+    server
+        .send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized", "params": {} }))
+        .await?;
+    wait_for_the_fixture(server).await?;
+
+    let tree = server.call_json("get_ui_tree", json!({})).await?;
+    let bounds = tree
+        .get("nodes")
+        .and_then(|nodes| nodes.get("search"))
+        .and_then(|node| node.get("bounds"))
+        .ok_or_else(|| "the fixture published no bounds for its search field".to_owned())?;
+    let (x, y, width, height) = rectangle(bounds)?;
+    let region = json!({
+        "x": x - CROP_MARGIN,
+        "y": y - CROP_MARGIN,
+        "width": width + CROP_MARGIN * 2.0,
+        "height": height + CROP_MARGIN * 2.0,
+    });
+
+    // Park focus on the other field so the measured field starts unfocused.
+    server
+        .call("focus_element", json!({ "id": "filter" }))
+        .await?;
+    let parked_region = server
+        .call_image("screenshot_region", region.clone())
+        .await?;
+    let parked_window = server.call_image("screenshot", json!({})).await?;
+
+    let anchor = locate(&parked_window, &parked_region).ok_or_else(|| {
+        "the region crop does not appear anywhere in the full window capture".to_owned()
+    })?;
+
+    // Validate the capture path against a state the application is known to
+    // repaint before trusting any comparison. Without this a crop that never
+    // changes and an application that never changes read the same.
+    server
+        .call("focus_element", json!({ "id": "search" }))
+        .await?;
+    let state = server
+        .call_json("get_element_state", json!({ "id": "search" }))
+        .await?;
+    assert_eq!(
+        state.get("focused").and_then(JsonValue::as_bool),
+        Some(true),
+        "the fixture must agree the field is focused before anything is captured"
+    );
+
+    for region_first in [true, false] {
+        let (focused_region, focused_window) = if region_first {
+            let crop = server
+                .call_image("screenshot_region", region.clone())
+                .await?;
+            (crop, server.call_image("screenshot", json!({})).await?)
+        } else {
+            let window = server.call_image("screenshot", json!({})).await?;
+            (
+                server
+                    .call_image("screenshot_region", region.clone())
+                    .await?,
+                window,
+            )
+        };
+
+        let moved = differing_pixels(&parked_region, &focused_region);
+        assert!(
+            moved > 0,
+            "the focus ring must reach the region crop; it was byte-identical to the unfocused crop"
+        );
+
+        let expected = sub_image(
+            &focused_window,
+            anchor.0,
+            anchor.1,
+            focused_region.width(),
+            focused_region.height(),
+        );
+        assert_eq!(
+            differing_pixels(&focused_region, &expected),
+            0,
+            "the region crop must equal the same rectangle of a full window capture \
+             (region captured {} the window)",
+            if region_first { "before" } else { "after" }
+        );
+    }
+
+    Ok(())
+}
