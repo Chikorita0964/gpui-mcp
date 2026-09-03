@@ -23,6 +23,7 @@ fn endpoint_dir() -> Option<std::path::PathBuf> {
 
 struct Demo {
     count: usize,
+    locked: bool,
     search: FocusHandle,
     filter: FocusHandle,
     automation: Automation,
@@ -81,6 +82,73 @@ impl Demo {
         self.count = 0;
         self.automation.log("info", "counter reset");
         cx.notify();
+    }
+
+    fn toggle_lock(&mut self, cx: &mut Context<Self>) {
+        self.locked = !self.locked;
+        self.automation.log(
+            "info",
+            if self.locked {
+                "the locked action refuses input"
+            } else {
+                "the locked action accepts input"
+            },
+        );
+        cx.notify();
+    }
+
+    /// A control that refuses input, and the toggle that gives it back.
+    ///
+    /// The locked control states its own disabled state with `aria_disabled`,
+    /// which is the only thing the UI tree's `enabled` is derived from: a widget
+    /// that merely withholds its click handler and paints itself grey — which
+    /// this one also does — still reports `enabled: true`, so the tree would
+    /// assert a falsehood rather than admit it does not know. The toggle exists
+    /// so the attribute can be measured flipping on one node rather than read
+    /// once, which is the only way to tell a carried value from a constant.
+    fn lock_row(&self, cx: &mut Context<Self>) -> Div {
+        let locked = self.locked;
+        div()
+            .flex()
+            .gap_3()
+            .child(
+                div()
+                    .id("locked-action")
+                    .px_4()
+                    .py_2()
+                    .rounded_md()
+                    .bg(if locked {
+                        rgb(0x22_28_33)
+                    } else {
+                        rgb(0x16_77_ff)
+                    })
+                    .text_color(if locked {
+                        rgb(0x6b_74_85)
+                    } else {
+                        rgb(0xe8_ee_f7)
+                    })
+                    .child("Locked action")
+                    .role(Role::Button)
+                    .aria_label("Locked action")
+                    .aria_disabled(locked)
+                    .when(!locked, |this| {
+                        this.cursor_pointer()
+                            .on_click(cx.listener(|this, _, _, cx| this.increment(cx)))
+                    }),
+            )
+            .child(
+                div()
+                    .id("lock-toggle")
+                    .px_4()
+                    .py_2()
+                    .rounded_md()
+                    .bg(rgb(0x39_42_53))
+                    .cursor_pointer()
+                    .child(if locked { "Unlock" } else { "Lock" })
+                    .role(Role::Button)
+                    .aria_label(if locked { "Unlock" } else { "Lock" })
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_lock(cx))),
+            )
     }
 }
 
@@ -144,6 +212,7 @@ impl Render for Demo {
                             .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
                     ),
             )
+            .child(self.lock_row(cx))
             .role(Role::Application)
             .aria_label(TITLE)
     }
@@ -190,6 +259,7 @@ fn main() {
                 let automation = bridge.automation();
                 cx.new(|cx| Demo {
                     count: 0,
+                    locked: true,
                     search: cx.focus_handle(),
                     filter: cx.focus_handle(),
                     automation,

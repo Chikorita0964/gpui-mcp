@@ -75,6 +75,13 @@ interactions automatically. Use GPUI's standard accessibility methods when a
 control's meaning cannot be inferred, such as `.role(Role::Tab)` or
 `.aria_label("Settings")` on an icon button.
 
+A control that refuses input must say so with `.aria_disabled(true)`. The tree's
+`enabled` is read from AccessKit's disabled flag and from nothing else, so a
+widget that merely withholds its click handler and paints itself grey still
+reports `enabled: true` — the field then asserts a falsehood rather than
+admitting it does not know, and a consumer cannot tell a disabled control from
+one that is wrongly unreachable.
+
 The two Cargo patches keep your app, `gpui_platform`, and the bridge on one GPUI
 type universe. They can go away once the small additions in the
 [vendor patch inventory](vendor/gpui/PATCHES.md) land upstream.
