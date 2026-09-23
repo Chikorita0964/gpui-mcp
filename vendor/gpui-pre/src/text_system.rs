@@ -372,7 +372,8 @@ impl TextSystem {
             return font_id;
         }
         for fallback in &self.fallback_font_stack {
-            if let Ok(font_id) = self.font_id(fallback) {
+            let fallback = fallback_with_requested_traits(fallback, font);
+            if let Ok(font_id) = self.font_id(&fallback) {
                 return font_id;
             }
         }
@@ -1339,6 +1340,23 @@ impl Font {
     }
 }
 
+/// Rebuild a fallback [`Font`] with the traits requested for the original
+/// family.
+///
+/// A fallback replaces only the unavailable family. Weight, style, and
+/// OpenType features are traits of the text the caller asked for, so dropping
+/// them here would resolve every fallback at its regular face; a bold Han
+/// string would render at regular weight through the fallback stack.
+fn fallback_with_requested_traits(fallback: &Font, requested: &Font) -> Font {
+    Font {
+        family: fallback.family.clone(),
+        features: requested.features.clone(),
+        fallbacks: fallback.fallbacks.clone(),
+        weight: requested.weight,
+        style: requested.style,
+    }
+}
+
 /// A struct for storing font metrics.
 /// It is used to define the measurements of a typeface.
 #[derive(Clone, Copy, Debug)]
@@ -1501,5 +1519,25 @@ mod missing_glyph_tests {
 
     fn missing_glyph(grapheme: &'static str) -> MissingGlyph {
         MissingGlyph::new(grapheme.into(), FallbackFontClass::Proportional)
+    }
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::{FontFeatures, FontStyle, FontWeight, fallback_with_requested_traits, font};
+
+    #[test]
+    fn fallback_replaces_only_the_unavailable_family() {
+        let fallback = font("Available Sans");
+        let mut requested = font("Unavailable Sans").bold().italic();
+        requested.features = FontFeatures::disable_ligatures();
+
+        let resolved = fallback_with_requested_traits(&fallback, &requested);
+
+        assert_eq!(resolved.family.as_ref(), "Available Sans");
+        assert_eq!(resolved.weight, FontWeight::BOLD);
+        assert_eq!(resolved.style, FontStyle::Italic);
+        assert_eq!(resolved.features, requested.features);
+        assert_eq!(resolved.fallbacks, fallback.fallbacks);
     }
 }
