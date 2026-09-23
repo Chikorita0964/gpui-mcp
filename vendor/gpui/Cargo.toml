@@ -7,6 +7,7 @@ description = "Zed's GPU-accelerated UI framework"
 repository = "https://github.com/zed-industries/zed"
 publish = true
 license = "Apache-2.0"
+
 homepage = "https://gpui.rs"
 readme = "README.md"
 keywords = ["desktop", "gui", "immediate"]
@@ -25,9 +26,7 @@ test-support = [
     "x11",
     "proptest",
 ]
-bench-support = ["profiler", "dep:criterion"]
-# Preserve the published feature name while consumers migrate to `bench-support`.
-bench = ["bench-support"]
+bench = ["test-support", "dep:criterion", "dep:hdrhistogram"]
 inspector = ["gpui_macros/inspector"]
 leak-detection = ["backtrace"]
 wayland = []
@@ -38,11 +37,12 @@ screen-capture = [
     "scap",
 ]
 windows-manifest = ["dep:embed-resource"]
-profiler = ["dep:hdrhistogram"]
-stacker = ["dep:stacksafe"]
+input-latency-histogram = ["dep:hdrhistogram"]
+profiler = []
 
 [lib]
 path = "src/gpui.rs"
+doctest = false
 
 [dependencies]
 accesskit = { version = "0.24.0", features = ["enumn"] }
@@ -51,16 +51,16 @@ async-task = "4.7"
 backtrace = { version = "0.3", optional = true }
 bitflags = "2.6.0"
 
-collections = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", version = "0.1.0" }
+collections = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807", version = "0.1.0" }
 criterion = { version = "0.5", features = ["html_reports"], optional = true }
-ctor = "1.0.12"
-derive_more = { version = "2.1.1", features = ["add", "add_assign", "deref", "deref_mut", "display", "from", "from_str", "mul", "mul_assign", "not"] }
+ctor = "1.0.6"
+derive_more = { version = "2.1.1", features = ["add", "add_assign", "deref", "deref_mut", "display", "from_str", "mul", "mul_assign", "not"] }
 etagere = "0.2"
-futures = "0.3.34"
+futures = "0.3.32"
 futures-concurrency = "7.7.1"
-gpui_macros = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
-gpui_shared_string = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
-http_client = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
+gpui_macros = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
+gpui_shared_string = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
+http_client = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
 image = { version = "0.25.1", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "rayon", "tga", "tiff", "webp"] }
 inventory = "0.3.19"
 itertools = "0.14.0"
@@ -75,25 +75,27 @@ profiling = "1"
 rand = "0.9"
 raw-window-handle = "0.6"
 regex = "1.5"
-refineable = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
-scheduler = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
+refineable = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
+scheduler = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
 resvg = { version = "0.46.0", default-features = false, features = ["text", "system-fonts", "memmap-fonts", "raster-images"] }
 usvg = { version = "0.46.0", default-features = false }
 ttf-parser = "0.25"
-util_macros = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
+util_macros = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
 schemars = { version = "1.0", features = ["indexmap2"] }
 seahash = "4.1"
 serde = { version = "1.0.221", features = ["derive", "rc"] }
 serde_json = { version = "1.0.144", features = ["preserve_order", "raw_value"] }
 slotmap = "1.0.6"
 smallvec = { version = "1.6", features = ["union", "const_new"] }
-stacksafe = { version = "1.0", optional = true }
-strum = { version = "0.28", features = ["derive"] }
-sum_tree = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
-taffy = "=0.13.0"
+async-channel = "2.5.0"
+stacksafe = "0.1"
+strum = { version = "0.27.2", features = ["derive"] }
+sum_tree = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
+taffy = "=0.12.2"
 thiserror = "2.0.12"
-gpui_util = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2" }
-hdrhistogram = { version = "7", default-features = false, optional = true }
+tracing = "0.1.40"
+gpui_util = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
+hdrhistogram = { version = "7", optional = true }
 waker-fn = "1.2.0"
 lyon = "1.0"
 pin-project = "1.1.10"
@@ -103,13 +105,7 @@ url = "2.2"
 uuid = { version = "1.1.2", features = ["v4", "v5", "v7", "serde"] }
 web-time = "1.1.0"
 heapless = "0.9.2"
-
-[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-# Workspace inheritance would re-enable defaults, including blocking channel synchronization.
-async-channel = { version = "2.5.0", default-features = false }
-
-[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-async-channel = "2.5.0"
+ztracing = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
@@ -117,38 +113,46 @@ uuid = { version = "1.1.2", features = ["v4", "v5", "v7", "serde", "js"] }
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block = "0.1"
+cocoa = "=0.26.0"
+cocoa-foundation = "=0.2.0"
+core-foundation = "0.10"
+core-foundation-sys = "0.8.6"
+core-graphics = "0.24"
 core-video = { version = "0.5.2", features = ["metal"] }
-objc2-core-foundation = { version = "=0.3.2", default-features = false }
-objc2-core-video = { version = "=0.3.2", default-features = false, features = ["CVBuffer", "CVImageBuffer"] }
+core-text = "21"
 # WARNING: If you change this, you must also publish a new version of zed-font-kit to crates.io
 font-kit = { git = "https://github.com/zed-industries/font-kit", rev = "94b0f28166665e8fd2f53ff6d268a14955c82269", package = "zed-font-kit", version = "0.14.1-zed", optional = true }
+foreign-types = "0.5"
 log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }
+media = { git = "https://github.com/zed-industries/zed", rev = "82878540b5410b288a2c92cb9ee5675533e4d807" }
+objc = "0.2"
 objc2 = { version = "0.6", optional = true }
 objc2-metal = { version = "0.3", optional = true }
+mach2 = "0.5"
+#TODO: replace with "objc2"
+metal = "0.33"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos"))'.dependencies]
+pathfinder_geometry = "0.5"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
-scap = { git = "https://github.com/zed-industries/scap", rev = "4afea48c3b002197176fb19cd0f9b180dd36eaac", default-features = false, package = "zed-scap", version = "0.0.8-zed", optional = true }
+scap = { git = "https://github.com/zed-industries/scap", rev = "4afea48c3b002197176fb19cd0f9b180dd36eaac", package = "zed-scap", version = "0.0.8-zed", default-features = false, optional = true }
 
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Power"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Power"] }
 
 [build-dependencies]
 embed-resource = { version = "3.0", optional = true }
 
 [target.'cfg(target_os = "macos")'.build-dependencies]
-bindgen = "0.72"
+bindgen = "0.71"
+cbindgen = { version = "0.28.0", default-features = false }
 
-[package.metadata.cargo-shear]
-ignored = [
-    "bindgen",
-    "font-kit",
-    "getrandom",
-    "objc2",
-    "objc2-metal",
-]
-ignored-paths = ["src/_ownership_and_data_flow.rs"]
+[package.metadata.cargo-machete]
+ignored = ["tracing"]
 
 [[example]]
 name = "hello_world"

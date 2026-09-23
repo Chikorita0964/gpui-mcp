@@ -1,7 +1,4 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 
 use gpui::{
     AccessibilityFrame, App, BorderStyle, FrameAction, FrameNode, FrameObserver, Window,
@@ -41,21 +38,7 @@ impl FrameObserver for BridgeObserver {
         };
         let mut nodes = frame.nodes().map(|(_, node)| node).collect::<Vec<_>>();
         nodes.sort_by(|left, right| left.path().cmp(right.path()));
-        let mut hidden = HashSet::<String>::new();
-        state.publish_frame(nodes.into_iter().map(|node| {
-            let inherited_hidden = node.parent().is_some_and(|parent| hidden.contains(parent));
-            let own_hidden = frame
-                .accessibility_node(node)
-                .is_some_and(accesskit::Node::is_hidden);
-            let mut result = to_node(frame, node);
-            if inherited_hidden {
-                result.state.visible = false;
-            }
-            if inherited_hidden || own_hidden {
-                hidden.insert(result.id.clone());
-            }
-            result
-        }));
+        state.publish_frame(nodes.into_iter().map(|node| to_node(frame, node)));
     }
 
     fn paint_started(&self) {
@@ -117,14 +100,10 @@ fn to_node(frame: &AccessibilityFrame, rendered: &FrameNode) -> UiNode {
     });
     let numeric_value = accessible.and_then(accesskit::Node::numeric_value);
     let value = (numeric_value.is_some() || value.is_some()).then(|| ValueInfo {
-        value: if rendered.is_redacted() {
-            String::new()
-        } else {
-            numeric_value
-                .map(|value| value.to_string())
-                .or(text_value)
-                .unwrap_or_default()
-        },
+        value: numeric_value
+            .map(|value| value.to_string())
+            .or(text_value)
+            .unwrap_or_default(),
         min: accessible.and_then(accesskit::Node::min_numeric_value),
         max: accessible.and_then(accesskit::Node::max_numeric_value),
         step: accessible.and_then(accesskit::Node::numeric_value_step),
@@ -459,74 +438,6 @@ mod tests {
             );
         });
         assert!(clicked.get());
-    }
-
-    struct HiddenAndRedactedFixture;
-
-    impl Render for HiddenAndRedactedFixture {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-                .id("root")
-                .role(Role::Application)
-                .size_full()
-                .child(
-                    div()
-                        .id("hidden-container")
-                        .aria_hidden(true)
-                        .w(px(120.))
-                        .h(px(40.))
-                        .child(
-                            div()
-                                .id("hidden-action")
-                                .role(Role::Button)
-                                .w(px(100.))
-                                .h(px(30.))
-                                .child("Hidden action"),
-                        ),
-                )
-                .child(
-                    div()
-                        .id("redacted-button")
-                        .role(Role::Button)
-                        .frame_redacted(true)
-                        .child("Private label"),
-                )
-                .child(
-                    div()
-                        .id("redacted-slider")
-                        .role(Role::Slider)
-                        .aria_numeric_value(42.)
-                        .frame_redacted(true),
-                )
-        }
-    }
-
-    #[gpui::test]
-    fn hidden_subtrees_and_redacted_bridge_values(cx: &mut TestAppContext) {
-        let automation = Automation::isolated();
-        let automation_for_window = automation.clone();
-        let (_view, visual) = cx.add_window_view(move |window, _| {
-            automation_for_window.attach(window);
-            HiddenAndRedactedFixture
-        });
-        visual.run_until_parked();
-
-        let tree = automation.snapshot();
-        assert_eq!(tree.nodes["hidden-container"].role, McpRole::Group);
-        assert!(!tree.nodes["hidden-container"].state.visible);
-        assert!(
-            tree.nodes["hidden-action"]
-                .bounds
-                .is_some_and(|bounds| bounds.width > 0.)
-        );
-        assert!(!tree.nodes["hidden-action"].state.visible);
-        assert_eq!(tree.nodes["redacted-button"].label, None);
-        assert!(
-            tree.nodes["redacted-slider"]
-                .value
-                .as_ref()
-                .is_some_and(|value| value.value.is_empty())
-        );
     }
 
     /// One dock panel, rendered as its own view exactly as

@@ -60,9 +60,6 @@ jobs:
       - name: Check screenshot-free integration
         run: cargo check -p gpui-mcp --no-default-features --locked
 
-      - name: Build integration test fixture
-        run: cargo build -p gpui-mcp-demo --locked
-
       - name: Test workspace
         run: cargo test --workspace --all-features --locked
 

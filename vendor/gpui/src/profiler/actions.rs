@@ -1,9 +1,7 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use itertools::Itertools;
-use scheduler::Instant;
 
-#[cfg(feature = "profiler")]
 use crate::action::Action;
 
 #[doc(hidden)]
@@ -96,12 +94,6 @@ impl ActionStatistics {
             return;
         };
 
-        let timing = ActionTiming {
-            name: action,
-            start: started,
-            end: now,
-        };
-
         let runtime = now.duration_since(started);
         if runtime >= self.runtime_to_beat {
             std::hint::cold_path(); // most actions are not the worst, optimize for that
@@ -112,10 +104,18 @@ impl ActionStatistics {
                     .iter_mut()
                     .min_by_key(|action| runtime >= action.runtime())
             {
-                *to_replace = timing;
+                *to_replace = ActionTiming {
+                    name: action,
+                    start: started,
+                    end: now,
+                };
             } else {
                 self.longest_runtimes
-                    .push(timing)
+                    .push(ActionTiming {
+                        name: action,
+                        start: started,
+                        end: now,
+                    })
                     .expect("just checked it is not full");
             };
 
@@ -183,22 +183,26 @@ static ACTION_STATISTICS: spin::Mutex<ActionStatistics> =
 
 #[doc(hidden)]
 #[cfg(feature = "profiler")]
-pub(crate) fn update_running_action(
-    action: &(dyn Action + 'static),
-    cx: &mut crate::App,
-) -> &'static str {
+pub(crate) fn update_running_action(action: &(dyn Action + 'static), cx: &mut crate::App) {
     let now = Instant::now();
     let action = action.type_id();
     let action = cx.actions.try_resolve_action(&action).unwrap_or("un-named");
     ACTION_STATISTICS.lock().update_running_action(action, now);
-    action
 }
+
+#[doc(hidden)]
+#[cfg(not(feature = "profiler"))]
+pub(crate) fn update_running_action(_: &(dyn Action + 'static), _: &mut crate::App) {}
 
 #[doc(hidden)]
 #[cfg(feature = "profiler")]
 pub(crate) fn save_action_timing() {
     ACTION_STATISTICS.lock().save_action_timing();
 }
+
+#[doc(hidden)]
+#[cfg(not(feature = "profiler"))]
+pub(crate) fn save_action_timing() {}
 
 #[doc(hidden)]
 #[cfg(feature = "profiler")]

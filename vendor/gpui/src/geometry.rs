@@ -743,10 +743,7 @@ impl Bounds<Pixels> {
             .or_else(|| cx.primary_display());
 
         display
-            .map(|display| {
-                let visible_bounds = display.visible_bounds();
-                Bounds::centered_at(visible_bounds.center(), size.min(&visible_bounds.size))
-            })
+            .map(|display| Bounds::centered_at(display.bounds().center(), size))
             .unwrap_or_else(|| Bounds {
                 origin: point(px(0.), px(0.)),
                 size,
@@ -2242,21 +2239,12 @@ impl Anchor {
         }
     }
 
-    /// Returns whether the anchor is center-positioned.
+    /// Returns true if at the center.
     #[inline]
     pub fn is_center(&self) -> bool {
         matches!(
             self,
             Self::TopCenter | Self::BottomCenter | Self::LeftCenter | Self::RightCenter
-        )
-    }
-
-    /// Returns whether the anchor is bottom-positioned.
-    #[inline]
-    pub fn is_bottom(&self) -> bool {
-        matches!(
-            self,
-            Self::BottomCenter | Self::BottomLeft | Self::BottomRight
         )
     }
 }
