@@ -25,32 +25,42 @@ struct AppView {
 }
 
 impl AppView {
-    fn poll_project(&mut self) {
+    /// Apply a pending project change; returns whether the document changed.
+    fn poll_project(&mut self) -> bool {
         let change = match self.watcher.poll() {
             Ok(change) => change,
             Err(error) => {
                 eprintln!("project watcher error: {error}");
-                return;
+                return false;
             }
         };
         let Some(change) = change else {
-            return;
+            return false;
         };
         let source = match ProjectSnapshot::load(self.watcher.paths()) {
             Ok(snapshot) => snapshot.into_document(),
             Err(error) => {
                 eprintln!("could not read changed project: {error}");
-                return;
+                return false;
             }
         };
         match self.session.preview_source(self.session.revision(), source) {
-            Ok(preview) if preview.applied => eprintln!(
-                "hot reloaded revision {} from {:?}",
-                preview.document.revision,
-                change.files()
-            ),
-            Ok(preview) => eprintln!("hot reload rejected: {:?}", preview.diagnostics),
-            Err(error) => eprintln!("hot reload conflict: {}", error.message),
+            Ok(preview) if preview.applied => {
+                eprintln!(
+                    "hot reloaded revision {} from {:?}",
+                    preview.document.revision,
+                    change.files()
+                );
+                true
+            }
+            Ok(preview) => {
+                eprintln!("hot reload rejected: {:?}", preview.diagnostics);
+                false
+            }
+            Err(error) => {
+                eprintln!("hot reload conflict: {}", error.message);
+                false
+            }
         }
     }
 }
@@ -287,8 +297,9 @@ fn main() {
                                 .await;
                             if weak_view
                                 .update(cx, |view, cx| {
-                                    view.poll_project();
-                                    cx.notify();
+                                    if view.poll_project() {
+                                        cx.notify();
+                                    }
                                 })
                                 .is_err()
                             {
