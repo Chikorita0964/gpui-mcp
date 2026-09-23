@@ -42,8 +42,27 @@ struct Args {
     artifact_dir: Option<PathBuf>,
 }
 
+/// Make window captures use physical pixels on scaled displays.
+///
+/// xcap sizes a window capture from the target's DPI scale whenever the
+/// capturing process is DPI-unaware, which overshoots the texture Windows
+/// Graphics Capture delivers and times the capture out.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn declare_dpi_awareness() {
+    use windows_sys::Win32::UI::HiDpi::{
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
+    };
+    // SAFETY: called once before any window or capture API; failure leaves the default.
+    unsafe {
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(windows)]
+    declare_dpi_awareness();
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),

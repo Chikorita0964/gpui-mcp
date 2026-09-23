@@ -56,6 +56,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 xcap = { version = "0.9.8", features = ["wgc"] }
 widestring = "1.2.1"
+windows-sys = { version = "0.61.2", features = ["Win32_UI_HiDpi"] }
 
 # The vendored gpui-pre carries the minimal visibility fixes recorded in
 # vendor/PATCHES.md; every other crate resolves from crates.io.
