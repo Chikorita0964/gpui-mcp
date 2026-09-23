@@ -357,7 +357,7 @@ impl BridgeHandle {
             window,
             cx,
             command_rx,
-            state.clone(),
+            automation.clone(),
             document_host.clone(),
             resource_host.clone(),
             command_host.clone(),
@@ -540,7 +540,7 @@ fn spawn_ui_pump(
     window: &Window,
     cx: &App,
     receiver: Receiver<UiCommand>,
-    state: Arc<SharedState>,
+    automation: Automation,
     document_host: Rc<DocumentHost>,
     resource_host: Rc<ResourceHost>,
     command_host: Rc<CommandHost>,
@@ -552,7 +552,7 @@ fn spawn_ui_pump(
                     .update(|window, cx| {
                         handle_ui_operation(
                             command.operation,
-                            &state,
+                            &automation,
                             &document_host,
                             &resource_host,
                             &command_host,
@@ -573,49 +573,63 @@ fn spawn_ui_pump(
         .detach();
 }
 
+/// Request a frame and publish the accessibility tree it completes with.
+///
+/// Observation is pull-based: a tree exists only for a completed frame, so the
+/// bridge arms [`Automation::observe_on_next_frame`] before every refresh.
+fn refresh_and_observe(automation: &Automation, window: &mut Window) {
+    automation.observe_on_next_frame(window);
+    window.refresh();
+}
+
 #[allow(clippy::too_many_lines)]
 fn handle_ui_operation(
     operation: Operation,
-    state: &SharedState,
+    automation: &Automation,
     document_host: &DocumentHost,
     resource_host: &ResourceHost,
     command_host: &CommandHost,
     window: &mut Window,
     cx: &mut App,
 ) -> Result<BridgeResult, BridgeError> {
+    let state = &automation.state;
     match operation {
         Operation::PointerInput { command } => {
             input::dispatch_pointer(&command, window, cx)?;
             // Each primitive pointer event completes through the same painted-frame contract as
             // keyboard input. Compound gestures issue one operation per event, so callers can
             // deterministically settle a frame between drag moves without sleeping.
-            window.refresh();
+            refresh_and_observe(automation, window);
             Ok(BridgeResult::Ack)
         }
         Operation::Input { command } => {
             input::dispatch_keyboard(command, window, cx)?;
-            window.refresh();
+            refresh_and_observe(automation, window);
             Ok(BridgeResult::Ack)
         }
         Operation::Focus { node_id } => {
-            if !window.focus_observed_element(&node_id, cx) {
-                return Err(BridgeError::new(
-                    ErrorCode::NotFound,
-                    "semantic node is not focusable in the current frame",
-                ));
-            }
-            Ok(BridgeResult::Ack)
+            // gpui-pre 0.3.6 exposes no way to map a semantic node id to a
+            // `FocusHandle` from outside the crate: `A11y::focus_ids`
+            // (window/a11y.rs:149) and `FocusHandle::for_id` (window.rs:558)
+            // are `pub(crate)`, and the only native `NodeId`-to-focus path is
+            // `Window::handle_a11y_action` (window.rs:6805), also `pub(crate)`.
+            Err(BridgeError::new(
+                ErrorCode::Unsupported,
+                format!(
+                    "focusing semantic node {node_id:?} needs a FocusHandle the bridge cannot reach (Batch C: window/a11y.rs:149, window.rs:558, window.rs:6805)"
+                ),
+            ))
         }
         Operation::Refresh => {
             let completed = state.frame_stats();
-            window.refresh();
+            refresh_and_observe(automation, window);
             Ok(BridgeResult::FrameStats(completed))
         }
         Operation::GetPointerLocation => Ok(BridgeResult::PointerLocation(
             input::pointer_location(window),
         )),
         Operation::ClearHighlights => {
-            window.refresh();
+            refresh_and_observe(automation, window);
             Ok(BridgeResult::Ack)
         }
         Operation::GetLiveDocument => {
@@ -642,7 +656,7 @@ fn handle_ui_operation(
             };
             let preview = validate_live_document_preview(preview)?;
             if preview.applied {
-                window.refresh();
+                refresh_and_observe(automation, window);
             }
             Ok(BridgeResult::LiveDocumentPreview(preview))
         }
@@ -690,7 +704,7 @@ fn handle_ui_operation(
                 return Err(invalid_host_result("command"));
             }
             let result = validate_application_command_result(result)?;
-            window.refresh();
+            refresh_and_observe(automation, window);
             Ok(BridgeResult::ApplicationCommand(result))
         }
         _ => Err(BridgeError::new(
