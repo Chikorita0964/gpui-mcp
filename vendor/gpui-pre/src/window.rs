@@ -6833,6 +6833,12 @@ impl Window {
         self.a11y.node_bounds.get(&node_id).copied()
     }
 
+    /// gpui-mcp patch (C13): the leaf element id of an accessibility node, in
+    /// every build type. The debug dump carries it only with `debug_assertions`.
+    pub fn a11y_element_id(&self, node_id: accesskit::NodeId) -> Option<ElementId> {
+        self.a11y.element_ids.get(&node_id).cloned()
+    }
+
     /// gpui-mcp patch (C12): pointer interactions an accessibility node handles.
     pub fn a11y_pointer_interactions(
         &self,

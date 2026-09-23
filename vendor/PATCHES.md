@@ -1,7 +1,7 @@
 # GPUI-pre patch inventory
 
 `vendor/gpui-pre` is `gpui-pre` 0.3.6 from crates.io: the crate GPUI Kit
-re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Nine
+re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Ten
 focused patches open APIs the bridge needs but cannot reach through the stock
 surface. Each patch site is marked with a `gpui-mcp patch (C0x):` comment.
 
@@ -309,11 +309,27 @@ window
     .insert(node_id, self.element.a11y_pointer_interactions());
 ```
 
+## C13 - Element ids in every build
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/window/a11y.rs`, `element.rs`, `window.rs` |
+| Item | An `A11y::element_ids` map cleared in `begin_frame`; the node's leaf `ElementId` inserted beside `pointer_interactions` where the node is pushed; `Window::a11y_element_id` beside `a11y_pointer_interactions` |
+| Opened | `observer.rs` names nodes by their element id in release builds too (`increment`, `lock-toggle`), instead of an AccessKit number (`12369605594182645555`). |
+| Why | Stock GPUI records the element id only as `cfg(debug_assertions)` provenance for the debug dump (`NodeDebugInfo::element_id`), so a release app had no stable names to find elements by. The id is already in `GlobalElementId`; this keeps the leaf the node was built from. |
+
+```rust
+// element.rs, after the C12 insert
+if let Some(leaf) = global_id.0.last() {
+    window.a11y.element_ids.insert(node_id, leaf.clone());
+}
+```
+
 ## Fields read without a patch
 
 C03 and C04 read `A11y::node_bounds` and `A11y::focus_ids` from `window.rs`,
 which is in the same crate, so those `pub(crate)` fields stay as they are.
-`window/a11y.rs` itself is patched only by C12.
+`window/a11y.rs` itself is patched only by C12 and C13.
 
 ## Verification in this fork
 

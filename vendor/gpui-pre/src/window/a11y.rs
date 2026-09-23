@@ -160,6 +160,8 @@ pub(crate) struct A11y {
     pub(crate) focus_ids: FxHashMap<NodeId, FocusId>,
     pub(crate) node_bounds: FxHashMap<NodeId, Bounds<Pixels>>,
     pub(crate) pointer_interactions: FxHashMap<NodeId, A11yPointerInteractions>,
+    // gpui-mcp patch (C13): each node's leaf element id, in every build type.
+    pub(crate) element_ids: FxHashMap<NodeId, ElementId>,
     pub(crate) action_listeners: FxHashMap<NodeId, Vec<(Action, A11yActionListener)>>,
     /// The window's title, used to label the root node so assistive
     /// technology can tell windows apart.
@@ -189,6 +191,7 @@ impl A11y {
             focus_ids: FxHashMap::default(),
             node_bounds: FxHashMap::default(),
             pointer_interactions: FxHashMap::default(),
+            element_ids: FxHashMap::default(),
             action_listeners: FxHashMap::default(),
             window_title,
             last_focus_without_node: None,
@@ -284,6 +287,7 @@ impl A11y {
     pub(crate) fn begin_frame(&mut self) {
         self.focus_ids.clear();
         self.pointer_interactions.clear();
+        self.element_ids.clear();
         self.node_bounds.clear();
         self.action_listeners.clear();
         self.nodes.begin_frame(self.window_title.as_ref());

@@ -389,6 +389,9 @@ impl<E: Element> Drawable<E> {
                                 .a11y
                                 .pointer_interactions
                                 .insert(node_id, self.element.a11y_pointer_interactions());
+                            if let Some(leaf) = global_id.0.last() {
+                                window.a11y.element_ids.insert(node_id, leaf.clone());
+                            }
                             pushed_a11y_node = window.a11y.nodes.push(node_id, node);
                             #[cfg(debug_assertions)]
                             if pushed_a11y_node {
