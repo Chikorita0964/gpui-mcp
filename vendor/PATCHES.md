@@ -1,16 +1,17 @@
 # GPUI-pre patch inventory
 
 `vendor/gpui-pre` is `gpui-pre` 0.3.6 from crates.io: the crate GPUI Kit
-re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Six
+re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Seven
 focused patches open APIs the bridge needs but cannot reach through the stock
 surface. Each patch site is marked with a `gpui-mcp patch (C0x):` comment.
 
 The set falls into two classes:
 
 - **Gating and visibility**: C01 (vendored crate and workspace patch entry),
-  C02 (accessibility activation), C03 (`Window::a11y_node_bounds`), and C04's
-  `Window::a11y_focus_handle`. These open an existing implementation and add no
-  behavior beyond the gate they open.
+  C02 (accessibility activation), C03 (`Window::a11y_node_bounds`), C04's
+  `Window::a11y_focus_handle`, and C08 (`aria_hidden`/`aria_disabled` forwarded
+  to AccessKit's existing flags). These open an existing implementation and add
+  no behavior beyond the gate they open.
 - **Ported fork-patch behavior**: C04's document-range probe in
   `PlatformInputHandler::replace_all_text` (called from
   `Window::replace_input_text`), C05's pointer-tracking field with move detection
@@ -211,6 +212,51 @@ fn fallback_with_requested_traits(fallback: &Font, requested: &Font) -> Font {
 `vendor/gpui-pre/src/text_system.rs` also carries the helper's unit test
 (`fallback_replaces_only_the_unavailable_family`).
 
+## C08 - Hidden and disabled state
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/elements/div.rs` and `vendor/gpui-pre/src/window/a11y/debug.rs` |
+| Item | Two fields at the end of `AriaProperties`; `StatefulInteractiveElement::aria_hidden` and `aria_disabled` after `aria_toggled`; two `set_*` calls in `Interactivity::write_a11y_info` after `column_count`; two keys in `node_to_json` after `orientation` |
+| Opened | `observer.rs` publishes `NodeState::visible` and `enabled` from the tree, and inherits hidden into descendants. The HTML runtime and the demo's locked control set them. |
+| Why | AccessKit's `Node::set_hidden` / `set_disabled` exist, but the stock `aria_*` builders stop at `aria_column_count`, so no element can set either flag, and the dump emits neither. Every node therefore read `visible: true, enabled: true`; `gpui-mcp-server/tests/disabled_state.rs` proves the gap. |
+
+```rust
+// AriaProperties, after `column_count`
+pub(crate) hidden: bool,
+pub(crate) disabled: bool,
+
+// StatefulInteractiveElement, after `aria_toggled`
+fn aria_hidden(mut self, hidden: bool) -> Self {
+    self.interactivity().aria.hidden = hidden;
+    self
+}
+fn aria_disabled(mut self, disabled: bool) -> Self {
+    self.interactivity().aria.disabled = disabled;
+    self
+}
+
+// Interactivity::write_a11y_info, after `column_count`
+if self.aria.hidden {
+    node.set_hidden();
+}
+if self.aria.disabled {
+    node.set_disabled();
+}
+
+// window/a11y/debug.rs node_to_json, after `orientation`
+if node.is_hidden() {
+    aria.insert("hidden".into(), json!(true));
+}
+if node.is_disabled() {
+    aria.insert("disabled".into(), json!(true));
+}
+```
+
+Not carried from the pre-rewire fork: `aria_read_only` (no protocol field reads
+it), and `frame_redacted` / `frame_metadata` / `frame_action`. Redaction needs
+no patch: `observer.rs` treats AccessKit's `Role::PasswordInput` as redacted.
+
 ## Files with no patch
 
 `vendor/gpui-pre/src/window/a11y.rs` is unchanged: C03 and C04 read its
@@ -222,5 +268,6 @@ fn fallback_with_requested_traits(fallback: &Font, requested: &Font) -> Font {
 |---|---|
 | `cargo check --workspace` | exits 0 |
 | `cargo tree -p gpui-pre` | resolves to `vendor/gpui-pre` at v0.3.6; no other crate resolves from `vendor/` |
-| `cargo test -p gpui-mcp --lib` | 21 tests pass; covers C02-C05 behavior through the bridge (`observer.rs` and `input.rs` tests) |
+| `cargo test -p gpui-mcp --lib` | 23 tests pass; covers C02-C05 and C08 behavior through the bridge (`observer.rs` and `input.rs` tests) |
+| `cargo test -p gpui-mcp-server --test disabled_state` | passes; C08 over the real MCP stdio surface against the demo |
 | `cargo check -p gpui-pre --tests` | fails on pristine `src/svg_renderer.rs` `include_bytes!` paths to Zed workspace assets (`assets/fonts/...`) that this fork does not carry; C06's unit test type-checks but cannot run in this tree |

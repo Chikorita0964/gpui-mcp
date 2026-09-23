@@ -1402,6 +1402,19 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self
     }
 
+    /// gpui-mcp patch (C08): exclude this element and its descendants from
+    /// accessibility tools.
+    fn aria_hidden(mut self, hidden: bool) -> Self {
+        self.interactivity().aria.hidden = hidden;
+        self
+    }
+
+    /// gpui-mcp patch (C08): report that this element does not accept input.
+    fn aria_disabled(mut self, disabled: bool) -> Self {
+        self.interactivity().aria.disabled = disabled;
+        self
+    }
+
     /// Set the numeric value for this element.
     fn aria_numeric_value(mut self, value: f64) -> Self {
         self.interactivity().aria.numeric_value = Some(value);
@@ -2119,6 +2132,9 @@ pub(crate) struct AriaProperties {
     pub(crate) column_index: Option<usize>,
     pub(crate) row_count: Option<usize>,
     pub(crate) column_count: Option<usize>,
+    // gpui-mcp patch (C08): AccessKit hidden and disabled flags.
+    pub(crate) hidden: bool,
+    pub(crate) disabled: bool,
 }
 
 /// The interactivity struct. Powers all of the general-purpose
@@ -3584,6 +3600,12 @@ impl Interactivity {
         }
         if let Some(count) = self.aria.column_count {
             node.set_column_count(count);
+        }
+        if self.aria.hidden {
+            node.set_hidden();
+        }
+        if self.aria.disabled {
+            node.set_disabled();
         }
         if !self.click_listeners.is_empty() {
             node.add_action(accesskit::Action::Click);
