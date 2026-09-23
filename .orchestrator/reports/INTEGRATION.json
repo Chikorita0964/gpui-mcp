@@ -1,13 +1,12 @@
 {
   "schema_version": 1,
-  "execution_id": "441fdb42-fac7-47ea-9c9a-10f3df795547",
+  "execution_id": "4f3bc3c9-1d9f-455c-be24-4f4202659fa9",
   "status": "completed",
   "input_commits": {
-    "T05-WINDOW-PATCH": "c03bc6084e9a897de2b7a76512d7d9e6cc811f4b",
-    "T06-TEXT-FALLBACK-PATCH": "023e69e7cd53c96183f2bf73d2eea2691e9c9a65",
-    "T07-PATCHES-DOCS": "30638206bdc56cadad2658bdc62a131e8cf95371"
+    "T10-REPLACE-TEXT-VENDOR-PATCH": "e20b45b207d89fc71d9d21f885eef144f632b601",
+    "T11-HTML-RUNTIME-VERIFY": "81046be1ca4bc62a55472c7f00b10e1fa632ca15"
   },
-  "integration_commit": "4fcf3bba4d5becc64e10ee0c9cec3abcb313981a",
+  "integration_commit": "8f8d68d1a096d7edcbcba2e5e2b5239ec8cd10ce",
   "tests": [
     {
       "command": "cargo check --workspace",
@@ -18,49 +17,53 @@
       "result": "pass"
     },
     {
-      "command": "cargo tree -p gpui-pre",
+      "command": "cargo test -p gpui-mcp-html --test runtime",
       "result": "pass"
     },
     {
-      "command": "vendor/PATCHES.md coverage check: C01-C06 sections with file, item, what it opened, and why native API was unreachable",
+      "command": "cargo check -p gpui-mcp-html --features visual-parity",
+      "result": "pass"
+    },
+    {
+      "command": "vendor/PATCHES.md accuracy check: replace_all_text vendor patch and C01-C06 coverage documented",
       "result": "pass"
     }
   ],
   "mandatory_acceptance": {
     "C01-VENDOR-GPUI-PRE": {
       "status": "satisfied",
-      "evidence": "Cargo.toml declares [patch.crates-io] gpui-pre at vendor/gpui-pre; cargo tree -p gpui-pre resolves gpui-pre v0.3.6 to vendor/gpui-pre; cargo check --workspace exits 0."
+      "evidence": "cargo tree -p gpui-pre resolves gpui-pre v0.3.6 to vendor/gpui-pre; cargo check --workspace exits 0 with everything else from crates.io."
     },
     "C02-A11Y-ACTIVATION-GATE": {
       "status": "satisfied",
-      "evidence": "vendor/gpui-pre/src/window.rs initializes a11y_active_flag to !accessibility_force_disabled; observer test observes_roles_labels_and_parentage passes with Some on a fresh window and no screen reader."
+      "evidence": "debug_a11y_tree_json() returns Some on a fresh window; all 7 html runtime tests assert against the published completed-frame tree and pass."
     },
     "C03-NODE-BOUNDS-EXPOSURE": {
       "status": "satisfied",
-      "evidence": "Window::a11y_node_bounds returns Bounds<Pixels> from A11y::node_bounds in logical pixels; observer publishes them as protocol Rect and the passing tests assert bounds.is_some()."
+      "evidence": "Window::a11y_node_bounds exposes Bounds<Pixels> from A11y::node_bounds in logical pixels; observer publishes them and runtime assertions pass."
     },
     "C04-INPUT-HANDLER-EXPOSURE": {
       "status": "satisfied",
-      "evidence": "Window::insert_input_text, Window::replace_input_text, and Window::a11y_focus_handle expose the live handler and focus resolution; input TypeText/ReplaceText and service Focus call them and cargo check -p gpui-mcp --tests exits 0."
+      "evidence": "PlatformInputHandler::replace_all_text plus Window::replace_input_text carry replacement without re-entrancy; replaced_text_reaches_the_document passes un-ignored and the suite reports 7 passed, 0 failed, 0 ignored."
     },
     "C05-POINTER-POSITION-PRESERVATION": {
       "status": "satisfied",
-      "evidence": "bounds_changed adopts the platform mouse position only when it differs from the last adopted position; test synthetic_hover_survives_bounds_changed passes across direct, resize, and DPI paths."
+      "evidence": "bounds_changed preserves synthetic hover; input test synthetic_hover_survives_bounds_changed passes and all 21 gpui-mcp lib tests pass."
     },
     "C06-TEXT-FALLBACK-STACK": {
       "status": "satisfied",
-      "evidence": "vendor/gpui-pre/src/text_system.rs:374-378 rebuilds fallback candidates with fallback_with_requested_traits preserving weight, style, and features; unit test asserts fallback preserves requested traits and all 21 gpui-mcp lib tests pass."
+      "evidence": "resolve_font rebuilds fallback candidates via fallback_with_requested_traits preserving weight, style, and features; workspace check exits 0."
     },
     "C07-PATCHES-DOCUMENTATION": {
       "status": "satisfied",
-      "evidence": "vendor/PATCHES.md records every C01-C06 change with file, item, what it opened, and why the native API was unreachable, including exact hunks and a re-apply recipe."
+      "evidence": "vendor/PATCHES.md records every C01-C06 change including platform.rs replace_all_text with file, item, what it opened, and why the native API was unreachable."
     }
   },
   "conflicts_resolved": [],
   "unresolved_conflicts": [],
   "risks": [
-    "Text insertion and replacement is verified through the compile-checked call path only; no fixture owns an active input handler for runtime exercise.",
-    "gpui-pre own test target cannot compile in-repo because vendored svg_renderer and example fonts use include_bytes paths absent from the archive."
+    "Only Click and Focus are advertised on accessibility nodes, so hover and scroll tools still cannot answer; non-editable text stays unpublished.",
+    "gpui-pre own test target cannot compile in-repo because vendored svg_renderer and example fonts use absent include_bytes asset paths."
   ],
   "blockers": []
 }
