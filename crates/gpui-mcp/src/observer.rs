@@ -961,6 +961,13 @@ mod tests {
                         .w(px(100.0))
                         .h(px(24.0)),
                 )
+                .child(
+                    div()
+                        .id("roleless-click")
+                        .on_click(|_, _, _| {})
+                        .w(px(80.0))
+                        .h(px(24.0)),
+                )
         }
     }
 
@@ -995,6 +1002,13 @@ mod tests {
         let pin_text = tree.nodes["pin"].text.clone().unwrap_or_default();
         assert!(pin_text.redacted && pin_text.text.is_empty());
         assert!(tree.nodes["pin"].value.is_none());
+        let roleless = tree.nodes.get("roleless-click");
+        assert_eq!(
+            roleless.map(|node| node.role),
+            Some(McpRole::Button),
+            "a clickable div without a role is a button (C11)"
+        );
+        assert!(roleless.is_some_and(|node| node.actions.contains(&NodeAction::Click)));
     }
 
     struct SemanticFixture {

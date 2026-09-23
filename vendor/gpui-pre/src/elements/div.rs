@@ -1915,6 +1915,10 @@ impl Element for Div {
         self.interactivity
             .override_role
             .filter(|role| *role != accesskit::Role::GenericContainer)
+            // gpui-mcp patch (C11): a clickable div already advertises Click; give it a role so it is emitted.
+            .or_else(|| {
+                (!self.interactivity.click_listeners.is_empty()).then_some(accesskit::Role::Button)
+            })
     }
 
     fn write_a11y_info(&self, node: &mut accesskit::Node) {

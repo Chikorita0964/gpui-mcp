@@ -1,7 +1,7 @@
 # GPUI-pre patch inventory
 
 `vendor/gpui-pre` is `gpui-pre` 0.3.6 from crates.io: the crate GPUI Kit
-re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Seven
+re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Eight
 focused patches open APIs the bridge needs but cannot reach through the stock
 surface. Each patch site is marked with a `gpui-mcp patch (C0x):` comment.
 
@@ -17,7 +17,8 @@ The set falls into two classes:
   `Window::replace_input_text`), C05's pointer-tracking field with move detection
   in `bounds_changed`, and C06's trait-fill in `resolve_font`. These carry
   behavior the fork's own patch applied before the rewire — pointer ownership
-  and synthetic-input preservation from P-C, and fallback traits from P-D — as
+  and synthetic-input preservation from P-C, fallback traits from P-D, and
+  C11's clickable-div role from P-A — as
   recorded in `GPUI_MCP_REWIRE.md` and the fork's original
   `vendor/gpui/PATCHES.md`.
 
@@ -256,6 +257,25 @@ if node.is_disabled() {
 Not carried from the pre-rewire fork: `aria_read_only` (no protocol field reads
 it), and `frame_redacted` / `frame_metadata` / `frame_action`. Redaction needs
 no patch: `observer.rs` treats AccessKit's `Role::PasswordInput` as redacted.
+`frame_action(SetText)` needs no patch either: the HTML runtime registers an
+`on_a11y_action(SetValue)` listener on each editable text input, as
+`gpui-component`'s `Input` does.
+
+## C11 - Clickable divs report a role
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/elements/div.rs` |
+| Item | `Div::a11y_role`, one `.or_else` after the `GenericContainer` filter |
+| Opened | A `div` with `on_click` and no `.role(...)` reports `Role::Button`, so it enters the tree and its existing `Click` action is reachable. An explicit `.role(...)` still wins. |
+| Why | Stock `write_a11y_info` already adds `Action::Click` for any click listener, but `element.rs` only emits a node when `a11y_role()` is `Some`, and stock `a11y_role` returns only `override_role`. Every role-less clickable div was invisible, as the demo's `increment`/`reset` were. The pre-rewire fork patch carried this same rule. |
+
+```rust
+// Div::a11y_role, after `.filter(|role| *role != accesskit::Role::GenericContainer)`
+.or_else(|| {
+    (!self.interactivity.click_listeners.is_empty()).then_some(accesskit::Role::Button)
+})
+```
 
 ## Files with no patch
 
