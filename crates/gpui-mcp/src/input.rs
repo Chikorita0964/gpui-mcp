@@ -1,6 +1,7 @@
 use gpui::{
-    App, Keystroke, Modifiers, MouseButton as GpuiMouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point, px,
+    App, FocusHandle, Keystroke, Modifiers, MouseButton as GpuiMouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, Window,
+    point, px,
 };
 use gpui_mcp_protocol::{
     BridgeError, ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
@@ -53,6 +54,11 @@ pub(crate) fn validate_pointer(command: &PointerCommand) -> Result<(), BridgeErr
     }
 }
 
+/// Dispatch one synthetic pointer event through GPUI's native event pipeline.
+///
+/// Every command becomes the `PlatformInput` variant it already is and lands on
+/// [`Window::dispatch_event`], so GPUI's own hit testing, hover, drag, click,
+/// and scroll handling run exactly as they do for platform events.
 pub(crate) fn dispatch_pointer(
     command: &PointerCommand,
     window: &mut Window,
@@ -120,6 +126,16 @@ pub(crate) fn pointer_location(window: &Window) -> Point {
     }
 }
 
+/// Dispatch one synthetic keyboard command through GPUI's native event pipeline.
+///
+/// Keystrokes route through [`Window::dispatch_keystroke`], which builds
+/// `PlatformInput::KeyDown` and hands it to [`Window::dispatch_event`] before
+/// feeding the character to the active input handler, so key bindings and text
+/// entry behave exactly as they do for platform keystrokes.
+///
+/// Text insertion and replacement route through [`Window::insert_input_text`]
+/// and [`Window::replace_input_text`], which the C04 patch set opens over the
+/// live `PlatformInputHandler` and its `replace_all_text`.
 pub(crate) fn dispatch_keyboard(
     command: InputCommand,
     window: &mut Window,
@@ -139,23 +155,41 @@ pub(crate) fn dispatch_keyboard(
                 window.dispatch_keystroke(parsed, cx);
             }
         }
-        InputCommand::TypeText { text } => require_input_handler(
-            window.insert_input_text(&text, cx),
-            "focused element has no active text input handler",
-        )?,
-        InputCommand::ReplaceText { text } => require_input_handler(
-            window.replace_input_text(&text, cx),
-            "focused input cannot expose its complete document range",
-        )?,
+        InputCommand::TypeText { text } => {
+            if !window.insert_input_text(&text, cx) {
+                return Err(unsupported(
+                    "focused element has no active text input handler",
+                ));
+            }
+        }
+        InputCommand::ReplaceText { text } => {
+            if !window.replace_input_text(&text, cx) {
+                return Err(unsupported(
+                    "focused input cannot expose its complete document range",
+                ));
+            }
+        }
     }
     Ok(())
 }
 
-fn require_input_handler(available: bool, message: &'static str) -> Result<(), BridgeError> {
-    if !available {
-        return Err(BridgeError::new(ErrorCode::Unsupported, message));
-    }
-    Ok(())
+/// Move keyboard focus to the element tracked by `handle`.
+///
+/// This is the native replacement for the fork's `Window::focus_observed_element`
+/// patch: GPUI's [`Window::focus`] takes a `FocusHandle`, so the caller names the
+/// target through its handle and no synthetic key event is involved.
+///
+/// Mapping a semantic node id to a `FocusHandle` is not possible with the
+/// stock 0.3.6 API: `A11y::focus_ids` (`window/a11y.rs:149`) and
+/// `FocusHandle::for_id` (`window.rs:558`) are `pub(crate)`. The C04 visibility
+/// patch exposes them through [`Window::a11y_focus_handle`], which the bridge's
+/// `Focus` operation resolves before calling this function.
+pub(crate) fn dispatch_focus(handle: &FocusHandle, window: &mut Window, cx: &mut App) {
+    window.focus(handle, cx);
+}
+
+fn unsupported(message: &'static str) -> BridgeError {
+    BridgeError::new(ErrorCode::Unsupported, message)
 }
 
 fn native_point(position: Point) -> gpui::Point<gpui::Pixels> {
@@ -214,13 +248,16 @@ mod tests {
     use std::rc::Rc;
 
     use gpui::{
-        AppContext as _, Context, InteractiveElement as _, IntoElement,
-        MouseButton as GpuiMouseButton, ParentElement as _, Render,
-        StatefulInteractiveElement as _, Styled as _, TestAppContext, Window, div, point, px, size,
+        AppContext as _, Context, FocusHandle, InteractiveElement as _, IntoElement,
+        MouseButton as GpuiMouseButton, ParentElement as _, Render, ScrollDelta,
+        StatefulInteractiveElement as _, Styled as _, TestAppContext, VisualTestContext, Window,
+        div, point, px, size,
     };
-    use gpui_mcp_protocol::{InputCommand, MAX_KEY_SEQUENCE, MouseButton, Point, PointerCommand};
+    use gpui_mcp_protocol::{
+        InputCommand, MAX_KEY_SEQUENCE, MouseButton, Point, PointerCommand, PointerScrollDelta,
+    };
 
-    use super::{dispatch_pointer, validate};
+    use super::{dispatch_focus, dispatch_keyboard, dispatch_pointer, validate};
 
     #[test]
     fn key_sequences_are_bounded_and_fully_validated() {
@@ -383,5 +420,167 @@ mod tests {
         assert!(pressed.get());
         assert!(drag_started.get());
         assert!(dropped.get());
+    }
+
+    #[gpui::test]
+    fn synthetic_scroll_wheel_runs_gpui_scroll_handlers(cx: &mut TestAppContext) {
+        let scrolled = Rc::new(Cell::new(0.0_f32));
+        let scrolled_for_handler = scrolled.clone();
+        let visual = cx.add_empty_window();
+        visual.draw(
+            point(px(0.0), px(0.0)),
+            size(px(300.0), px(100.0)),
+            move |_, _| {
+                div()
+                    .id("native-scroll-target")
+                    .w(px(100.0))
+                    .h(px(100.0))
+                    .on_scroll_wheel(move |event, _, _| {
+                        if let ScrollDelta::Pixels(delta) = event.delta {
+                            scrolled_for_handler.set(f32::from(delta.y));
+                        }
+                    })
+            },
+        );
+
+        visual.update(|window, cx| {
+            assert_eq!(
+                dispatch_pointer(
+                    &PointerCommand::ScrollWheel {
+                        point: Point { x: 50.0, y: 50.0 },
+                        delta: PointerScrollDelta::Pixels {
+                            delta_x: 0.0,
+                            delta_y: 120.0,
+                        },
+                    },
+                    window,
+                    cx,
+                ),
+                Ok(())
+            );
+        });
+
+        assert_eq!(scrolled.get(), 120.0);
+    }
+
+    #[gpui::test]
+    fn synthetic_keystroke_runs_focused_element_key_handlers(cx: &mut TestAppContext) {
+        struct KeyTarget {
+            focus: FocusHandle,
+            pressed: Rc<Cell<bool>>,
+        }
+
+        impl Render for KeyTarget {
+            fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+                let pressed = self.pressed.clone();
+                div()
+                    .id("native-key-target")
+                    .track_focus(&self.focus)
+                    .w(px(100.0))
+                    .h(px(100.0))
+                    .on_key_down(move |_, _, _| pressed.set(true))
+            }
+        }
+
+        let pressed = Rc::new(Cell::new(false));
+        let focus = cx.update(|cx| cx.focus_handle());
+        let window = cx.add_window({
+            let focus = focus.clone();
+            let pressed = pressed.clone();
+            move |_, _| KeyTarget { focus, pressed }
+        });
+        let mut visual = VisualTestContext::from_window(window.into(), cx);
+        visual.update(|window, cx| {
+            window.focus(&focus, cx);
+            assert_eq!(
+                dispatch_keyboard(
+                    InputCommand::Key {
+                        keystroke: "enter".to_owned(),
+                    },
+                    window,
+                    cx,
+                ),
+                Ok(())
+            );
+        });
+
+        assert!(pressed.get());
+    }
+
+    #[gpui::test]
+    fn dispatch_focus_moves_focus_without_a_key_event(cx: &mut TestAppContext) {
+        let focus = cx.update(|cx| cx.focus_handle());
+        let focus_for_draw = focus.clone();
+        let visual = cx.add_empty_window();
+        visual.draw(
+            point(px(0.0), px(0.0)),
+            size(px(300.0), px(100.0)),
+            move |_, _| {
+                div()
+                    .id("native-focus-target")
+                    .track_focus(&focus_for_draw)
+                    .w(px(100.0))
+                    .h(px(100.0))
+            },
+        );
+
+        visual.update(|window, cx| {
+            assert!(!focus.is_focused(window));
+            dispatch_focus(&focus, window, cx);
+            assert!(focus.is_focused(window));
+        });
+    }
+
+    #[gpui::test]
+    fn synthetic_hover_survives_bounds_changed(cx: &mut TestAppContext) {
+        let visual = cx.add_empty_window();
+        visual.draw(
+            point(px(0.0), px(0.0)),
+            size(px(300.0), px(100.0)),
+            |_, _| div().id("hover-target").w(px(100.0)).h(px(100.0)),
+        );
+
+        let synthetic = Point { x: 50.0, y: 50.0 };
+        visual.update(|window, cx| {
+            assert_eq!(
+                dispatch_pointer(
+                    &PointerCommand::MouseMove {
+                        point: synthetic,
+                        pressed_button: None,
+                    },
+                    window,
+                    cx,
+                ),
+                Ok(())
+            );
+        });
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y))
+        );
+
+        // A resize must not adopt the unchanged platform position and cancel
+        // the synthetic hover (C05).
+        visual.update(|window, cx| window.bounds_changed(cx));
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "the synthetic pointer position survives bounds_changed"
+        );
+
+        // The platform's resize callback and its DPI-change path both land in
+        // `bounds_changed`, so the hover must survive those paths too.
+        visual.simulate_resize(size(px(400.0), px(200.0)));
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "the synthetic pointer position survives a resize"
+        );
+        visual.simulate_scale_factor_change(2.0);
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "the synthetic pointer position survives a DPI change"
+        );
     }
 }

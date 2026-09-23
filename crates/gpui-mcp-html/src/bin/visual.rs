@@ -280,13 +280,28 @@ fn apply_fixture_action(
             )
         })?;
     if matches!(action, FixtureAction::Focus) {
-        if window.focus_observed_element(&node.id, cx) {
-            return Ok(());
-        }
-        return Err(gpui_mcp::BridgeError::new(
-            gpui_mcp::ErrorCode::NotFound,
-            "fixture semantic element is not focusable",
-        ));
+        // Mirrors the bridge's `Focus` operation: resolve the node's
+        // accessibility identity to the focus handle GPUI recorded for it.
+        let accesskit_id = node
+            .metadata
+            .get("accesskit_id")
+            .and_then(|id| id.parse::<u64>().ok())
+            .ok_or_else(|| {
+                gpui_mcp::BridgeError::new(
+                    gpui_mcp::ErrorCode::Unsupported,
+                    "fixture semantic element carries no accessibility identity to focus",
+                )
+            })?;
+        let Some(handle) = window.a11y_focus_handle(gpui::accesskit::NodeId(accesskit_id), cx)
+        else {
+            return Err(gpui_mcp::BridgeError::new(
+                gpui_mcp::ErrorCode::NotFound,
+                "fixture semantic element is not focusable in the current frame",
+            ));
+        };
+        window.focus(&handle, cx);
+        window.refresh();
+        return Ok(());
     }
     let bounds = node.bounds.ok_or_else(|| {
         gpui_mcp::BridgeError::new(
