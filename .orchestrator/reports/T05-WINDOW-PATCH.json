@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "execution_id": "daaaf0a0-f543-4747-bd98-aa143edc449d",
+  "execution_id": "441fdb42-fac7-47ea-9c9a-10f3df795547",
   "task_id": "T05-WINDOW-PATCH",
   "status": "completed",
   "summary": "Batch C C01-C05: vendored gpui-pre 0.3.6 with four visibility-only patches (a11y activation, node_bounds access, text-entry input handler plus node-id-to-FocusHandle resolution, synthetic pointer preservation) and rewired observer.rs, input.rs, and service.rs onto them. cargo check --workspace and the crate gate matrix exit 0, and all 21 gpui-mcp unit tests pass, including the two accessibility observation tests that were previously ignored.",
