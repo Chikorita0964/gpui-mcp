@@ -23,15 +23,17 @@ What the gpui-kit rewire covered per fork patch, and what it could not. Pairs wi
 
 This table is the Batch B snapshot, and its citations name stock 0.3.6 behavior.
 Batch C closed the activation (C02), bounds (C03), focus and text replacement
-(C04), pointer (C05), and fallback (C06) gaps through the patches in
-`vendor/PATCHES.md`.
+(C04), pointer (C05), fallback (C06), and hidden/disabled state (C08) gaps
+through the patches in `vendor/PATCHES.md`; redaction is read from
+`Role::PasswordInput` bridge-side.
 
 ## Carried bridge-side edits
 
 | Item | Where | Reason |
 |---|---|---|
-| Provenance metadata, redaction, and action hints (`frame_metadata`, `frame_redacted`, `frame_action`) | `crates/gpui-mcp-html/src/render.rs` | Dropped: the JSON carries none of them (P-A row), and actions now come from `on_action` (P-B row) |
-| Hidden and disabled semantics (`aria_hidden`, `aria_disabled`) | `crates/gpui-mcp-html/src/render.rs`, `examples/demo/src/main.rs:133` | Dropped: stock GPUI has no such setters (the `aria_*` list in `elements/div.rs`) |
+| Provenance metadata and action hints (`frame_metadata`, `frame_action`) | `crates/gpui-mcp-html/src/render.rs` | Dropped: the JSON carries neither, and actions now come from `on_action` (P-B row) |
+| Redaction (`frame_redacted`) | `crates/gpui-mcp/src/observer.rs` | Replaced: `Role::PasswordInput` publishes redacted, empty text with no value or text-entry action |
+| Hidden and disabled semantics (`aria_hidden`, `aria_disabled`) | `crates/gpui-mcp-html/src/render.rs`, `examples/demo/src/main.rs` | Restored through C08 |
 | HTML runtime test target | `crates/gpui-mcp-html/tests/runtime.rs` | Compiles; Batch C opened focus through `Window::a11y_focus_handle` and text replacement through `Window::replace_input_text`, so its hooks and assertions rewire onto those. Its remaining runtime assertions (advertised Hover, bounds-based dispatch, tree contents) depend on the Batch C activation and bounds wiring |
 | Visual parity bin focus path | `crates/gpui-mcp-html/src/bin/visual.rs` | The `visual-parity` required-features gate is unchanged; Batch C opened focus through `Window::a11y_focus_handle`, so the bin's focus path rewires onto it |
 | `dispatch_focus` unused outside tests | `crates/gpui-mcp/src/input.rs:184` | Resolved: `service.rs` resolves the node's handle through `Window::a11y_focus_handle` and calls `dispatch_focus`, so the warning is gone |
