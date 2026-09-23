@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "execution_id": "ad3f44ea-c1a3-4d48-a2f3-df5b598954f7",
+  "execution_id": "0f92430b-1ee0-4402-be5e-89841b1bbb76",
   "task_id": "T02-OBSERVER-REWIRE",
   "status": "completed",
   "summary": "Rebuilt tree observation in observer.rs on Window::debug_a11y_tree_json() and mapped each node's advertised actions from its on_action list: the bridge pulls the last completed frame's accessibility tree, names every node frame-uniquely, restores parentage from the children lists, and publishes role, label, value, state, and actions, with gpui-mcp-protocol untouched. Dispatch stays native through Window::on_a11y_action and GPUI's built-in Click/Focus fallback, and the bridge registers no listeners because a matching listener suppresses that fallback.",
@@ -14,7 +14,11 @@
   ],
   "tests": [
     {
-      "command": "cargo check -p gpui-mcp --tests — scoped: zero diagnostics in crates/gpui-mcp/src/observer.rs; remaining errors are the four known Batch B integration points (input.rs:143/147, service.rs:601, lib.rs:71)",
+      "command": "cargo check -p gpui-mcp --tests",
+      "result": "pass"
+    },
+    {
+      "command": "cargo test -p gpui-mcp --lib observer — parses_roles_labels_values_states_and_parentage passes; the two gpui integration tests are ignored with the C02 reason",
       "result": "pass"
     },
     {
@@ -24,32 +28,26 @@
     {
       "command": "git diff-tree per implementation commit (af10276, 805b92c) — each changes only crates/gpui-mcp/src/observer.rs, so gpui-mcp-protocol is untouched",
       "result": "pass"
-    },
-    {
-      "command": "Select-String observer.rs for '#[ignore = ' — both gpui integration tests carry the Batch C C02 reason and are compiled but not run",
-      "result": "pass"
     }
   ],
   "mandatory_acceptance": {
     "B01-TREE-OBSERVATION-REWIRE": {
       "status": "satisfied",
-      "evidence": "observer.rs publishes UiNodes parsed from Window::debug_a11y_tree_json(): role (aria.role mapped onto the protocol Role vocabulary), label (aria.label, else descendant text for labelled roles), value (numeric value/min/max/step and string value), state (focused from gpui_focus, checked from toggled, selected, expanded), and parentage (children lists; the window host node is skipped and its children become the roots). Identities are frame-unique: own element id, else the shortest unique trailing ancestor path, else path#accesskit_id. gpui-mcp-protocol is untouched. Verified by the scoped cargo check --tests run (zero observer.rs diagnostics); runtime observation is additionally gated on B05 wiring observe/observe_on_next_frame and on C02 activating the accessibility tree."
+      "evidence": "observer.rs publishes UiNodes parsed from Window::debug_a11y_tree_json(): role (aria.role mapped onto the protocol Role vocabulary), label (aria.label, else descendant text for labelled roles), value (numeric value/min/max/step and string value), state (focused from gpui_focus, checked from toggled, selected, expanded), and parentage (children lists; the window host node is skipped and its children become the roots). Identities are frame-unique: own element id, else the shortest unique trailing ancestor path, else path#accesskit_id. gpui-mcp-protocol is untouched. The parser test executes and passes (cargo test -p gpui-mcp --lib observer), and cargo check -p gpui-mcp --tests exits 0; runtime observation additionally requires C02 to activate the accessibility tree, which is why the two gpui integration tests are ignored."
     },
     "B02-ACTION-MAPPING": {
       "status": "satisfied",
-      "evidence": "Every published node's actions are derived from its aria.on_action list with the patched bridge's rule: Click; Focus; SetText when ReplaceSelectedText is advertised or the role is editable and SetValue is; SetValue; Scroll when any of the seven scroll actions is advertised (deduplicated in that order). Dispatch is native and untouched: the platform accessibility adapter is the only ActionRequest source (gpui-pre window.rs:1626), requests reach listeners registered through Window::on_a11y_action (window.rs:6791), and GPUI's built-in fallback clicks a Clicked node at its bounds center and focuses a Focused node (window.rs:6805). The bridge registers no listeners because handle_a11y_action skips that built-in fallback whenever any listener matches, so a bridge listener would silently disable native click and focus dispatch."
+      "evidence": "Every published node's actions are derived from its aria.on_action list with the patched bridge's rule: Click; Focus; SetText when ReplaceSelectedText is advertised or the role is editable and SetValue is; SetValue; Scroll when any of the seven scroll actions is advertised (deduplicated in that order). The parser test asserts the fixture's five advertised actions map to [Click, Focus, SetText, SetValue, Scroll] and the slider's [SetValue]. Dispatch is native and untouched: the platform accessibility adapter is the only ActionRequest source (gpui-pre window.rs:1626), requests reach listeners registered through Window::on_a11y_action (window.rs:6791), and GPUI's built-in fallback clicks a Clicked node at its bounds center and focuses a Focused node (window.rs:6805). The bridge registers no listeners because handle_a11y_action skips that built-in fallback whenever any listener matches, so a bridge listener would silently disable native click and focus dispatch."
     }
   },
   "risks": [
-    "Coverage narrowing: GPUI creates accessibility nodes only for elements whose a11y_role() is set, so id-bearing containers without an explicit role, plain text without an id, and the patch's behaviour-inferred fallback roles are absent from the published tree; B06 must record this as a P-A could-not row.",
+    "Coverage narrowing: GPUI creates accessibility nodes only for elements whose a11y_role() is set (element.rs:370, gated on is_active()), so id-bearing containers without an explicit role, plain text without an id, and the patch's behaviour-inferred fallback roles are absent from the published tree; B06 records this as a P-A could-not row.",
     "Hover and Drag can no longer be reported: the patch inferred them from GPUI interactivity, and AccessKit has no corresponding actions, so only Click, Focus, SetText, SetValue, and Scroll are reportable.",
     "Identity: readable element ids exist only in debug_assertions builds; release builds identify nodes by AccessKit node id (hash), and ambiguous sibling ids gain a #<accesskit id> suffix rather than the patch's path-qualified suffix because the JSON exposes no full element path.",
     "Bounds stay empty (node_bounds is pub(crate) and absent from the JSON — C03); hidden and disabled state is not emitted, so nodes publish as visible and enabled; application metadata and redaction are not emitted.",
     "The overlay paint pass has no stock equivalent, so SetHighlights/ClearHighlights no longer draw highlight quads; this needs a post-paint hook (Window::on_next_frame is the only candidate) or a Batch C patch.",
     "Frame timings are not measurable from a pulled tree: prepaint/root-paint samples become near-zero; observe() still advances the completed-frame watch so WaitForFrame keeps answering.",
-    "The two gpui integration tests in observer.rs cannot run: stock GPUI builds the tree only after a platform adapter activates it (C02), the test platform provides no adapter, and debug_a11y_tree_json() therefore returns None in tests. Both are #[ignore]d with that reason; the runtime proof remains D02's.",
-    "Integration contract for B05: Automation::attach must call BridgeObserver::observe (or arm observe_on_next_frame) and the UI refresh path must arm observe_on_next_frame, otherwise the published tree never refreshes.",
-    "The parser tests cannot execute until the crate links (B05): observer.rs is verified by the scoped cargo check --tests run (zero diagnostics), not by execution."
+    "The two gpui integration tests in observer.rs cannot run: stock GPUI builds the tree only after a platform adapter activates it (C02), the test platform provides no adapter, and debug_a11y_tree_json() therefore returns None in tests. Both are #[ignore]d with that reason; the runtime proof remains D02's."
   ],
   "blockers": []
 }
