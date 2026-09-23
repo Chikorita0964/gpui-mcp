@@ -19,7 +19,7 @@ use rmcp::{
         CacheScope, CallToolResult, ContentBlock, ErrorData, Implementation,
         ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
-        ResourceContents, ServerCapabilities, ServerInfo,
+        ResourceContents, ServerCapabilities, ServerConfig,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -373,7 +373,8 @@ struct LogsArgs {
     min_level: Option<String>,
 }
 
-#[tool_router(router = core_router)]
+// Tools live in the per-area routers merged by `production_router`.
+#[tool_router(router = core_router, allow_empty)]
 impl GpuiMcp {
     pub(crate) fn new(registry: BridgeRegistry, artifacts: ArtifactStore) -> Self {
         Self {
@@ -740,12 +741,12 @@ impl CacheHints for ReadResourceResult {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GpuiMcp {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = ServerCapabilities::builder()
             .enable_tools()
             .enable_resources()
             .build();
-        ServerInfo::new(capabilities)
+        ServerConfig::new(capabilities)
             .with_server_info(Implementation::from_build_env())
             .with_instructions(
                 "Discover, inspect, and automate explicitly instrumented GPUI windows. Call list_apps first when more than one app may be running, then select_app with the desired target_id; a single live app is selected automatically. Selection persists for this MCP transport. Prefer semantic element tools over coordinates. Pointer actions use GPUI's native event pipeline; keyboard input uses GPUI directly. Screenshots and snapshots remain in memory, and all coordinates are logical pixels relative to the selected window. Video recording continuously captures raw native-window frames and encodes them directly into H.264/MP4 while recording; keep one MCP transport open for start_video_recording and stop_video_recording. Targets cannot be switched during recording. The optional pointer overlay reflects the same GPUI pointer state used for hover and clicks without reading or moving the global OS cursor. Artifact names are portable filenames inside the configured artifact directory; overwrite is opt-in."
