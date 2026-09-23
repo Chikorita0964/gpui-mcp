@@ -64,12 +64,22 @@ impl Automation {
         Self { state, observer }
     }
 
-    /// Attach automatic semantic observation to a window.
+    /// Attach semantic observation to a window.
+    ///
+    /// GPUI's accessibility tree is readable only after a completed frame, so
+    /// attaching arms observation of the next frame. Every caller that requests
+    /// a refresh must arm it again through [`Self::observe_on_next_frame`]; the
+    /// bridge's UI pump does this for each operation that changes the UI.
     ///
     /// Calling this more than once for the same automation and window is a no-op.
     pub fn attach(&self, window: &mut gpui::Window) {
-        window.observe_frames(&self.observer);
+        self.observe_on_next_frame(window);
         window.refresh();
+    }
+
+    /// Arm publication of the accessibility tree the next completed frame carries.
+    pub(crate) fn observe_on_next_frame(&self, window: &mut gpui::Window) {
+        self.observer.observe_on_next_frame(window);
     }
 
     /// Create isolated in-process automation without IPC for GPUI runtime tests.

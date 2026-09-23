@@ -335,18 +335,16 @@ impl SharedState {
             .map_err(|_| BridgeError::new(ErrorCode::Timeout, "frame wait timed out"))?
     }
 
+    /// Retain the current highlight set.
+    ///
+    /// Nothing draws highlights yet: the patched overlay paint pass is gone and
+    /// stock GPUI exposes no post-paint hook, so this is the Batch C gap for
+    /// P-A's overlay row.
     pub(crate) fn set_highlights(&self, highlights: Vec<Highlight>) {
         *self
             .highlights
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = highlights;
-    }
-
-    pub(crate) fn highlights(&self) -> Vec<Highlight> {
-        self.highlights
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
     }
 
     pub(crate) fn frame_stats(&self) -> FrameStats {

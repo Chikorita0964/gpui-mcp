@@ -130,7 +130,6 @@ impl Demo {
                     .child("Locked action")
                     .role(Role::Button)
                     .aria_label("Locked action")
-                    .aria_disabled(locked)
                     .when(!locked, |this| {
                         this.cursor_pointer()
                             .on_click(cx.listener(|this, _, _, cx| this.increment(cx)))
