@@ -1,40 +1,59 @@
 {
   "schema_version": 1,
-  "execution_id": "63aae056-93b6-48d1-81fc-c4c7ff3ea046",
+  "execution_id": "ad3f44ea-c1a3-4d48-a2f3-df5b598954f7",
   "status": "completed",
   "input_commits": {
-    "T01-BIND-AND-SURVEY": "e82b89b8a0f05e6755abdcd67ed5e4cf4d5884bc"
+    "T02-OBSERVER-REWIRE": "805b92ce6415b902a8583405b2382fbbef142ff5",
+    "T03-INPUT-REWIRE": "d5881b189d8883817592eee3c04d0bc1a02cec82",
+    "T04-SWEEP": "31353d501d091346d67f71c60ab8e2b03c6a1dc6"
   },
-  "integration_commit": "e82b89b8a0f05e6755abdcd67ed5e4cf4d5884bc",
+  "integration_commit": "756d902e9950b183a862f6f74209461b08a1d936",
   "tests": [
     {
-      "command": "cargo check --workspace — Batch A survey capture (exit 101 expected at this stage; 1 error site captured)",
+      "command": "cargo check --workspace",
       "result": "pass"
     },
     {
-      "command": "workspace manifest check: gpui-kit alias present; no zed-industries / =0.2.2 / vendor/gpui / [patch] references; vendor/gpui absent",
+      "command": "cargo check -p gpui-mcp --tests",
       "result": "pass"
     },
     {
-      "command": "survey coverage check: every error location captured from cargo check appears in docs/rewire-survey.md",
+      "command": "coverage table check: docs/rewire-summary-b.md contains the four-row P-A/P-B/P-C/P-D table with exact gpui-pre 0.3.6 citations",
       "result": "pass"
     }
   ],
   "mandatory_acceptance": {
-    "A01-GPUI-KIT-ALIAS-BINDING": {
+    "B01-TREE-OBSERVATION-REWIRE": {
       "status": "satisfied",
-      "evidence": "Integrated Cargo.toml declares gpui = { package = \"gpui-kit\", version = \"0.6\" }; both [patch] blocks and the vendor/gpui workspace exclude are removed; vendor/gpui/ absent (vendor/ holds only README.md); grep over *.toml finds no zed-industries, =0.2.2, or vendor/gpui; cargo check resolves Checking gpui-kit v0.6.6."
+      "evidence": "Integrated observer.rs pulls Window::debug_a11y_tree_json() and publishes UiNodes with role, label, value, state, and parentage with frame-unique identities; git diff from e82b89b to HEAD touches no file under crates/gpui-mcp-protocol/; cargo check -p gpui-mcp --tests exits 0 with zero observer.rs diagnostics."
     },
-    "A02-COMPILATION-ERROR-SURVEY": {
+    "B02-ACTION-MAPPING": {
       "status": "satisfied",
-      "evidence": "cargo check --workspace on the integrated result exits 101 with a single E0432 at crates/gpui-mcp/src/observer.rs:4:5 (AccessibilityFrame, FrameAction, FrameNode, FrameObserver); docs/rewire-survey.md classifies the compiler error plus masked source-audit items (lib.rs:71 observe_frames; input.rs:143/147 insert/replace_input_text; service.rs:601 focus_observed_element) by P-A/P-B with candidate native APIs and Batch C referrals (window.rs:1607, window/a11y.rs:150, window.rs:989, window.rs:2691, text_system.rs:255)."
+      "evidence": "Integrated observer.rs derives per-node actions from the aria on_action list and dispatches natively through Window::on_a11y_action with no bridge listeners; code grep confirms debug_a11y_tree_json and on_a11y_action references; clean cargo check -p gpui-mcp --tests confirms the mapping compiles."
+    },
+    "B03-SYNTHETIC-INPUT-ROUTING": {
+      "status": "satisfied",
+      "evidence": "Integrated input.rs builds the same MouseMove/MouseDown/MouseUp/ScrollWheel PlatformInput variants and routes them through Window::dispatch_event (input.rs:115), with keystrokes through Window::dispatch_keystroke; cargo check -p gpui-mcp --tests and cargo check --workspace both exit 0."
+    },
+    "B04-FOCUS-NAVIGATION": {
+      "status": "satisfied",
+      "evidence": "Integrated input.rs dispatch_focus(handle, window, cx) routes through Window::focus(&FocusHandle) with test dispatch_focus_moves_focus_without_a_key_event and no synthetic key event; unreachable named-node to FocusHandle resolution is cited with gpui-pre lines (window/a11y.rs:126, window/a11y.rs:149, window.rs:558, window.rs:760, window.rs:6805) and referred to Batch C; workspace check shows only the expected input.rs:184 unused warning."
+    },
+    "B05-SWEEP-AND-CLASSIFICATION": {
+      "status": "satisfied",
+      "evidence": "cargo check -p gpui-mcp --tests exits 0 and cargo check --workspace exits 0 with one warning (input.rs:184 dispatch_focus unused); fixes land in lib.rs, service.rs, registry.rs, render.rs, scaffold.rs, and examples/demo/src/main.rs:133 so the workspace links cleanly."
+    },
+    "B06-REWIRE-COVERAGE-TABLE": {
+      "status": "satisfied",
+      "evidence": "docs/rewire-summary-b.md contains the four-row P-A/P-B/P-C/P-D table; every could-not entry cites exact gpui-pre 0.3.6 file and line (P-A window.rs:1607, element.rs:370, window/a11y.rs:150, window/a11y/debug.rs:174, window.rs:2610; P-B window.rs:989, window/a11y.rs:149, window.rs:558, window.rs:6805; P-C window.rs:2691; P-D text_system.rs:255, text_system.rs:370)."
     }
   },
   "conflicts_resolved": [],
   "unresolved_conflicts": [],
   "risks": [
-    "cargo check --workspace exits 101 at Batch A by design (observer.rs P-A imports); the full exit-0 gate closes only after Batches B and C.",
-    "gpui-mcp-html, examples/demo, and examples/runtime-showcase were not type-checked because gpui-mcp failed first; their errors remain unclassified for Batch B/B05."
+    "examples/demo/src/main.rs lies outside every Batch B ownership entry and was changed only so cargo check --workspace exits 0; Master ratification required.",
+    "crates/gpui-mcp-html/tests/runtime.rs:247 and :662 still call fork APIs and need the Batch C focus mapping and input-handler exposure.",
+    "Focus answers Unsupported and input.rs:184 warns unused until Batch C exposes the node-id to FocusHandle mapping."
   ],
   "blockers": []
 }
