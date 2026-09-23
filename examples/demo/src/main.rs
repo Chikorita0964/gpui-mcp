@@ -99,11 +99,8 @@ impl Demo {
 
     /// A control that refuses input, and the toggle that gives it back.
     ///
-    /// Stock GPUI has no `aria_disabled` setter, so the locked control — which
-    /// withholds its click handler and paints itself grey — still reports
-    /// `enabled: true` in the accessibility tree. The disabled-state gap is
-    /// tracked by the P-A row of `docs/rewire-summary-b.md`. The toggle exists
-    /// so the locked state can be flipped on one node rather than read once.
+    /// The toggle exists so the locked state can be flipped on one node rather
+    /// than read once.
     fn lock_row(&self, cx: &mut Context<Self>) -> Div {
         let locked = self.locked;
         div()
@@ -128,6 +125,7 @@ impl Demo {
                     .child("Locked action")
                     .role(Role::Button)
                     .aria_label("Locked action")
+                    .aria_disabled(locked)
                     .when(!locked, |this| {
                         this.cursor_pointer()
                             .on_click(cx.listener(|this, _, _, cx| this.increment(cx)))

@@ -23,11 +23,14 @@
 //! - Per-node bounds are published when the node's accessibility id resolves
 //!   through [`Window::a11y_node_bounds`]; a node whose id does not resolve
 //!   keeps [`UiNode::bounds`] empty.
-//! - `hidden` and `disabled` state is not emitted, so nodes publish as visible
-//!   and enabled.
-//! - Application metadata and redaction are not emitted, so nodes publish no
-//!   application metadata and text publishes unredacted; [`UiNode::metadata`]
-//!   carries the node's `accesskit_id` for focus resolution.
+//! - `hidden` and `disabled` come from the `aria_hidden` / `aria_disabled`
+//!   builders (patch C08). A node is visible only when neither it nor an
+//!   ancestor is hidden and its bounds are not empty.
+//! - Redaction is AccessKit's own: a `PasswordInput` publishes redacted, empty
+//!   text, no value, and no text-entry actions, and its text never reaches an
+//!   ancestor's content-derived label.
+//! - Application metadata is not emitted; [`UiNode::metadata`] carries only the
+//!   node's `accesskit_id` for focus resolution.
 //! - Hover and Drag have no AccessKit action, so only Click, Focus, SetText,
 //!   SetValue, and Scroll can be reported.
 //! - The overlay paint pass has no stock equivalent, so highlight overlays are
@@ -147,7 +150,16 @@ struct Aria {
     selected: Option<bool>,
     expanded: Option<bool>,
     toggled: Option<String>,
+    hidden: bool,
+    disabled: bool,
     on_action: Vec<String>,
+}
+
+impl Aria {
+    /// Whether AccessKit marks this node's value as secret.
+    fn is_redacted(&self) -> bool {
+        self.role == "PasswordInput"
+    }
 }
 
 /// Translate one `debug_a11y_tree_json()` document into protocol nodes.
@@ -265,6 +277,8 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
         content_text(key, &raw, &mut content, &mut visiting);
     }
 
+    // `order` is depth-first, so a parent's hidden state is known before its children.
+    let mut hidden_keys: HashSet<&str> = HashSet::with_capacity(order.len());
     let mut nodes = Vec::with_capacity(order.len());
     for key in &order {
         let Some(node) = raw.get(key) else {
@@ -272,43 +286,58 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
         };
         let role_name = node.aria.role.as_str();
         let role = role_from_name(role_name);
+        let redacted = node.aria.is_redacted();
         let node_content = content.get(key).cloned().unwrap_or_default();
         let label = node
             .aria
             .label
             .clone()
             .or_else(|| label_from_content(role_name, &node_content));
-        let text_value = node
-            .aria
-            .value
-            .clone()
-            .or_else(|| (!node_content.is_empty()).then(|| node_content.clone()));
+        let text_value = if redacted {
+            None
+        } else {
+            node.aria
+                .value
+                .clone()
+                .or_else(|| (!node_content.is_empty()).then(|| node_content.clone()))
+        };
         let text = is_text_role_name(role_name).then(|| TextInfo {
             text: text_value.clone().unwrap_or_default(),
             caret: None,
             selection: None,
-            redacted: false,
+            redacted,
         });
-        let value = (node.aria.numeric_value.is_some() || node.aria.value.is_some()).then(|| {
-            ValueInfo {
-                value: node
-                    .aria
-                    .numeric_value
-                    .map(|number| number.to_string())
-                    .or(text_value)
-                    .unwrap_or_default(),
-                min: node.aria.min,
-                max: node.aria.max,
-                step: node.aria.step,
-            }
+        let value = (!redacted
+            && (node.aria.numeric_value.is_some() || node.aria.value.is_some()))
+        .then(|| ValueInfo {
+            value: node
+                .aria
+                .numeric_value
+                .map(|number| number.to_string())
+                .or(text_value)
+                .unwrap_or_default(),
+            min: node.aria.min,
+            max: node.aria.max,
+            step: node.aria.step,
         });
-        let actions = actions_from_names(role_name, &node.aria.on_action);
+        let mut actions = actions_from_names(role_name, &node.aria.on_action);
+        if redacted {
+            actions.retain(|action| !matches!(action, NodeAction::SetText | NodeAction::SetValue));
+        }
         let identity = identities
             .get(key)
             .cloned()
             .unwrap_or_else(|| key.clone());
         let accesskit_id = node.accesskit_id.parse::<u64>().ok();
         let bounds = accesskit_id.and_then(&bounds_for);
+        let hidden = node.aria.hidden
+            || parent_of
+                .get(key)
+                .is_some_and(|parent| hidden_keys.contains(parent.as_str()));
+        if hidden {
+            hidden_keys.insert(key.as_str());
+        }
+        let has_area = bounds.is_none_or(|bounds| bounds.width > 0.0 && bounds.height > 0.0);
         let mut metadata = BTreeMap::new();
         if let Some(accesskit_id) = accesskit_id {
             metadata.insert("accesskit_id".to_owned(), accesskit_id.to_string());
@@ -325,8 +354,8 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
             description: node.aria.description.clone(),
             bounds,
             state: NodeState {
-                visible: true,
-                enabled: true,
+                visible: !hidden && has_area,
+                enabled: !node.aria.disabled,
                 focused: focus_key.as_deref() == Some(key.as_str()),
                 checked: match node.aria.toggled.as_deref() {
                     Some("True") => Some(true),
@@ -441,6 +470,9 @@ fn content_text(
             let Some(child_node) = raw.get(child) else {
                 continue;
             };
+            if child_node.aria.is_redacted() {
+                continue;
+            }
             if is_text_role_name(&child_node.aria.role) {
                 if let Some(value) = &child_node.aria.value {
                     let normalized = normalize_text(value);
@@ -517,6 +549,8 @@ fn parse_aria(aria: Option<&Json>) -> Aria {
         selected: aria.get("selected").and_then(Json::as_bool),
         expanded: aria.get("expanded").and_then(Json::as_bool),
         toggled: string_field(aria, "toggled"),
+        hidden: aria.get("hidden").and_then(Json::as_bool).unwrap_or(false),
+        disabled: aria.get("disabled").and_then(Json::as_bool).unwrap_or(false),
         on_action: aria
             .get("on_action")
             .and_then(Json::as_array)
@@ -835,6 +869,132 @@ mod tests {
             "a qualified identity never spells one already given out"
         );
         assert_eq!(tree["root/y"].role, McpRole::Group);
+    }
+
+    const STATE_JSON: &str = r#"
+    {
+      "root": "a",
+      "nodes": {
+        "a": { "accesskit_id": "0", "children": ["b"], "aria": { "role": "Window" } },
+        "b": { "accesskit_id": "1", "children": ["c", "e", "f", "g"], "element_id": "Name(\"root\")", "aria": { "role": "Application" } },
+        "c": { "accesskit_id": "2", "children": ["d"], "element_id": "Name(\"drawer\")", "aria": { "role": "Group", "hidden": true } },
+        "d": { "accesskit_id": "3", "element_id": "Name(\"drawer-close\")", "aria": { "role": "Button", "on_action": ["Click"] } },
+        "e": { "accesskit_id": "4", "element_id": "Name(\"locked\")", "aria": { "role": "Button", "disabled": true } },
+        "f": { "accesskit_id": "5", "element_id": "Name(\"pin\")", "aria": { "role": "PasswordInput", "value": "1234", "on_action": ["Focus", "SetValue", "ReplaceSelectedText"] } },
+        "g": { "accesskit_id": "6", "children": ["h"], "element_id": "Name(\"reveal\")", "aria": { "role": "Button" } },
+        "h": { "accesskit_id": "7", "element_id": "Name(\"reveal-pin\")", "aria": { "role": "PasswordInput", "value": "1234" } }
+      }
+    }
+    "#;
+
+    #[test]
+    fn hidden_inherits_disabled_reads_and_password_input_redacts() {
+        let nodes = parse_frame(STATE_JSON, |_| None).unwrap_or_default();
+        let tree: std::collections::HashMap<&str, &gpui_mcp_protocol::UiNode> =
+            nodes.iter().map(|node| (node.id.as_str(), node)).collect();
+        assert!(!tree.is_empty(), "the fixture parses");
+
+        assert!(!tree["drawer"].state.visible);
+        assert!(
+            !tree["drawer-close"].state.visible,
+            "a hidden container hides its descendants"
+        );
+        assert!(tree["locked"].state.visible);
+        assert!(!tree["locked"].state.enabled);
+        assert!(tree["root"].state.enabled);
+
+        let pin = tree["pin"];
+        assert_eq!(pin.role, McpRole::TextInput);
+        assert_eq!(
+            pin.text,
+            Some(TextInfo {
+                text: String::new(),
+                caret: None,
+                selection: None,
+                redacted: true,
+            })
+        );
+        assert_eq!(pin.value, None);
+        assert_eq!(pin.actions, [NodeAction::Focus]);
+        assert_eq!(
+            tree["reveal"].label, None,
+            "secret text never becomes an ancestor's label"
+        );
+    }
+
+    struct StateFixture;
+
+    impl Render for StateFixture {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("root")
+                .role(Role::Application)
+                .size_full()
+                .child(
+                    div()
+                        .id("drawer")
+                        .role(Role::Group)
+                        .aria_hidden(true)
+                        .w(px(120.0))
+                        .h(px(40.0))
+                        .child(
+                            div()
+                                .id("drawer-close")
+                                .role(Role::Button)
+                                .w(px(100.0))
+                                .h(px(30.0)),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("locked")
+                        .role(Role::Button)
+                        .aria_disabled(true)
+                        .w(px(100.0))
+                        .h(px(30.0)),
+                )
+                .child(
+                    div()
+                        .id("pin")
+                        .role(Role::PasswordInput)
+                        .aria_value("1234")
+                        .w(px(100.0))
+                        .h(px(24.0)),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn observes_hidden_disabled_and_redacted_state(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            StateFixture
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(
+                window.simulate_next_frame(cx) > 0,
+                "the observation callback is armed"
+            );
+        });
+
+        let tree = automation.snapshot();
+        assert!(tree.diagnostics.is_empty());
+        assert!(!tree.nodes["drawer"].state.visible, "aria_hidden (C08)");
+        assert!(!tree.nodes["drawer-close"].state.visible);
+        assert!(
+            tree.nodes["drawer-close"]
+                .bounds
+                .is_some_and(|bounds| bounds.width > 0.0),
+            "a hidden node keeps its layout bounds"
+        );
+        assert!(!tree.nodes["locked"].state.enabled, "aria_disabled (C08)");
+        assert!(tree.nodes["locked"].state.visible);
+        let pin_text = tree.nodes["pin"].text.clone().unwrap_or_default();
+        assert!(pin_text.redacted && pin_text.text.is_empty());
+        assert!(tree.nodes["pin"].value.is_none());
     }
 
     struct SemanticFixture {

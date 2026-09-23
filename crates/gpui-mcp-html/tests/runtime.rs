@@ -617,14 +617,12 @@ fn assert_initial_tree(tree: &UiTree, state: &TestState) {
     );
     assert_eq!(tree.nodes["save"].label.as_deref(), Some("Save"));
     assert_eq!(tree.nodes["secret"].role, Role::TextInput);
-    // A masked input publishes no value; the tree cannot carry the redaction
-    // flag itself, so the empty text is all the bridge can assert.
     assert_eq!(
         tree.nodes["secret"]
             .text
             .as_ref()
-            .map(|text| text.text.as_str()),
-        Some("")
+            .map(|text| (text.text.as_str(), text.redacted)),
+        Some(("", true))
     );
     assert!(tree.nodes["secret"].value.is_none());
     assert_eq!(tree.nodes["published"].role, Role::Checkbox);
