@@ -10,6 +10,7 @@ What the gpui-kit rewire covered per fork patch, and what it could not. Pairs wi
 | `cargo check -p gpui-mcp --tests` | exit 0, no diagnostics |
 | `cargo check --workspace` | exit 0; one warning: `crates/gpui-mcp/src/input.rs:184` (`dispatch_focus` unused outside tests) |
 | `cargo check -p gpui-mcp-html --tests` | exit 0; the same single warning |
+| `cargo check -p gpui-mcp-html --features visual-parity` | exit 0; the same single warning |
 
 ## Coverage
 
@@ -27,4 +28,5 @@ What the gpui-kit rewire covered per fork patch, and what it could not. Pairs wi
 | Provenance metadata, redaction, and action hints (`frame_metadata`, `frame_redacted`, `frame_action`) | `crates/gpui-mcp-html/src/render.rs` | Dropped: the JSON carries none of them (P-A row), and actions now come from `on_action` (P-B row) |
 | Hidden and disabled semantics (`aria_hidden`, `aria_disabled`) | `crates/gpui-mcp-html/src/render.rs`, `examples/demo/src/main.rs:133` | Dropped: stock GPUI has no such setters (the `aria_*` list in `elements/div.rs`) |
 | HTML runtime test target | `crates/gpui-mcp-html/tests/runtime.rs` | Compiles again: the focus hook and the replaced-text assertion now mirror the bridge's `Unsupported` referrals. Its remaining runtime assertions (advertised Hover, bounds-based dispatch, tree contents) await C02 and C03 |
+| Visual parity bin focus path | `crates/gpui-mcp-html/src/bin/visual.rs` | Returns the same `Unsupported` referral; the `visual-parity` required-features gate is unchanged |
 | `dispatch_focus` unused outside tests | `crates/gpui-mcp/src/input.rs:184` | Warning only; the call site returns the P-B focus error until Batch C exposes the mapping |

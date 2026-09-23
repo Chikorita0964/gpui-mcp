@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "execution_id": "0f92430b-1ee0-4402-be5e-89841b1bbb76",
+  "execution_id": "e923c0be-a28c-4d8f-8cd8-8ec2816bb84f",
   "task_id": "T02-OBSERVER-REWIRE",
   "status": "completed",
   "summary": "Rebuilt tree observation in observer.rs on Window::debug_a11y_tree_json() and mapped each node's advertised actions from its on_action list: the bridge pulls the last completed frame's accessibility tree, names every node frame-uniquely, restores parentage from the children lists, and publishes role, label, value, state, and actions, with gpui-mcp-protocol untouched. Dispatch stays native through Window::on_a11y_action and GPUI's built-in Click/Focus fallback, and the bridge registers no listeners because a matching listener suppresses that fallback.",
