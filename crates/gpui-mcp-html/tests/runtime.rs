@@ -231,18 +231,12 @@ fn dispatch_test_input(
         gpui_mcp::BridgeError::new(gpui_mcp::ErrorCode::NotFound, "semantic node was not found")
     })?;
     let required = match action {
-        TestInput::Click { .. } | TestInput::SetValue { .. } => Some(NodeAction::Click),
-        TestInput::Focus => Some(NodeAction::Focus),
-        // GPUI 0.3.6 advertises only Click and Focus on accessibility nodes
-        // (vendor/gpui-pre/src/elements/div.rs:3589-3592) and no scroll action
-        // names exist in the vendored tree, so hover and scroll resolve by
-        // bounds alone; the MCP tools' Hover/Scroll gates cannot be satisfied
-        // by the current tree (see the T09 report risks).
-        TestInput::Hover | TestInput::Scroll { .. } => None,
+        TestInput::Click { .. } | TestInput::SetValue { .. } => NodeAction::Click,
+        TestInput::Focus => NodeAction::Focus,
+        TestInput::Hover => NodeAction::Hover,
+        TestInput::Scroll { .. } => NodeAction::Scroll,
     };
-    if let Some(required) = required
-        && !node.actions.contains(&required)
-    {
+    if !node.actions.contains(&required) {
         return Err(gpui_mcp::BridgeError::new(
             gpui_mcp::ErrorCode::Unsupported,
             "semantic node does not support the requested input",
@@ -997,10 +991,11 @@ fn overflow_elements_expose_and_handle_semantic_scroll(cx: &mut TestAppContext) 
     pump_observation(visual);
 
     let initial = automation.snapshot();
-    // The native tree carries no scroll action names (see
-    // `dispatch_test_input`); the observable contract is that the scroll
-    // container and its content resolve with bounds and that scrolling moves
-    // them.
+    assert!(
+        initial.nodes["scroller"]
+            .actions
+            .contains(&NodeAction::Scroll)
+    );
     assert!(initial.nodes["scroller"].bounds.is_some());
     let initial_bottom = initial.nodes["scroll-bottom"].bounds.unwrap_or_default();
     assert!(initial.nodes["scroll-bottom"].bounds.is_some());

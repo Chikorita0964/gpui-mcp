@@ -1925,6 +1925,10 @@ impl Element for Div {
         self.interactivity.write_a11y_info(node);
     }
 
+    fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
+        self.interactivity.a11y_pointer_interactions()
+    }
+
     fn a11y_synthetic_children(
         &mut self,
         _prepaint: &mut Self::PrepaintState,
@@ -3621,6 +3625,21 @@ impl Interactivity {
             node.add_action(*action);
         }
     }
+
+    /// gpui-mcp patch (C12): the pointer interactions these listeners and styles handle.
+    pub(crate) fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
+        crate::A11yPointerInteractions {
+            hover: self.hover_style.is_some()
+                || self.group_hover_style.is_some()
+                || self.hover_listener.is_some()
+                || !self.mouse_move_listeners.is_empty()
+                || self.tooltip_builder.is_some(),
+            drag: self.drag_listener.is_some(),
+            scroll: self.scroll_offset.is_some()
+                || self.tracked_scroll_handle.is_some()
+                || !self.scroll_wheel_listeners.is_empty(),
+        }
+    }
 }
 
 /// The per-frame state of an interactive element. Used for tracking stateful interactions like clicks
@@ -4134,6 +4153,10 @@ where
 
     fn write_a11y_info(&self, node: &mut accesskit::Node) {
         self.element.write_a11y_info(node);
+    }
+
+    fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
+        self.element.a11y_pointer_interactions()
     }
 
     fn a11y_synthetic_children(

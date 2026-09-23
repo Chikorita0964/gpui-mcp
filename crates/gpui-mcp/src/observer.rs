@@ -39,8 +39,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Weak};
 
-use gpui::Window;
 use gpui::accesskit::NodeId;
+use gpui::{A11yPointerInteractions, Window};
 use gpui_mcp_protocol::{NodeAction, NodeState, Rect, Role, TextInfo, UiNode, ValueInfo};
 use serde_json::Value as Json;
 
@@ -74,10 +74,13 @@ impl BridgeObserver {
         let Some(json) = window.debug_a11y_tree_json() else {
             return false;
         };
-        let Some(nodes) = parse_frame(&json, |accesskit_id| {
-            window
+        let Some(nodes) = parse_frame(&json, |accesskit_id| NodeLookup {
+            bounds: window
                 .a11y_node_bounds(NodeId(accesskit_id))
-                .map(rect_from_gpui)
+                .map(rect_from_gpui),
+            pointer: window
+                .a11y_pointer_interactions(NodeId(accesskit_id))
+                .unwrap_or_default(),
         }) else {
             state.add_log("warn", "the accessibility tree could not be parsed");
             return false;
@@ -166,11 +169,11 @@ impl Aria {
 ///
 /// The document's host node is not published: it is GPUI's window node, it
 /// carries no element identity, and its children are the application's roots.
-/// `bounds_for` resolves each node's AccessKit id to its logical bounds; each
-/// published node also carries that id as `metadata["accesskit_id"]` so focus
-/// requests can resolve a handle. Returns `None` when the document does not
-/// carry a node map.
-fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<Vec<UiNode>> {
+/// `lookup` resolves each node's AccessKit id to what the window holds beside
+/// the dump: logical bounds and pointer interactions. Each published node also
+/// carries that id as `metadata["accesskit_id"]` so focus requests can resolve
+/// a handle. Returns `None` when the document does not carry a node map.
+fn parse_frame(json: &str, lookup: impl Fn(u64) -> NodeLookup) -> Option<Vec<UiNode>> {
     let frame: Json = serde_json::from_str(json).ok()?;
     let nodes_json = frame.get("nodes")?.as_object()?;
     let root_key = frame.get("root").and_then(Json::as_str).map(str::to_owned);
@@ -222,24 +225,15 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
         &mut order,
     );
 
-    let mut segments: HashMap<String, Vec<String>> = HashMap::with_capacity(order.len());
-    for key in &order {
-        let mut path = Vec::new();
-        let mut current = Some(key.clone());
-        while let Some(node_key) = current {
-            if host_key.as_deref() == Some(node_key.as_str()) {
-                break;
-            }
-            let Some(node) = raw.get(&node_key) else {
-                break;
-            };
-            path.push(node.own_id());
-            current = parent_of.get(&node_key).cloned();
-        }
-        path.reverse();
-        segments.insert(key.clone(), path);
-    }
-
+    let segments: HashMap<String, Vec<String>> = order
+        .iter()
+        .map(|key| {
+            (
+                key.clone(),
+                ancestor_path(key, &raw, &parent_of, host_key.as_deref()),
+            )
+        })
+        .collect();
     let identities = assign_identities(&order, &segments, &raw);
 
     let mut content: HashMap<String, String> = HashMap::with_capacity(order.len());
@@ -262,7 +256,12 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
         if hidden {
             hidden_keys.insert(key.as_str());
         }
-        let bounds = node.accesskit_id.parse::<u64>().ok().and_then(&bounds_for);
+        let window_facts = node
+            .accesskit_id
+            .parse::<u64>()
+            .ok()
+            .map(&lookup)
+            .unwrap_or_default();
         nodes.push(to_ui_node(
             node,
             PublishedNode {
@@ -272,13 +271,37 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
                     .and_then(|parent| identities.get(parent))
                     .cloned(),
                 content: content.get(key).map(String::as_str).unwrap_or_default(),
-                bounds,
+                bounds: window_facts.bounds,
+                pointer: window_facts.pointer,
                 hidden,
                 focused: focus_key.as_deref() == Some(key.as_str()),
             },
         ));
     }
     Some(nodes)
+}
+
+/// The own ids of `key` and its ancestors, root first, stopping below the host.
+fn ancestor_path(
+    key: &str,
+    raw: &HashMap<String, RawNode>,
+    parent_of: &HashMap<String, String>,
+    host_key: Option<&str>,
+) -> Vec<String> {
+    let mut path = Vec::new();
+    let mut current = Some(key.to_owned());
+    while let Some(node_key) = current {
+        if host_key == Some(node_key.as_str()) {
+            break;
+        }
+        let Some(node) = raw.get(&node_key) else {
+            break;
+        };
+        path.push(node.own_id());
+        current = parent_of.get(&node_key).cloned();
+    }
+    path.reverse();
+    path
 }
 
 /// Read one JSON node, keyed by its ephemeral dump key.
@@ -308,12 +331,20 @@ fn parse_raw_node(key: &str, node: &serde_json::Map<String, Json>) -> RawNode {
     }
 }
 
+/// What the window holds about one node beside the tree dump.
+#[derive(Default)]
+struct NodeLookup {
+    bounds: Option<Rect>,
+    pointer: A11yPointerInteractions,
+}
+
 /// What `parse_frame` resolves about a node from the whole tree.
 struct PublishedNode<'a> {
     identity: String,
     parent: Option<String>,
     content: &'a str,
     bounds: Option<Rect>,
+    pointer: A11yPointerInteractions,
     hidden: bool,
     focused: bool,
 }
@@ -354,6 +385,9 @@ fn to_ui_node(node: &RawNode, published: PublishedNode<'_>) -> UiNode {
             step: node.aria.step,
         });
     let mut actions = actions_from_names(role_name, &node.aria.on_action);
+    push_action(&mut actions, published.pointer.hover, NodeAction::Hover);
+    push_action(&mut actions, published.pointer.drag, NodeAction::Drag);
+    push_action(&mut actions, published.pointer.scroll, NodeAction::Scroll);
     if redacted {
         actions.retain(|action| !matches!(action, NodeAction::SetText | NodeAction::SetValue));
     }
@@ -753,7 +787,7 @@ mod tests {
     };
     use gpui_mcp_protocol::{NodeAction, Rect, Role as McpRole, TextInfo, ValueInfo};
 
-    use super::parse_frame;
+    use super::{NodeLookup, parse_frame};
     use crate::Automation;
 
     const FRAME_JSON: &str = r#"
@@ -788,13 +822,14 @@ mod tests {
 
     #[test]
     fn parses_roles_labels_values_states_and_parentage() {
-        let nodes = parse_frame(FRAME_JSON, |accesskit_id| {
-            (accesskit_id == 2).then_some(Rect {
+        let nodes = parse_frame(FRAME_JSON, |accesskit_id| NodeLookup {
+            bounds: (accesskit_id == 2).then_some(Rect {
                 x: 10.0,
                 y: 20.0,
                 width: 30.0,
                 height: 40.0,
-            })
+            }),
+            ..NodeLookup::default()
         })
         .unwrap_or_default();
         assert!(!nodes.is_empty(), "the fixture parses");
@@ -881,7 +916,7 @@ mod tests {
 
     #[test]
     fn colliding_element_ids_get_frame_unique_identities() {
-        let nodes = parse_frame(FRAME_JSON, |_| None).unwrap_or_default();
+        let nodes = parse_frame(FRAME_JSON, |_| NodeLookup::default()).unwrap_or_default();
         let tree: std::collections::HashMap<&str, &gpui_mcp_protocol::UiNode> =
             nodes.iter().map(|node| (node.id.as_str(), node)).collect();
         assert!(!tree.is_empty(), "the fixture parses");
@@ -925,7 +960,7 @@ mod tests {
 
     #[test]
     fn hidden_inherits_disabled_reads_and_password_input_redacts() {
-        let nodes = parse_frame(STATE_JSON, |_| None).unwrap_or_default();
+        let nodes = parse_frame(STATE_JSON, |_| NodeLookup::default()).unwrap_or_default();
         let tree: std::collections::HashMap<&str, &gpui_mcp_protocol::UiNode> =
             nodes.iter().map(|node| (node.id.as_str(), node)).collect();
         assert!(!tree.is_empty(), "the fixture parses");
@@ -1004,6 +1039,39 @@ mod tests {
                         .w(px(80.0))
                         .h(px(24.0)),
                 )
+                .child(
+                    div()
+                        .id("hover-card")
+                        .role(Role::Group)
+                        .hover(|style| style.opacity(0.5))
+                        .w(px(80.0))
+                        .h(px(24.0)),
+                )
+                .child(
+                    div()
+                        .id("drag-handle")
+                        .role(Role::Button)
+                        .on_drag(DragPayload, |_, _, _, cx| cx.new(|_| DragPreview))
+                        .w(px(80.0))
+                        .h(px(24.0)),
+                )
+                .child(
+                    div()
+                        .id("scroller")
+                        .role(Role::ScrollView)
+                        .overflow_y_scroll()
+                        .w(px(80.0))
+                        .h(px(24.0)),
+                )
+        }
+    }
+
+    struct DragPayload;
+    struct DragPreview;
+
+    impl Render for DragPreview {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
         }
     }
 
@@ -1045,6 +1113,16 @@ mod tests {
             "a clickable div without a role is a button (C11)"
         );
         assert!(roleless.is_some_and(|node| node.actions.contains(&NodeAction::Click)));
+
+        let actions = |id: &str| tree.nodes.get(id).map(|node| node.actions.clone());
+        assert_eq!(actions("hover-card"), Some(vec![NodeAction::Hover]), "C12");
+        assert_eq!(actions("drag-handle"), Some(vec![NodeAction::Drag]), "C12");
+        assert_eq!(actions("scroller"), Some(vec![NodeAction::Scroll]), "C12");
+        assert_eq!(
+            actions("locked"),
+            Some(Vec::new()),
+            "no listener, no inferred action"
+        );
     }
 
     struct SemanticFixture {

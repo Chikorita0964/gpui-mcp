@@ -1,7 +1,7 @@
 # GPUI-pre patch inventory
 
 `vendor/gpui-pre` is `gpui-pre` 0.3.6 from crates.io: the crate GPUI Kit
-re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Eight
+re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Nine
 focused patches open APIs the bridge needs but cannot reach through the stock
 surface. Each patch site is marked with a `gpui-mcp patch (C0x):` comment.
 
@@ -18,7 +18,7 @@ The set falls into two classes:
   in `bounds_changed`, and C06's trait-fill in `resolve_font`. These carry
   behavior the fork's own patch applied before the rewire — pointer ownership
   and synthetic-input preservation from P-C, fallback traits from P-D, and
-  C11's clickable-div role from P-A — as
+  C11's clickable-div role and C12's pointer interactions from P-A — as
   recorded in `GPUI_MCP_REWIRE.md` and the fork's original
   `vendor/gpui/PATCHES.md`.
 
@@ -277,10 +277,43 @@ no patch: `observer.rs` treats AccessKit's `Role::PasswordInput` as redacted.
 })
 ```
 
-## Files with no patch
+## C12 - Pointer interactions per node
 
-`vendor/gpui-pre/src/window/a11y.rs` is unchanged: C03 and C04 read its
-`pub(crate)` fields from `window.rs`, which is in the same crate.
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/window/a11y.rs`, `element.rs`, `elements/div.rs`, `window.rs` |
+| Item | `A11yPointerInteractions` (new public struct) and an `A11y::pointer_interactions` map cleared in `begin_frame`; `Element::a11y_pointer_interactions` (default: none), recorded beside `node_bounds` where the node is pushed; `Interactivity::a11y_pointer_interactions` after `write_a11y_info`, forwarded by `Div` and `Stateful`; `Window::a11y_pointer_interactions` beside `a11y_node_bounds`; re-exported next to `A11ySubtreeBuilder` |
+| Opened | `observer.rs` reports `Hover`, `Drag`, and `Scroll`, so `hover_element`, `drag_element`, and `scroll` by id work again. The flags are read from listeners and styles the element already holds; nothing is dispatched differently. |
+| Why | AccessKit has no hover or drag action, and stock `write_a11y_info` adds no scroll action, so the tree cannot say which nodes accept them and the server's action gates rejected every node. The pre-rewire fork patch inferred the same three from the same fields (`FrameNode::actions`). Unlike C03 this is new surface, not a visibility change, because stock GPUI keeps no such record. |
+
+```rust
+// Interactivity, after write_a11y_info
+pub(crate) fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
+    crate::A11yPointerInteractions {
+        hover: self.hover_style.is_some()
+            || self.group_hover_style.is_some()
+            || self.hover_listener.is_some()
+            || !self.mouse_move_listeners.is_empty()
+            || self.tooltip_builder.is_some(),
+        drag: self.drag_listener.is_some(),
+        scroll: self.scroll_offset.is_some()
+            || self.tracked_scroll_handle.is_some()
+            || !self.scroll_wheel_listeners.is_empty(),
+    }
+}
+
+// element.rs, after `window.a11y.node_bounds.insert(node_id, bounds);`
+window
+    .a11y
+    .pointer_interactions
+    .insert(node_id, self.element.a11y_pointer_interactions());
+```
+
+## Fields read without a patch
+
+C03 and C04 read `A11y::node_bounds` and `A11y::focus_ids` from `window.rs`,
+which is in the same crate, so those `pub(crate)` fields stay as they are.
+`window/a11y.rs` itself is patched only by C12.
 
 ## Verification in this fork
 

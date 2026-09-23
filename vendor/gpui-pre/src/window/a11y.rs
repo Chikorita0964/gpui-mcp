@@ -119,6 +119,17 @@ pub(crate) const ROOT_NODE_ID: NodeId = NodeId(0);
 pub(crate) type A11yActionListener =
     Box<dyn FnMut(Option<&accesskit::ActionData>, &mut Window, &mut App) + 'static>;
 
+/// gpui-mcp patch (C12): pointer interactions an element handles that AccessKit has no action for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct A11yPointerInteractions {
+    /// The element restyles or runs listeners on hover, or shows a tooltip.
+    pub hover: bool,
+    /// The element starts a drag.
+    pub drag: bool,
+    /// The element scrolls or handles scroll-wheel input.
+    pub scroll: bool,
+}
+
 /// Per-window accessibility state.
 ///
 /// Manages the AccessKit tree that is built each frame and the mappings
@@ -148,6 +159,7 @@ pub(crate) struct A11y {
     pub(crate) nodes: A11yNodeBuilder,
     pub(crate) focus_ids: FxHashMap<NodeId, FocusId>,
     pub(crate) node_bounds: FxHashMap<NodeId, Bounds<Pixels>>,
+    pub(crate) pointer_interactions: FxHashMap<NodeId, A11yPointerInteractions>,
     pub(crate) action_listeners: FxHashMap<NodeId, Vec<(Action, A11yActionListener)>>,
     /// The window's title, used to label the root node so assistive
     /// technology can tell windows apart.
@@ -176,6 +188,7 @@ impl A11y {
             nodes: A11yNodeBuilder::new(),
             focus_ids: FxHashMap::default(),
             node_bounds: FxHashMap::default(),
+            pointer_interactions: FxHashMap::default(),
             action_listeners: FxHashMap::default(),
             window_title,
             last_focus_without_node: None,
@@ -270,6 +283,7 @@ impl A11y {
     /// Clear per-frame state and push the root node to start a new frame.
     pub(crate) fn begin_frame(&mut self) {
         self.focus_ids.clear();
+        self.pointer_interactions.clear();
         self.node_bounds.clear();
         self.action_listeners.clear();
         self.nodes.begin_frame(self.window_title.as_ref());

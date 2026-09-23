@@ -66,7 +66,7 @@ use uuid::Uuid;
 pub(crate) mod a11y;
 mod prompts;
 
-pub use a11y::A11ySubtreeBuilder;
+pub use a11y::{A11yPointerInteractions, A11ySubtreeBuilder};
 
 use self::a11y::A11y;
 #[cfg(not(target_family = "wasm"))]
@@ -6831,6 +6831,14 @@ impl Window {
     /// node during prepaint.
     pub fn a11y_node_bounds(&self, node_id: accesskit::NodeId) -> Option<Bounds<Pixels>> {
         self.a11y.node_bounds.get(&node_id).copied()
+    }
+
+    /// gpui-mcp patch (C12): pointer interactions an accessibility node handles.
+    pub fn a11y_pointer_interactions(
+        &self,
+        node_id: accesskit::NodeId,
+    ) -> Option<A11yPointerInteractions> {
+        self.a11y.pointer_interactions.get(&node_id).copied()
     }
 
     /// gpui-mcp patch (C04): resolve an accessibility node to its focus handle.

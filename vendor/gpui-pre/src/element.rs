@@ -121,6 +121,12 @@ pub trait Element: 'static + IntoElement {
     /// See the [accessibility guide](crate::_accessibility) for an overview.
     fn write_a11y_info(&self, _node: &mut accesskit::Node) {}
 
+    /// gpui-mcp patch (C12): pointer interactions this element handles that
+    /// AccessKit has no action for. Called only when `a11y_role()` returns `Some`.
+    fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
+        crate::A11yPointerInteractions::default()
+    }
+
     /// Add synthetic child nodes to an [`Element`] that has an
     /// [`.id()`][Element::id] and a [`.role()`][Element::a11y_role].
     ///
@@ -379,6 +385,10 @@ impl<E: Element> Drawable<E> {
                             });
                             self.element.write_a11y_info(&mut node);
                             window.a11y.node_bounds.insert(node_id, bounds);
+                            window
+                                .a11y
+                                .pointer_interactions
+                                .insert(node_id, self.element.a11y_pointer_interactions());
                             pushed_a11y_node = window.a11y.nodes.push(node_id, node);
                             #[cfg(debug_assertions)]
                             if pushed_a11y_node {
