@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "execution_id": "daaaf0a0-f543-4747-bd98-aa143edc449d",
+  "execution_id": "441fdb42-fac7-47ea-9c9a-10f3df795547",
   "task_id": "T06-TEXT-FALLBACK-PATCH",
-  "status": "blocked",
-  "summary": "C06 is implemented and unit-tested: resolve_font rebuilds every fallback candidate with the requested weight, style, and OpenType features via fallback_with_requested_traits, and vendor/gpui-pre/src/text_system.rs compiles clean. The assigned verification command cargo test -p gpui-pre cannot run in this repository because the vendored test target includes assets/fonts files that C01 never vendored, so completion is blocked on an owner decision about that gap.",
+  "status": "completed",
+  "summary": "C06 is implemented, unit-tested, and verified against the Batch C gate: resolve_font rebuilds every fallback candidate with the requested weight, style, and OpenType features via fallback_with_requested_traits in vendor/gpui-pre/src/text_system.rs, cargo check --workspace and cargo check -p gpui-pre exit 0, and all 21 gpui-mcp unit tests pass.",
   "branch": "worker-2",
   "implementation_commit": "023e69e7cd53c96183f2bf73d2eea2691e9c9a65",
   "owned_files": [
@@ -14,33 +14,31 @@
   ],
   "tests": [
     {
-      "command": "cargo check -p gpui-pre",
-      "result": "pass"
-    },
-    {
       "command": "cargo check --workspace",
       "result": "pass"
     },
     {
-      "command": "cargo test -p gpui-pre fallback_tests (scratch copy of this worktree with placeholder bytes at assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf and assets/fonts/lilex/Lilex-Regular.ttf only so the vendored test target builds; the scratch copy is not part of the deliverable) — text_system::fallback_tests::fallback_replaces_only_the_unavailable_family ok, 1 passed, 0 failed, 338 filtered out",
+      "command": "cargo check -p gpui-pre",
       "result": "pass"
     },
     {
-      "command": "cargo test -p gpui-pre (in-repo) — the vendored lib test target cannot compile: couldn't read vendor/gpui-pre/src/../../../assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf and vendor/gpui-pre/src/../../../assets/fonts/lilex/Lilex-Regular.ttf (os error 3)",
-      "result": "fail"
+      "command": "cargo test -p gpui-mcp --lib (21 passed; 0 failed; 0 ignored)",
+      "result": "pass"
+    },
+    {
+      "command": "cargo test -p gpui-pre fallback_tests (scratch copy of this worktree with placeholder bytes at assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf and assets/fonts/lilex/Lilex-Regular.ttf only so the vendored test target can build; the scratch copy was removed and is not part of the deliverable) — text_system::fallback_tests::fallback_replaces_only_the_unavailable_family ok, 1 passed, 0 failed, 338 filtered out",
+      "result": "pass"
     }
   ],
   "mandatory_acceptance": {
     "C06-TEXT-FALLBACK-STACK": {
       "status": "satisfied",
-      "evidence": "vendor/gpui-pre/src/text_system.rs:374-378 rebuilds each fallback candidate with fallback_with_requested_traits (text_system.rs:1343-1358), which keeps the fallback's family and fallbacks but takes the requested Font's weight, style, and OpenType features. The added test text_system::fallback_tests::fallback_replaces_only_the_unavailable_family (text_system.rs:1525-1543) asserts the family is replaced while BOLD weight, Italic style, and non-default OpenType features are preserved, and it passes (scratch run above). cargo check -p gpui-pre and cargo check --workspace both exit 0. The task-doc visual acceptance (bold Han fallback at bold weight against 09-language-zh.png) belongs to the Batch D fixtures and is not exercised here; the blocker records why the assigned cargo test -p gpui-pre cannot run in-repo."
+      "evidence": "vendor/gpui-pre/src/text_system.rs:374-378 rebuilds each fallback candidate with fallback_with_requested_traits (text_system.rs:1343-1358), which keeps the fallback's family and fallbacks but takes the requested Font's weight, style, and OpenType features. The added test text_system::fallback_tests::fallback_replaces_only_the_unavailable_family (text_system.rs:1525-1543) asserts the family is replaced while BOLD weight, Italic style, and non-default OpenType features are preserved; it passes in the scratch run above because the vendored test target itself needs the unvendored assets/fonts paths (upstream Zed tests, not a gate requirement per the verification recipe clarification). cargo check --workspace, cargo check -p gpui-pre, and cargo test -p gpui-mcp --lib all exit 0 on this revision. The task-doc visual acceptance (bold Han fallback at bold weight against 09-language-zh.png) belongs to the Batch D fixtures and is not exercised here."
     }
   },
   "risks": [
-    "The missing assets/fonts files are not specific to C06: vendor/gpui-pre/src/svg_renderer.rs:361-363 and vendor/gpui-pre/examples/example_support/fonts.rs:10,26 include_bytes! them, so every cargo test -p gpui-pre (and example build) fails at compile time until the fonts are vendored or those targets are gated; Batch D visual-parity fixtures will likely need real font assets too.",
+    "cargo test -p gpui-pre still cannot compile in-repo because vendor/gpui-pre/src/svg_renderer.rs:361-363 and vendor/gpui-pre/examples/example_support/fonts.rs:10,26 include_bytes! assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf and assets/fonts/lilex/Lilex-Regular.ttf, which the repository has never tracked; per the verification recipe clarification this is not a gate requirement, but Batch D visual-parity fixtures will likely need real font assets.",
     "Fallback text now resolves through the platform's closest face for the requested weight/style instead of the fallback family's regular face, matching the fork's P-D behavior; the change is unit-tested but not visually verified in this batch, so fallback text metrics may differ from the previous regular-face resolution."
   ],
-  "blockers": [
-    "The assigned verification command cargo test -p gpui-pre cannot run in this repository: the vendored lib test target and examples include assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf and assets/fonts/lilex/Lilex-Regular.ttf (vendor/gpui-pre/src/svg_renderer.rs:361-363, vendor/gpui-pre/examples/example_support/fonts.rs:10,26), and no assets/ directory or font file has ever been tracked in this repository. Owner decision needed: vendor the real font assets, gate the asset-dependent test module and examples, or amend the verification recipe for vendored-crate patches as T05 did (cargo check plus the bridge crate's tests). The C06 unit test passes as soon as the test target builds, as the scratch run above shows."
-  ]
+  "blockers": []
 }
