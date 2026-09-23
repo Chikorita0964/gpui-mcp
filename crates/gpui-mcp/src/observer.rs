@@ -20,11 +20,14 @@
 //! - Elements without an explicit role are not in GPUI's accessibility tree at
 //!   all, so id-bearing containers without a role and plain text without an id
 //!   never appear as nodes.
-//! - Per-node bounds are not emitted, so [`UiNode::bounds`] stays empty.
+//! - Per-node bounds are published when the node's accessibility id resolves
+//!   through [`Window::a11y_node_bounds`]; a node whose id does not resolve
+//!   keeps [`UiNode::bounds`] empty.
 //! - `hidden` and `disabled` state is not emitted, so nodes publish as visible
 //!   and enabled.
-//! - Application metadata and redaction are not emitted, so
-//!   [`UiNode::metadata`] stays empty and text publishes unredacted.
+//! - Application metadata and redaction are not emitted, so nodes publish no
+//!   application metadata and text publishes unredacted; [`UiNode::metadata`]
+//!   carries the node's `accesskit_id` for focus resolution.
 //! - Hover and Drag have no AccessKit action, so only Click, Focus, SetText,
 //!   SetValue, and Scroll can be reported.
 //! - The overlay paint pass has no stock equivalent, so highlight overlays are

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "execution_id": "00121ed1-b7ba-4820-80eb-f1502c97951e",
+  "task_id": "T09-HTML-RUNTIME-REWORK",
+  "status": "blocked",
+  "summary": "The runtime fixture is reworked onto the pull-based bridge: observation callbacks are delivered with Window::simulate_next_frame, assertions match the tree the current bridge publishes, the Focus hook resolves accesskit_id through Window::a11y_focus_handle and focuses the node's own handle, and the fixture suite passes (6 passed, 0 failed, 1 ignored). The replacement half of C04 is blocked: Window::replace_input_text cannot probe its document range inside a window update, so the replaced-text scenario is kept ignored and the MCP set_text flow cannot work without a vendor fix.",
+  "branch": "worker-2",
+  "implementation_commit": "b65040ff2c53cbdb337abf71419bdee9395463f9",
+  "owned_files": [
+    "crates/gpui-mcp-html/tests/runtime.rs",
+    "crates/gpui-mcp-html/src/bin/visual.rs"
+  ],
+  "changed_files": [
+    "crates/gpui-mcp-html/tests/runtime.rs",
+    "crates/gpui-mcp-html/src/bin/visual.rs"
+  ],
+  "tests": [
+    {
+      "command": "cargo test -p gpui-mcp-html --test runtime (6 passed; 0 failed; 1 ignored)",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check --workspace",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp-html --features visual-parity",
+      "result": "pass"
+    },
+    {
+      "command": "cargo test -p gpui-mcp-html --test runtime replaced_text_reaches_the_document -- --ignored — panics at the replace assertion: \"the focused input handler owns the document\"",
+      "result": "fail"
+    }
+  ],
+  "mandatory_acceptance": {
+    "C02-A11Y-ACTIVATION-GATE": {
+      "status": "satisfied",
+      "evidence": "The fixture now delivers the armed observation callback the pull-based observer requires: pump_observation runs Window::simulate_next_frame after run_until_parked until no callback re-arms, and every snapshot asserts against the published tree of the completed frame (roots [\"html-root\"], node roles/labels/bounds/actions/states). The Focus hook resolves the node's accesskit_id metadata through Window::a11y_focus_handle and focuses the resulting handle, matching service.rs. cargo test -p gpui-mcp-html --test runtime exits 0 with 6 passed and 1 ignored; debug_a11y_tree_json() returning Some on a fresh window is C02's own patch behavior, covered by the observer's live test in the passing 21-test lib run."
+    },
+    "C04-INPUT-HANDLER-EXPOSURE": {
+      "status": "failed",
+      "evidence": "Node focus is satisfied and tested: dispatch_test_input(Focus) resolves the accesskit identity through Window::a11y_focus_handle and calls the same native focus API as the bridge's dispatch_focus, and complex_layout_and_interactive_states_round_trip asserts the tree reports focus-card as focused after the dispatch. The replacement half is not satisfied: the fixture registers the focused input's handler by clicking the field (a user's own path) and the insertion path works end-to-end (html_renders_to_gpui_and_uses_real_input types \"X\" and the bound state and published tree become \"Draft titleX\"), but Window::replace_input_text always returns false because its document-range probe re-enters the window (see blocker); the replacement scenario is kept as the ignored test replaced_text_reaches_the_document, which fails at that assertion when run explicitly."
+    }
+  },
+  "risks": [
+    "C04's replacement path is defective at runtime: Window::replace_input_text (vendor/gpui-pre/src/window.rs:2340-2354) probes the document range through PlatformInputHandler::text_for_range (vendor/gpui-pre/src/platform.rs:1706-1718), which re-enters the window through the handler's AsyncWindowContext and fails inside the only context that can call the method (the window is taken from the app map for the duration of any window update), so the probe returns None and the method reports false; the fork passed window/cx directly (replace_all_text(text, self, cx), e866463 vendor/gpui/src/window.rs), and PlatformInputHandler::dispatch_input shows the working shape (platform.rs:1773-1775). The bridge's ReplaceText arm maps the false to Unsupported (crates/gpui-mcp/src/input.rs:165-171), so the server's set_text flow cannot answer until the vendor exposes a window-taking replacement.",
+    "The native tree's action vocabulary is narrow: only Click and Focus are ever advertised (vendor/gpui-pre/src/elements/div.rs:3589-3592) and no scroll action names exist anywhere in the vendored tree, so the server's hover and scroll tools, which require NodeAction::Hover and NodeAction::Scroll (crates/gpui-mcp-server/src/tools.rs:590-599, tools/input.rs:189 and 401), cannot answer. The fixture resolves hover and scroll by bounds instead and documents the narrowed gates in dispatch_test_input; this is a parity narrowing versus the fork, whose FrameActions included Hover/Scroll/Drag.",
+    "Non-editable text and container elements stay unpublished: the runtime exposes aria_value only for editable text (crates/gpui-mcp-html/src/render.rs:574-580), anonymous text elements carry no accessibility role (vendor/gpui-pre/src/elements/text.rs:189-195), and Container roles map to no accessibility role (render.rs:1012), so heading/status text and plain-div containers (the disclosure menu, custom-element hosts such as embedded-canvas, render.rs:826) are absent from the semantic tree; the fixture asserts what the bridge publishes and the visual parity fixtures cover those pixels.",
+    "Handler registration depends on a repaint: a programmatic Window::focus (the bridge's Focus operation) does not notify the target entity, so an input's handler is registered only after the input repaints; the fixture clicks the field first (the user's own path). Applications driven by the bridge's Focus followed by TypeText/ReplaceText need their inputs to notify on focus, which the HTML runtime's text inputs do not do today."
+  ],
+  "blockers": [
+    "The replaced-text scenario cannot pass and the C04 replacement half cannot be verified: Window::replace_input_text always returns false because PlatformInputHandler::text_for_range re-enters the window from inside a window update (citations in risks). Owner decision needed: patch the vendor so a window-taking replacement exists (the fork's replace_all_text(text, window, cx) shape, for example a PlatformInputHandler method that calls the handler directly like dispatch_input does), or accept the set_text/type_into narrowing. The scenario is restored as the ignored test replaced_text_reaches_the_document and passes once the vendor fix lands."
+  ]
+}
