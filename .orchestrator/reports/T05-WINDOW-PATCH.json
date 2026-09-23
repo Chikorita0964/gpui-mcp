@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "execution_id": "daaaf0a0-f543-4747-bd98-aa143edc449d",
+  "task_id": "T05-WINDOW-PATCH",
+  "status": "completed",
+  "summary": "Batch C C01-C05: vendored gpui-pre 0.3.6 with four visibility-only patches (a11y activation, node_bounds access, text-entry input handler plus node-id-to-FocusHandle resolution, synthetic pointer preservation) and rewired observer.rs, input.rs, and service.rs onto them. cargo check --workspace and the crate gate matrix exit 0, and all 21 gpui-mcp unit tests pass, including the two accessibility observation tests that were previously ignored.",
+  "branch": "worker-1",
+  "implementation_commit": "c03bc6084e9a897de2b7a76512d7d9e6cc811f4b",
+  "owned_files": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "vendor/gpui-pre/Cargo.toml",
+    "vendor/gpui-pre/src/window.rs",
+    "vendor/gpui-pre/src/window/a11y.rs",
+    "crates/gpui-mcp/src/observer.rs",
+    "crates/gpui-mcp/src/input.rs",
+    "crates/gpui-mcp/src/service.rs"
+  ],
+  "changed_files": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "vendor/gpui-pre",
+    "crates/gpui-mcp/src/observer.rs",
+    "crates/gpui-mcp/src/input.rs",
+    "crates/gpui-mcp/src/service.rs"
+  ],
+  "tests": [
+    {
+      "command": "cargo check --workspace",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp --tests",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp-html --tests",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp-html --features visual-parity",
+      "result": "pass"
+    },
+    {
+      "command": "cargo test -p gpui-mcp --lib (21 passed; 0 failed; 0 ignored)",
+      "result": "pass"
+    },
+    {
+      "command": "cargo tree -p gpui-pre plus a workspace-wide cargo tree: gpui-pre resolves to vendor/gpui-pre at v0.3.6 and no other crate resolves from vendor/",
+      "result": "pass"
+    }
+  ],
+  "mandatory_acceptance": {
+    "C01-VENDOR-GPUI-PRE": {
+      "status": "satisfied",
+      "evidence": "Cargo.toml declares [patch.crates-io] gpui-pre = { path = \"vendor/gpui-pre\" }; cargo tree -p gpui-pre resolves gpui-pre v0.3.6 to vendor/gpui-pre and the workspace-wide tree resolves no other crate from vendor/ (gpui-pre-collections and gpui-pre-util stay on crates.io). The vendored tree is the 0.3.6 archive with exactly one modified file, src/window.rs, per a full-tree diff against the registry copy; Cargo.lock drops only the registry source and checksum for gpui-pre. The pre-patch build behavior is unchanged: cargo check --workspace exits 0 and all 21 gpui-mcp unit tests pass."
+    },
+    "C02-A11Y-ACTIVATION-GATE": {
+      "status": "satisfied",
+      "evidence": "vendor/gpui-pre/src/window.rs:1615 initializes a11y_active_flag to !accessibility_force_disabled, so the accessibility tree builds without assistive technology while a platform adapter can still deactivate it. observer::tests::observes_roles_labels_and_parentage asserts debug_a11y_tree_json() is Some on a freshly opened window with no screen reader attached and passes with its previous #[ignore] removed, and the dump carries the application's elements."
+    },
+    "C03-NODE-BOUNDS-EXPOSURE": {
+      "status": "satisfied",
+      "evidence": "Window::a11y_node_bounds (vendor/gpui-pre/src/window.rs:6839) returns the node's Bounds<Pixels> from A11y::node_bounds (window/a11y.rs:150) in the same logical pixels the layout engine stored. observer.rs publishes them as protocol Rect through each node's accesskit_id metadata, and the passing tests assert tree.nodes[\"save\"].bounds.is_some() plus the exact Rect mapping in parse_frame."
+    },
+    "C04-INPUT-HANDLER-EXPOSURE": {
+      "status": "satisfied",
+      "evidence": "Window::insert_input_text (vendor/gpui-pre/src/window.rs:2327) and Window::replace_input_text (2340) reach the live PlatformInputHandler and its replace_text_in_range; input.rs TypeText and ReplaceText call them and cargo check -p gpui-mcp --tests exits 0. Window::a11y_focus_handle (6846) opens A11y::focus_ids (window/a11y.rs:149) and FocusHandle::for_id (window.rs:558), and service.rs Focus resolves the handle before dispatch_focus; the observer test asserts the resolved handle and the resulting focused handle. Text entry has no runtime fixture in this crate, so it is verified at the compile-checked call path."
+    },
+    "C05-POINTER-POSITION-PRESERVATION": {
+      "status": "satisfied",
+      "evidence": "bounds_changed (vendor/gpui-pre/src/window.rs:2733) adopts the platform mouse position only when it differs from the last adopted platform position (2741), so a stale platform reading cannot cancel a synthetic hover. input::tests::synthetic_hover_survives_bounds_changed asserts the synthetic position survives a direct bounds_changed, a platform simulate_resize, and a simulate_scale_factor_change (DPI) and passes."
+    }
+  },
+  "risks": [
+    "crates/gpui-mcp-html (outside T05 ownership) still carries Batch C referral errors in its runtime test hooks and visual-parity fixture; those expectations were not re-run and may now be stale because C02-C04 landed.",
+    "Text insertion and replacement (C04) is verified through the compile-checked call path and code inspection only: no fixture in this crate owns an active input handler that could exercise replace_text_in_range at runtime.",
+    "registry.rs:341 still describes the overlay paint pass as the Batch C gap for P-A's overlay row, but no C01-C07 item covers an overlay patch; registry.rs is outside T05 ownership.",
+    "The vendored tree is committed whole as cargo vendor produced it (157 files, including .cargo-ok, the crate's own Cargo.lock, and Cargo.toml.orig), a departure from the hand-trimmed vendor/gpui tree Batch A deleted; only src/window.rs differs from the crates.io 0.3.6 archive."
+  ],
+  "blockers": []
+}
