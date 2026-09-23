@@ -57,6 +57,11 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 xcap = { version = "0.9.8", features = ["wgc"] }
 widestring = "1.2.1"
 
+# The vendored gpui-pre carries the minimal visibility fixes recorded in
+# vendor/PATCHES.md; every other crate resolves from crates.io.
+[patch.crates-io]
+gpui-pre = { path = "vendor/gpui-pre" }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"

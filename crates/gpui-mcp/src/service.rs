@@ -608,17 +608,30 @@ fn handle_ui_operation(
             Ok(BridgeResult::Ack)
         }
         Operation::Focus { node_id } => {
-            // gpui-pre 0.3.6 exposes no way to map a semantic node id to a
-            // `FocusHandle` from outside the crate: `A11y::focus_ids`
-            // (window/a11y.rs:149) and `FocusHandle::for_id` (window.rs:558)
-            // are `pub(crate)`, and the only native `NodeId`-to-focus path is
-            // `Window::handle_a11y_action` (window.rs:6805), also `pub(crate)`.
-            Err(BridgeError::new(
-                ErrorCode::Unsupported,
-                format!(
-                    "focusing semantic node {node_id:?} needs a FocusHandle the bridge cannot reach (Batch C: window/a11y.rs:149, window.rs:558, window.rs:6805)"
-                ),
-            ))
+            let tree = state.tree();
+            let node = tree.nodes.get(&node_id).ok_or_else(|| {
+                BridgeError::new(ErrorCode::NotFound, "semantic node was not found")
+            })?;
+            let accesskit_id = node
+                .metadata
+                .get("accesskit_id")
+                .and_then(|id| id.parse::<u64>().ok())
+                .ok_or_else(|| {
+                    BridgeError::new(
+                        ErrorCode::Unsupported,
+                        "the semantic node carries no accessibility identity to focus",
+                    )
+                })?;
+            let Some(handle) =
+                window.a11y_focus_handle(gpui::accesskit::NodeId(accesskit_id), cx)
+            else {
+                return Err(BridgeError::new(
+                    ErrorCode::NotFound,
+                    "semantic node is not focusable in the current frame",
+                ));
+            };
+            input::dispatch_focus(&handle, window, cx);
+            Ok(BridgeResult::Ack)
         }
         Operation::Refresh => {
             let completed = state.frame_stats();
