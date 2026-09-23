@@ -280,13 +280,28 @@ fn apply_fixture_action(
             )
         })?;
     if matches!(action, FixtureAction::Focus) {
-        // Mirrors the bridge: gpui-pre 0.3.6 exposes no node-id-to-FocusHandle
-        // mapping outside the crate (Batch C: window/a11y.rs:149,
-        // window.rs:558, window.rs:6805).
-        return Err(gpui_mcp::BridgeError::new(
-            gpui_mcp::ErrorCode::Unsupported,
-            "focusing a semantic node needs a FocusHandle the bridge cannot reach (Batch C: window/a11y.rs:149, window.rs:558, window.rs:6805)",
-        ));
+        // Mirrors the bridge's `Focus` operation: resolve the node's
+        // accessibility identity to the focus handle GPUI recorded for it.
+        let accesskit_id = node
+            .metadata
+            .get("accesskit_id")
+            .and_then(|id| id.parse::<u64>().ok())
+            .ok_or_else(|| {
+                gpui_mcp::BridgeError::new(
+                    gpui_mcp::ErrorCode::Unsupported,
+                    "fixture semantic element carries no accessibility identity to focus",
+                )
+            })?;
+        let Some(handle) = window.a11y_focus_handle(gpui::accesskit::NodeId(accesskit_id), cx)
+        else {
+            return Err(gpui_mcp::BridgeError::new(
+                gpui_mcp::ErrorCode::NotFound,
+                "fixture semantic element is not focusable in the current frame",
+            ));
+        };
+        window.focus(&handle, cx);
+        window.refresh();
+        return Ok(());
     }
     let bounds = node.bounds.ok_or_else(|| {
         gpui_mcp::BridgeError::new(
