@@ -338,8 +338,9 @@ impl SharedState {
     /// Retain the current highlight set.
     ///
     /// Nothing draws highlights yet: the patched overlay paint pass is gone and
-    /// stock GPUI exposes no post-paint hook, so this is the Batch C gap for
-    /// P-A's overlay row.
+    /// stock GPUI exposes no post-paint hook, so highlight drawing remains
+    /// unimplemented, tracked by the P-A overlay row of
+    /// `docs/rewire-summary-b.md`.
     pub(crate) fn set_highlights(&self, highlights: Vec<Highlight>) {
         *self
             .highlights

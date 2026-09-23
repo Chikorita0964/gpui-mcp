@@ -134,8 +134,8 @@ pub(crate) fn pointer_location(window: &Window) -> Point {
 /// entry behave exactly as they do for platform keystrokes.
 ///
 /// Text insertion and replacement route through [`Window::insert_input_text`]
-/// and [`Window::replace_input_text`], which the C04 visibility patch opens
-/// over the live `PlatformInputHandler` and its `replace_text_in_range`.
+/// and [`Window::replace_input_text`], which the C04 patch set opens over the
+/// live `PlatformInputHandler` and its `replace_all_text`.
 pub(crate) fn dispatch_keyboard(
     command: InputCommand,
     window: &mut Window,
@@ -163,7 +163,7 @@ pub(crate) fn dispatch_keyboard(
             }
         }
         InputCommand::ReplaceText { text } => {
-            if !window.replace_input_text(&text) {
+            if !window.replace_input_text(&text, cx) {
                 return Err(unsupported(
                     "focused input cannot expose its complete document range",
                 ));
