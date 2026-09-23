@@ -5,11 +5,11 @@ use std::rc::Rc;
 
 use gpui::{
     AlignItems, AlignSelf, AnyElement, App, AppContext as _, BoxShadow, Context, DefiniteLength,
-    Div, Entity, FocusHandle, FontFallbacks, FontWeight, GridPlacement,
-    InteractiveElement as _, IntoElement, Length, Overflow, ParentElement as _, Render,
-    Role as AccessibleRole, ScrollHandle, SharedString, Stateful, StatefulInteractiveElement as _,
-    Styled, Toggled, Window, div, point, px, relative, rgba,
+    Div, Entity, FocusHandle, FontFallbacks, FontWeight, GridPlacement, InteractiveElement as _,
+    IntoElement, Length, Overflow, ParentElement as _, Render, Role as AccessibleRole,
+    ScrollHandle, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Toggled, Window,
     accesskit::{Action as AccessibleAction, ActionData},
+    div, point, px, relative, rgba,
 };
 use gpui_mcp::{Automation, MAX_LABEL_BYTES, MAX_TEXT_BYTES};
 use htmlswap::{
@@ -579,10 +579,10 @@ impl LiveHtml {
                 host = host.aria_value(text.text);
             }
         }
-        if let Some(value) = element_value(element, &property_values, &bindings) {
-            if !is_editable_role(role) || value.editable {
-                host = host.aria_value(value.value);
-            }
+        if let Some(value) = element_value(element, &property_values, &bindings)
+            && (!is_editable_role(role) || value.editable)
+        {
+            host = host.aria_value(value.value);
         }
         if let Some(input) = text_input.filter(|_| state.enabled && !is_password(element)) {
             host = host.on_a11y_action(AccessibleAction::SetValue, move |data, window, cx| {

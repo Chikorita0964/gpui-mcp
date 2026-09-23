@@ -622,8 +622,7 @@ fn handle_ui_operation(
                         "the semantic node carries no accessibility identity to focus",
                     )
                 })?;
-            let Some(handle) =
-                window.a11y_focus_handle(gpui::accesskit::NodeId(accesskit_id), cx)
+            let Some(handle) = window.a11y_focus_handle(gpui::accesskit::NodeId(accesskit_id), cx)
             else {
                 return Err(BridgeError::new(
                     ErrorCode::NotFound,

@@ -460,7 +460,7 @@ mod tests {
             );
         });
 
-        assert_eq!(scrolled.get(), 120.0);
+        assert!((scrolled.get() - 120.0).abs() < f32::EPSILON);
     }
 
     #[gpui::test]
@@ -471,7 +471,11 @@ mod tests {
         }
 
         impl Render for KeyTarget {
-            fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            fn render(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut Context<Self>,
+            ) -> impl IntoElement {
                 let pressed = self.pressed.clone();
                 div()
                     .id("native-key-target")
@@ -561,7 +565,7 @@ mod tests {
 
         // A resize must not adopt the unchanged platform position and cancel
         // the synthetic hover (C05).
-        visual.update(|window, cx| window.bounds_changed(cx));
+        visual.update(Window::bounds_changed);
         assert_eq!(
             visual.update(|window, _| window.mouse_position()),
             point(px(synthetic.x), px(synthetic.y)),

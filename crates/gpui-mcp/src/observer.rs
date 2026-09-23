@@ -31,8 +31,8 @@
 //!   ancestor's content-derived label.
 //! - Application metadata is not emitted; [`UiNode::metadata`] carries only the
 //!   node's `accesskit_id` for focus resolution.
-//! - Hover and Drag have no AccessKit action, so only Click, Focus, SetText,
-//!   SetValue, and Scroll can be reported.
+//! - Hover and Drag have no AccessKit action, so only `Click`, `Focus`,
+//!   `SetText`, `SetValue`, and `Scroll` can be reported.
 //! - The overlay paint pass has no stock equivalent, so highlight overlays are
 //!   not drawn.
 
@@ -179,42 +179,10 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
         .and_then(Json::as_str)
         .map(str::to_owned);
 
-    let mut raw: HashMap<String, RawNode> = HashMap::with_capacity(nodes_json.len());
-    for (key, node) in nodes_json {
-        let Some(node) = node.as_object() else {
-            continue;
-        };
-        let accesskit_id = node
-            .get("accesskit_id")
-            .and_then(Json::as_str)
-            .unwrap_or(key.as_str())
-            .to_owned();
-        let children = node
-            .get("children")
-            .and_then(Json::as_array)
-            .map(|children| {
-                children
-                    .iter()
-                    .filter_map(Json::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let element_id = node
-            .get("element_id")
-            .and_then(Json::as_str)
-            .and_then(decode_element_id);
-        let aria = parse_aria(node.get("aria"));
-        raw.insert(
-            key.clone(),
-            RawNode {
-                accesskit_id,
-                children,
-                element_id,
-                aria,
-            },
-        );
-    }
+    let raw: HashMap<String, RawNode> = nodes_json
+        .iter()
+        .filter_map(|(key, node)| Some((key.clone(), parse_raw_node(key, node.as_object()?))))
+        .collect();
 
     let host_key = root_key
         .as_ref()
@@ -233,7 +201,10 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
     let mut order = Vec::with_capacity(raw.len());
     let mut visited: HashSet<String> = HashSet::with_capacity(raw.len());
     let start = match &root_key {
-        Some(root) => raw.get(root).map(|node| node.children.clone()).unwrap_or_default(),
+        Some(root) => raw
+            .get(root)
+            .map(|node| node.children.clone())
+            .unwrap_or_default(),
         None => Vec::new(),
     };
     collect_order(&raw, &start, host_key.as_deref(), &mut visited, &mut order);
@@ -284,31 +255,93 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
         let Some(node) = raw.get(key) else {
             continue;
         };
-        let role_name = node.aria.role.as_str();
-        let role = role_from_name(role_name);
-        let redacted = node.aria.is_redacted();
-        let node_content = content.get(key).cloned().unwrap_or_default();
-        let label = node
-            .aria
-            .label
+        let hidden = node.aria.hidden
+            || parent_of
+                .get(key)
+                .is_some_and(|parent| hidden_keys.contains(parent.as_str()));
+        if hidden {
+            hidden_keys.insert(key.as_str());
+        }
+        let bounds = node.accesskit_id.parse::<u64>().ok().and_then(&bounds_for);
+        nodes.push(to_ui_node(
+            node,
+            PublishedNode {
+                identity: identities.get(key).cloned().unwrap_or_else(|| key.clone()),
+                parent: parent_of
+                    .get(key)
+                    .and_then(|parent| identities.get(parent))
+                    .cloned(),
+                content: content.get(key).map(String::as_str).unwrap_or_default(),
+                bounds,
+                hidden,
+                focused: focus_key.as_deref() == Some(key.as_str()),
+            },
+        ));
+    }
+    Some(nodes)
+}
+
+/// Read one JSON node, keyed by its ephemeral dump key.
+fn parse_raw_node(key: &str, node: &serde_json::Map<String, Json>) -> RawNode {
+    RawNode {
+        accesskit_id: node
+            .get("accesskit_id")
+            .and_then(Json::as_str)
+            .unwrap_or(key)
+            .to_owned(),
+        children: node
+            .get("children")
+            .and_then(Json::as_array)
+            .map(|children| {
+                children
+                    .iter()
+                    .filter_map(Json::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        element_id: node
+            .get("element_id")
+            .and_then(Json::as_str)
+            .and_then(decode_element_id),
+        aria: parse_aria(node.get("aria")),
+    }
+}
+
+/// What `parse_frame` resolves about a node from the whole tree.
+struct PublishedNode<'a> {
+    identity: String,
+    parent: Option<String>,
+    content: &'a str,
+    bounds: Option<Rect>,
+    hidden: bool,
+    focused: bool,
+}
+
+/// Build one protocol node from its own semantics and its tree context.
+fn to_ui_node(node: &RawNode, published: PublishedNode<'_>) -> UiNode {
+    let role_name = node.aria.role.as_str();
+    let redacted = node.aria.is_redacted();
+    let label = node
+        .aria
+        .label
+        .clone()
+        .or_else(|| label_from_content(role_name, published.content));
+    let text_value = if redacted {
+        None
+    } else {
+        node.aria
+            .value
             .clone()
-            .or_else(|| label_from_content(role_name, &node_content));
-        let text_value = if redacted {
-            None
-        } else {
-            node.aria
-                .value
-                .clone()
-                .or_else(|| (!node_content.is_empty()).then(|| node_content.clone()))
-        };
-        let text = is_text_role_name(role_name).then(|| TextInfo {
-            text: text_value.clone().unwrap_or_default(),
-            caret: None,
-            selection: None,
-            redacted,
-        });
-        let value = (!redacted
-            && (node.aria.numeric_value.is_some() || node.aria.value.is_some()))
+            .or_else(|| (!published.content.is_empty()).then(|| published.content.to_owned()))
+    };
+    let text = is_text_role_name(role_name).then(|| TextInfo {
+        text: text_value.clone().unwrap_or_default(),
+        caret: None,
+        selection: None,
+        redacted,
+    });
+    let value = (!redacted && (node.aria.numeric_value.is_some() || node.aria.value.is_some()))
         .then(|| ValueInfo {
             value: node
                 .aria
@@ -320,58 +353,42 @@ fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<V
             max: node.aria.max,
             step: node.aria.step,
         });
-        let mut actions = actions_from_names(role_name, &node.aria.on_action);
-        if redacted {
-            actions.retain(|action| !matches!(action, NodeAction::SetText | NodeAction::SetValue));
-        }
-        let identity = identities
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| key.clone());
-        let accesskit_id = node.accesskit_id.parse::<u64>().ok();
-        let bounds = accesskit_id.and_then(&bounds_for);
-        let hidden = node.aria.hidden
-            || parent_of
-                .get(key)
-                .is_some_and(|parent| hidden_keys.contains(parent.as_str()));
-        if hidden {
-            hidden_keys.insert(key.as_str());
-        }
-        let has_area = bounds.is_none_or(|bounds| bounds.width > 0.0 && bounds.height > 0.0);
-        let mut metadata = BTreeMap::new();
-        if let Some(accesskit_id) = accesskit_id {
-            metadata.insert("accesskit_id".to_owned(), accesskit_id.to_string());
-        }
-        nodes.push(UiNode {
-            id: identity,
-            parent: parent_of
-                .get(key)
-                .and_then(|parent| identities.get(parent))
-                .cloned(),
-            children: Vec::new(),
-            role,
-            label,
-            description: node.aria.description.clone(),
-            bounds,
-            state: NodeState {
-                visible: !hidden && has_area,
-                enabled: !node.aria.disabled,
-                focused: focus_key.as_deref() == Some(key.as_str()),
-                checked: match node.aria.toggled.as_deref() {
-                    Some("True") => Some(true),
-                    Some("False") => Some(false),
-                    _ => None,
-                },
-                selected: node.aria.selected,
-                expanded: node.aria.expanded,
-            },
-            actions,
-            text,
-            value,
-            metadata,
-        });
+    let mut actions = actions_from_names(role_name, &node.aria.on_action);
+    if redacted {
+        actions.retain(|action| !matches!(action, NodeAction::SetText | NodeAction::SetValue));
     }
-    Some(nodes)
+    let has_area = published
+        .bounds
+        .is_none_or(|bounds| bounds.width > 0.0 && bounds.height > 0.0);
+    let mut metadata = BTreeMap::new();
+    if let Ok(accesskit_id) = node.accesskit_id.parse::<u64>() {
+        metadata.insert("accesskit_id".to_owned(), accesskit_id.to_string());
+    }
+    UiNode {
+        id: published.identity,
+        parent: published.parent,
+        children: Vec::new(),
+        role: role_from_name(role_name),
+        label,
+        description: node.aria.description.clone(),
+        bounds: published.bounds,
+        state: NodeState {
+            visible: !published.hidden && has_area,
+            enabled: !node.aria.disabled,
+            focused: published.focused,
+            checked: match node.aria.toggled.as_deref() {
+                Some("True") => Some(true),
+                Some("False") => Some(false),
+                _ => None,
+            },
+            selected: node.aria.selected,
+            expanded: node.aria.expanded,
+        },
+        actions,
+        text,
+        value,
+        metadata,
+    }
 }
 
 /// Append every node reachable from `start` to `order`, depth first, in the
@@ -415,11 +432,11 @@ fn assign_identities(
     while !unresolved.is_empty() {
         let mut counts: HashMap<String, usize> = HashMap::with_capacity(unresolved.len());
         for key in &unresolved {
-            *counts.entry(path_suffix(&segments[*key], depth)).or_default() += 1;
+            *counts
+                .entry(path_suffix(&segments[*key], depth))
+                .or_default() += 1;
         }
-        let exhausted = unresolved
-            .iter()
-            .all(|key| segments[*key].len() <= depth);
+        let exhausted = unresolved.iter().all(|key| segments[*key].len() <= depth);
         let mut settled: Vec<String> = Vec::new();
         unresolved.retain(|key| {
             let candidate = path_suffix(&segments[*key], depth);
@@ -473,12 +490,12 @@ fn content_text(
             if child_node.aria.is_redacted() {
                 continue;
             }
-            if is_text_role_name(&child_node.aria.role) {
-                if let Some(value) = &child_node.aria.value {
-                    let normalized = normalize_text(value);
-                    if !normalized.is_empty() {
-                        parts.push(normalized);
-                    }
+            if is_text_role_name(&child_node.aria.role)
+                && let Some(value) = &child_node.aria.value
+            {
+                let normalized = normalize_text(value);
+                if !normalized.is_empty() {
+                    parts.push(normalized);
                 }
             }
             let child_text = content_text(child, raw, memo, visiting);
@@ -520,7 +537,9 @@ fn decode_element_id(raw: &str) -> Option<String> {
 }
 
 fn variant_inner<'a>(raw: &'a str, variant: &str) -> Option<&'a str> {
-    raw.strip_prefix(variant)?.strip_prefix('(')?.strip_suffix(')')
+    raw.strip_prefix(variant)?
+        .strip_prefix('(')?
+        .strip_suffix(')')
 }
 
 fn decode_quoted(raw: &str) -> Option<String> {
@@ -550,7 +569,10 @@ fn parse_aria(aria: Option<&Json>) -> Aria {
         expanded: aria.get("expanded").and_then(Json::as_bool),
         toggled: string_field(aria, "toggled"),
         hidden: aria.get("hidden").and_then(Json::as_bool).unwrap_or(false),
-        disabled: aria.get("disabled").and_then(Json::as_bool).unwrap_or(false),
+        disabled: aria
+            .get("disabled")
+            .and_then(Json::as_bool)
+            .unwrap_or(false),
         on_action: aria
             .get("on_action")
             .and_then(Json::as_array)
@@ -585,8 +607,8 @@ fn role_from_name(name: &str) -> Role {
         "Link" => Role::Link,
         "Label" | "TextRun" | "Paragraph" | "Heading" | "Legend" | "Caption" | "FigureCaption"
         | "Term" | "Code" | "Emphasis" | "Strong" => Role::Text,
-        "TextInput" | "MultilineTextInput" | "EmailInput" | "PasswordInput" | "PhoneNumberInput"
-        | "UrlInput" => Role::TextInput,
+        "TextInput" | "MultilineTextInput" | "EmailInput" | "PasswordInput"
+        | "PhoneNumberInput" | "UrlInput" => Role::TextInput,
         "SearchInput" | "Search" => Role::SearchInput,
         "Slider" | "SpinButton" => Role::Slider,
         "ProgressIndicator" | "Meter" => Role::Progress,
@@ -726,8 +748,8 @@ mod tests {
     use gpui::accesskit::NodeId as A11yNodeId;
     use gpui::{
         AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-        ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-        TestAppContext, Text, Window, div, px,
+        ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
+        Styled as _, TestAppContext, Text, Window, div, px,
     };
     use gpui_mcp_protocol::{NodeAction, Rect, Role as McpRole, TextInfo, ValueInfo};
 
@@ -797,7 +819,10 @@ mod tests {
             "bounds resolve through the window's accessibility map"
         );
         assert_eq!(
-            tree["save"].metadata.get("accesskit_id").map(String::as_str),
+            tree["save"]
+                .metadata
+                .get("accesskit_id")
+                .map(String::as_str),
             Some("2"),
             "the published node carries the id focus resolution needs"
         );
@@ -847,8 +872,19 @@ mod tests {
                 step: Some(1.0),
             })
         );
-        assert!(tree["volume"].state.focused, "gpui_focus names the focused node");
+        assert!(
+            tree["volume"].state.focused,
+            "gpui_focus names the focused node"
+        );
         assert_eq!(tree["volume"].actions, [NodeAction::SetValue]);
+    }
+
+    #[test]
+    fn colliding_element_ids_get_frame_unique_identities() {
+        let nodes = parse_frame(FRAME_JSON, |_| None).unwrap_or_default();
+        let tree: std::collections::HashMap<&str, &gpui_mcp_protocol::UiNode> =
+            nodes.iter().map(|node| (node.id.as_str(), node)).collect();
+        assert!(!tree.is_empty(), "the fixture parses");
 
         assert_eq!(tree["root/panel#5"].role, McpRole::Group);
         assert_eq!(tree["root/panel#5"].state.selected, None);
@@ -1099,7 +1135,10 @@ mod tests {
             .metadata
             .get("accesskit_id")
             .and_then(|id| id.parse::<u64>().ok());
-        assert!(accesskit_id.is_some(), "the field publishes its accesskit id");
+        assert!(
+            accesskit_id.is_some(),
+            "the field publishes its accesskit id"
+        );
         let accesskit_id = accesskit_id.unwrap_or_default();
         let resolved =
             visual.update(|window, cx| window.a11y_focus_handle(A11yNodeId(accesskit_id), cx));
@@ -1188,7 +1227,10 @@ mod tests {
                 "an ambiguous element id keeps its id and gains a frame-unique suffix: {id}"
             );
             assert_eq!(panel.children.len(), 1);
-            let text = tree.nodes[&panel.children[0]].text.clone().unwrap_or_default();
+            let text = tree.nodes[&panel.children[0]]
+                .text
+                .clone()
+                .unwrap_or_default();
             titles.push(text.text);
         }
         titles.sort();

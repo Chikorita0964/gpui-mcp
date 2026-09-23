@@ -384,7 +384,7 @@ const OBSERVATION_PUMP_ATTEMPTS: usize = 5;
 /// frame the fixture already completed.
 fn pump_observation(visual: &mut VisualTestContext) {
     for _ in 0..OBSERVATION_PUMP_ATTEMPTS {
-        let delivered = visual.update(|window, cx| window.simulate_next_frame(cx));
+        let delivered = visual.update(Window::simulate_next_frame);
         if delivered == 0 {
             break;
         }
@@ -684,10 +684,18 @@ fn dispatch_actions(automation: &Automation, window: &mut Window, cx: &mut App) 
         })
     );
     assert_eq!(dispatch("published", &publish), Ok(HookOutcome::Handled));
-    assert_eq!(dispatch("title", &TestInput::Focus), Ok(HookOutcome::Handled));
+    assert_eq!(
+        dispatch("title", &TestInput::Focus),
+        Ok(HookOutcome::Handled)
+    );
 }
 
-fn assert_updated_tree(tree: &UiTree, old_generation: u64, state: &TestState, expected_title: &str) {
+fn assert_updated_tree(
+    tree: &UiTree,
+    old_generation: u64,
+    state: &TestState,
+    expected_title: &str,
+) {
     assert_eq!(state.title.borrow().as_str(), expected_title);
     assert_eq!(
         tree.nodes["title"]
