@@ -3,9 +3,21 @@
 `vendor/gpui-pre` is `gpui-pre` 0.3.6 from crates.io: the crate GPUI Kit
 re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Six
 focused patches open APIs the bridge needs but cannot reach through the stock
-surface. Every patch is visibility or gating only: it opens an existing
-implementation, adds no behavior beyond the gate it opens, and is marked at its
-site with a `gpui-mcp patch (C0x):` comment.
+surface. Each patch site is marked with a `gpui-mcp patch (C0x):` comment.
+
+The set falls into two classes:
+
+- **Gating and visibility**: C01 (vendored crate and workspace patch entry),
+  C02 (accessibility activation), C03 (`Window::a11y_node_bounds`), and C04's
+  `Window::a11y_focus_handle`. These open an existing implementation and add no
+  behavior beyond the gate they open.
+- **Ported fork-patch behavior**: C04's document-range probe in
+  `Window::replace_input_text`, C05's pointer-tracking field with move detection
+  in `bounds_changed`, and C06's trait-fill in `resolve_font`. These carry
+  behavior the fork's own patch applied before the rewire — pointer ownership
+  and synthetic-input preservation from P-C, and fallback traits from P-D — as
+  recorded in `GPUI_MCP_REWIRE.md` and the fork's original
+  `vendor/gpui/PATCHES.md`.
 
 ## Re-applying the set
 

@@ -8,9 +8,9 @@ What the gpui-kit rewire covered per fork patch, and what it could not. Pairs wi
 | Command | Result |
 |---|---|
 | `cargo check -p gpui-mcp --tests` | exit 0, no diagnostics |
-| `cargo check --workspace` | exit 0; one warning: `crates/gpui-mcp/src/input.rs:184` (`dispatch_focus` unused outside tests) |
-| `cargo check -p gpui-mcp-html --tests` | exit 0; the same single warning |
-| `cargo check -p gpui-mcp-html --features visual-parity` | exit 0; the same single warning |
+| `cargo check --workspace` | exit 0, no diagnostics |
+| `cargo check -p gpui-mcp-html --tests` | exit 0, no diagnostics |
+| `cargo check -p gpui-mcp-html --features visual-parity` | exit 0, no diagnostics |
 
 ## Coverage
 
@@ -21,12 +21,17 @@ What the gpui-kit rewire covered per fork patch, and what it could not. Pairs wi
 | **P-C** Pointer ownership | Synthetic pointer events run GPUI's native pipeline (`Window::dispatch_event`), and `DispatchEventResult` is public | `bounds_changed` still overwrites the synthetic pointer position with the platform's, so a resize or DPI change mid-hover reverts to the physical pointer | `window.rs:2695` |
 | **P-D** Font-family fallback preserving requested weight, style, and OpenType features | Nothing in the bridge; the fallback stack is GPUI-internal | The stack is built from bare `font(family)` calls, so a fallback face loses the requested weight and style | `text_system.rs:255` (stack construction), `text_system.rs:370` (`resolve_font`) |
 
+This table is the Batch B snapshot, and its citations name stock 0.3.6 behavior.
+Batch C closed the activation (C02), bounds (C03), focus and text replacement
+(C04), pointer (C05), and fallback (C06) gaps through the patches in
+`vendor/PATCHES.md`.
+
 ## Carried bridge-side edits
 
 | Item | Where | Reason |
 |---|---|---|
 | Provenance metadata, redaction, and action hints (`frame_metadata`, `frame_redacted`, `frame_action`) | `crates/gpui-mcp-html/src/render.rs` | Dropped: the JSON carries none of them (P-A row), and actions now come from `on_action` (P-B row) |
 | Hidden and disabled semantics (`aria_hidden`, `aria_disabled`) | `crates/gpui-mcp-html/src/render.rs`, `examples/demo/src/main.rs:133` | Dropped: stock GPUI has no such setters (the `aria_*` list in `elements/div.rs`) |
-| HTML runtime test target | `crates/gpui-mcp-html/tests/runtime.rs` | Compiles again: the focus hook and the replaced-text assertion now mirror the bridge's `Unsupported` referrals. Its remaining runtime assertions (advertised Hover, bounds-based dispatch, tree contents) await C02 and C03 |
-| Visual parity bin focus path | `crates/gpui-mcp-html/src/bin/visual.rs` | Returns the same `Unsupported` referral; the `visual-parity` required-features gate is unchanged |
-| `dispatch_focus` unused outside tests | `crates/gpui-mcp/src/input.rs:184` | Warning only; the call site returns the P-B focus error until Batch C exposes the mapping |
+| HTML runtime test target | `crates/gpui-mcp-html/tests/runtime.rs` | Compiles; Batch C opened focus through `Window::a11y_focus_handle` and text replacement through `Window::replace_input_text`, so its hooks and assertions rewire onto those. Its remaining runtime assertions (advertised Hover, bounds-based dispatch, tree contents) depend on the Batch C activation and bounds wiring |
+| Visual parity bin focus path | `crates/gpui-mcp-html/src/bin/visual.rs` | The `visual-parity` required-features gate is unchanged; Batch C opened focus through `Window::a11y_focus_handle`, so the bin's focus path rewires onto it |
+| `dispatch_focus` unused outside tests | `crates/gpui-mcp/src/input.rs:184` | Resolved: `service.rs` resolves the node's handle through `Window::a11y_focus_handle` and calls `dispatch_focus`, so the warning is gone |
