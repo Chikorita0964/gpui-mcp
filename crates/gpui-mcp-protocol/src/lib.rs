@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Current wire protocol version.
-pub const PROTOCOL_VERSION: u16 = 12;
+pub const PROTOCOL_VERSION: u16 = 13;
 /// Maximum accepted request frame, including its four-byte length prefix.
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 /// Maximum accepted response frame. Screenshots are base64 encoded inside it.
@@ -930,6 +930,12 @@ pub enum Operation {
     Ping,
     /// Return the latest semantic tree.
     GetTree,
+    /// Return the latest semantic tree only when its generation differs from
+    /// `known_generation`; otherwise answer [`BridgeResult::TreeUnchanged`].
+    GetTreeIfChanged {
+        /// Generation of the tree the caller already holds.
+        known_generation: u64,
+    },
     /// Dispatch keyboard input on the UI thread.
     Input {
         /// Keyboard input command.
@@ -962,6 +968,14 @@ pub enum Operation {
     /// Request a new GPUI frame and return the last completed-frame token observed before the
     /// refresh was scheduled.
     Refresh,
+    /// Refresh and wait for a newer completed frame, `rounds` times, in one
+    /// exchange; returns the stats of the last frame.
+    SettleFrames {
+        /// Refresh-and-wait rounds, from one through four.
+        rounds: u8,
+        /// Maximum wait per round, from one through 30,000 milliseconds.
+        timeout_ms: u64,
+    },
     /// Return current GPUI client-area geometry for native region capture.
     GetWindowGeometry,
     /// Replace the current highlight set.
@@ -1026,6 +1040,8 @@ pub enum BridgeResult {
     },
     /// Latest semantic tree.
     Tree(UiTree),
+    /// The tree still has the generation the caller already holds.
+    TreeUnchanged,
     /// Operation completed without a richer result.
     Ack,
     /// Current GPUI client-area geometry.

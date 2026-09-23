@@ -97,6 +97,10 @@ impl BridgeClient {
             | Operation::WaitForFrame { timeout_ms, .. } => {
                 Duration::from_millis(*timeout_ms).saturating_add(IO_TIMEOUT)
             }
+            Operation::SettleFrames { rounds, timeout_ms } => {
+                Duration::from_millis(timeout_ms.saturating_mul(u64::from(*rounds)))
+                    .saturating_add(IO_TIMEOUT)
+            }
             _ => IO_TIMEOUT,
         };
         let request_id =

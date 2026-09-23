@@ -72,7 +72,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<CallToolResult, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let rect = require_bounds(get_node(&tree, &args.id)?)?;
         self.capture(ScreenshotTarget::Region { rect })
             .await
@@ -87,7 +87,7 @@ impl GpuiMcp {
         if args.ids.is_empty() || args.ids.len() > 64 {
             return Err("ids must contain between 1 and 64 elements".to_owned());
         }
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let highlights = args
             .ids
             .iter()
@@ -187,7 +187,7 @@ impl GpuiMcp {
             .pointer
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = pointer;
-        let root = largest_root_bounds(&self.tree().await?);
+        let root = largest_root_bounds(self.shared_tree().await?.as_ref());
         let include_pointer = args.include_pointer;
         let pointer_state = self.pointer.clone();
         let (stream, first) = tokio::task::spawn_blocking(move || {

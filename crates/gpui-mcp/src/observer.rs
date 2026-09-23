@@ -11,8 +11,8 @@
 //! node id when even the full path collides. Consumers must group nodes by
 //! `parent`, never by the shape of the identity itself.
 //!
-//! GPUI records `element_id` and `view` provenance only in `debug_assertions`
-//! builds, so release builds identify nodes by their AccessKit node id.
+//! Element ids come from [`Window::a11y_element_id`] (patch C13), so release
+//! builds name nodes the same way debug builds do.
 //!
 //! The native tree does not carry everything the patched GPUI observed, and
 //! this module publishes what it carries:
@@ -42,7 +42,8 @@ use std::sync::{Arc, Weak};
 use gpui::accesskit::NodeId;
 use gpui::{A11yPointerInteractions, Window};
 use gpui_mcp_protocol::{NodeAction, NodeState, Rect, Role, TextInfo, UiNode, ValueInfo};
-use serde_json::Value as Json;
+use serde::Deserialize;
+use serde::de::{Deserializer, MapAccess, Visitor};
 
 use crate::registry::{SharedState, rect_from_gpui};
 
@@ -81,6 +82,9 @@ impl BridgeObserver {
             pointer: window
                 .a11y_pointer_interactions(NodeId(accesskit_id))
                 .unwrap_or_default(),
+            element_id: window
+                .a11y_element_id(NodeId(accesskit_id))
+                .and_then(|id| element_id_name(&id)),
         }) else {
             state.add_log("warn", "the accessibility tree could not be parsed");
             return false;
@@ -122,33 +126,49 @@ impl BridgeObserver {
 /// refreshing, so observation does not give up before a frame completes.
 const OBSERVE_FRAME_ATTEMPTS: u8 = 4;
 
+/// The fields of one `debug_a11y_tree_json()` document the observer reads.
+#[derive(Deserialize)]
+struct Frame {
+    root: Option<String>,
+    gpui_focus: Option<String>,
+    #[serde(deserialize_with = "node_entries")]
+    nodes: Vec<(String, RawNode)>,
+}
+
 /// One node of `debug_a11y_tree_json()` before it is named.
+#[derive(Deserialize)]
 struct RawNode {
+    #[serde(default)]
     accesskit_id: String,
+    #[serde(default)]
     children: Vec<String>,
+    #[serde(default, deserialize_with = "element_id")]
     element_id: Option<String>,
+    #[serde(default)]
     aria: Aria,
 }
 
 impl RawNode {
     /// The node's own identifier: its element id, or its AccessKit node id.
-    fn own_id(&self) -> String {
-        self.element_id
-            .clone()
-            .unwrap_or_else(|| self.accesskit_id.clone())
+    fn own_id(&self) -> &str {
+        self.element_id.as_deref().unwrap_or(&self.accesskit_id)
     }
 }
 
 /// Accessibility semantics carried by one JSON node.
-#[derive(Default)]
+#[derive(Default, Deserialize)]
+#[serde(default)]
 struct Aria {
     role: String,
     label: Option<String>,
     description: Option<String>,
     value: Option<String>,
     numeric_value: Option<f64>,
+    #[serde(rename = "min_numeric_value")]
     min: Option<f64>,
+    #[serde(rename = "max_numeric_value")]
     max: Option<f64>,
+    #[serde(rename = "numeric_value_step")]
     step: Option<f64>,
     selected: Option<bool>,
     expanded: Option<bool>,
@@ -174,161 +194,191 @@ impl Aria {
 /// carries that id as `metadata["accesskit_id"]` so focus requests can resolve
 /// a handle. Returns `None` when the document does not carry a node map.
 fn parse_frame(json: &str, lookup: impl Fn(u64) -> NodeLookup) -> Option<Vec<UiNode>> {
-    let frame: Json = serde_json::from_str(json).ok()?;
-    let nodes_json = frame.get("nodes")?.as_object()?;
-    let root_key = frame.get("root").and_then(Json::as_str).map(str::to_owned);
-    let focus_key = frame
-        .get("gpui_focus")
-        .and_then(Json::as_str)
-        .map(str::to_owned);
-
-    let raw: HashMap<String, RawNode> = nodes_json
-        .iter()
-        .filter_map(|(key, node)| Some((key.clone(), parse_raw_node(key, node.as_object()?))))
-        .collect();
-
-    let host_key = root_key
-        .as_ref()
-        .filter(|root| raw.get(*root).is_some_and(|node| node.element_id.is_none()))
-        .cloned();
-
-    let mut parent_of: HashMap<String, String> = HashMap::with_capacity(raw.len());
-    for (key, node) in &raw {
-        for child in &node.children {
-            if raw.contains_key(child) {
-                parent_of.insert(child.clone(), key.clone());
-            }
-        }
-    }
-
-    let mut order = Vec::with_capacity(raw.len());
-    let mut visited: HashSet<String> = HashSet::with_capacity(raw.len());
-    let start = match &root_key {
-        Some(root) => raw
-            .get(root)
-            .map(|node| node.children.clone())
-            .unwrap_or_default(),
-        None => Vec::new(),
-    };
-    collect_order(&raw, &start, host_key.as_deref(), &mut visited, &mut order);
-    let mut leftovers: Vec<String> = raw
-        .keys()
-        .filter(|key| !visited.contains(*key))
-        .cloned()
-        .collect();
-    leftovers.sort();
-    collect_order(
-        &raw,
-        &leftovers,
-        host_key.as_deref(),
-        &mut visited,
-        &mut order,
-    );
-
-    let segments: HashMap<String, Vec<String>> = order
-        .iter()
-        .map(|key| {
-            (
-                key.clone(),
-                ancestor_path(key, &raw, &parent_of, host_key.as_deref()),
-            )
-        })
-        .collect();
-    let identities = assign_identities(&order, &segments, &raw);
-
-    let mut content: HashMap<String, String> = HashMap::with_capacity(order.len());
-    let mut visiting: HashSet<String> = HashSet::with_capacity(order.len());
-    for key in &order {
-        content_text(key, &raw, &mut content, &mut visiting);
-    }
-
-    // `order` is depth-first, so a parent's hidden state is known before its children.
-    let mut hidden_keys: HashSet<&str> = HashSet::with_capacity(order.len());
-    let mut nodes = Vec::with_capacity(order.len());
-    for key in &order {
-        let Some(node) = raw.get(key) else {
-            continue;
-        };
-        let hidden = node.aria.hidden
-            || parent_of
-                .get(key)
-                .is_some_and(|parent| hidden_keys.contains(parent.as_str()));
-        if hidden {
-            hidden_keys.insert(key.as_str());
-        }
-        let window_facts = node
+    let frame: Frame = serde_json::from_str(json).ok()?;
+    let mut entries = frame.nodes;
+    let mut window_facts: Vec<NodeLookup> = Vec::with_capacity(entries.len());
+    for (_, node) in &mut entries {
+        let mut facts = node
             .accesskit_id
             .parse::<u64>()
             .ok()
             .map(&lookup)
             .unwrap_or_default();
+        // The window's record works in every build; the dump's field only in debug.
+        if let Some(element_id) = facts.element_id.take() {
+            node.element_id = Some(element_id);
+        }
+        window_facts.push(facts);
+    }
+    let tree = FrameTree::new(entries, frame.root.as_deref());
+    let focus = frame
+        .gpui_focus
+        .as_deref()
+        .and_then(|key| tree.index.get(key).copied());
+
+    let order = tree.depth_first_order();
+    let identities = tree.assign_identities(&order);
+    let content = tree.content_texts(&order);
+
+    // `order` is depth-first, so a parent's hidden state is known before its children.
+    let mut hidden = vec![false; tree.nodes.len()];
+    let mut nodes = Vec::with_capacity(order.len());
+    for &index in &order {
+        let node = &tree.nodes[index];
+        let parent = tree.parent[index];
+        hidden[index] = node.aria.hidden || parent.is_some_and(|parent| hidden[parent]);
+        let facts = &window_facts[index];
         nodes.push(to_ui_node(
             node,
             PublishedNode {
-                identity: identities.get(key).cloned().unwrap_or_else(|| key.clone()),
-                parent: parent_of
-                    .get(key)
-                    .and_then(|parent| identities.get(parent))
-                    .cloned(),
-                content: content.get(key).map(String::as_str).unwrap_or_default(),
-                bounds: window_facts.bounds,
-                pointer: window_facts.pointer,
-                hidden,
-                focused: focus_key.as_deref() == Some(key.as_str()),
+                identity: identities[index].clone(),
+                // The host is never published, so a child of it is a root.
+                parent: parent
+                    .filter(|&parent| tree.host != Some(parent))
+                    .map(|parent| identities[parent].clone()),
+                content: content[index].as_deref().unwrap_or_default(),
+                bounds: facts.bounds,
+                pointer: facts.pointer,
+                hidden: hidden[index],
+                focused: focus == Some(index),
             },
         ));
     }
     Some(nodes)
 }
 
-/// The own ids of `key` and its ancestors, root first, stopping below the host.
-fn ancestor_path(
-    key: &str,
-    raw: &HashMap<String, RawNode>,
-    parent_of: &HashMap<String, String>,
-    host_key: Option<&str>,
-) -> Vec<String> {
-    let mut path = Vec::new();
-    let mut current = Some(key.to_owned());
-    while let Some(node_key) = current {
-        if host_key == Some(node_key.as_str()) {
-            break;
-        }
-        let Some(node) = raw.get(&node_key) else {
-            break;
-        };
-        path.push(node.own_id());
-        current = parent_of.get(&node_key).cloned();
-    }
-    path.reverse();
-    path
+/// The dump's nodes, indexed so every relationship is a `usize`, not a key lookup.
+struct FrameTree {
+    nodes: Vec<RawNode>,
+    keys: Vec<String>,
+    index: HashMap<String, usize>,
+    children: Vec<Vec<usize>>,
+    parent: Vec<Option<usize>>,
+    root: Option<usize>,
+    host: Option<usize>,
 }
 
-/// Read one JSON node, keyed by its ephemeral dump key.
-fn parse_raw_node(key: &str, node: &serde_json::Map<String, Json>) -> RawNode {
-    RawNode {
-        accesskit_id: node
-            .get("accesskit_id")
-            .and_then(Json::as_str)
-            .unwrap_or(key)
-            .to_owned(),
-        children: node
-            .get("children")
-            .and_then(Json::as_array)
-            .map(|children| {
-                children
+impl FrameTree {
+    fn new(entries: Vec<(String, RawNode)>, root_key: Option<&str>) -> Self {
+        let mut nodes = Vec::with_capacity(entries.len());
+        let mut keys = Vec::with_capacity(entries.len());
+        for (key, mut node) in entries {
+            if node.accesskit_id.is_empty() {
+                node.accesskit_id.clone_from(&key);
+            }
+            nodes.push(node);
+            keys.push(key);
+        }
+        let index: HashMap<String, usize> = keys
+            .iter()
+            .enumerate()
+            .map(|(position, key)| (key.clone(), position))
+            .collect();
+        let children: Vec<Vec<usize>> = nodes
+            .iter()
+            .map(|node| {
+                node.children
                     .iter()
-                    .filter_map(Json::as_str)
-                    .map(str::to_owned)
+                    .filter_map(|child| index.get(child).copied())
                     .collect()
             })
-            .unwrap_or_default(),
-        element_id: node
-            .get("element_id")
-            .and_then(Json::as_str)
-            .and_then(decode_element_id),
-        aria: parse_aria(node.get("aria")),
+            .collect();
+        let mut parent = vec![None; nodes.len()];
+        for (position, node_children) in children.iter().enumerate() {
+            for &child in node_children {
+                parent[child] = Some(position);
+            }
+        }
+        let root = root_key.and_then(|key| index.get(key).copied());
+        let host = root.filter(|&root| nodes[root].element_id.is_none());
+        Self {
+            nodes,
+            keys,
+            index,
+            children,
+            parent,
+            root,
+            host,
+        }
     }
+
+    /// Every node reachable from the root's children, depth first in listed
+    /// order, then any unreachable node in key order. The host is skipped.
+    fn depth_first_order(&self) -> Vec<usize> {
+        let mut order = Vec::with_capacity(self.nodes.len());
+        let mut visited = vec![false; self.nodes.len()];
+        if let Some(root) = self.root {
+            self.collect_order(&self.children[root], &mut visited, &mut order);
+        }
+        let mut leftovers: Vec<usize> = (0..self.nodes.len())
+            .filter(|&index| !visited[index])
+            .collect();
+        leftovers.sort_by(|left, right| self.keys[*left].cmp(&self.keys[*right]));
+        self.collect_order(&leftovers, &mut visited, &mut order);
+        order
+    }
+
+    fn collect_order(&self, start: &[usize], visited: &mut [bool], order: &mut Vec<usize>) {
+        let mut stack: Vec<usize> = start.iter().rev().copied().collect();
+        while let Some(index) = stack.pop() {
+            if self.host == Some(index) || visited[index] {
+                continue;
+            }
+            visited[index] = true;
+            order.push(index);
+            stack.extend(self.children[index].iter().rev());
+        }
+    }
+
+    /// The own ids of `index` and its ancestors, root first, stopping below the host.
+    fn ancestor_path(&self, index: usize) -> Vec<&str> {
+        let mut path = Vec::new();
+        let mut current = Some(index);
+        while let Some(node) = current {
+            if self.host == Some(node) {
+                break;
+            }
+            path.push(self.nodes[node].own_id());
+            current = self.parent[node];
+        }
+        path.reverse();
+        path
+    }
+}
+
+/// Read the dump's `nodes` object as its entries, in document order.
+fn node_entries<'de, D>(deserializer: D) -> Result<Vec<(String, RawNode)>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Entries;
+
+    impl<'de> Visitor<'de> for Entries {
+        type Value = Vec<(String, RawNode)>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a map of accessibility nodes")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            let mut entries = Vec::with_capacity(map.size_hint().unwrap_or(0));
+            while let Some(entry) = map.next_entry()? {
+                entries.push(entry);
+            }
+            Ok(entries)
+        }
+    }
+
+    deserializer.deserialize_map(Entries)
+}
+
+/// Decode GPUI's `Debug` rendering of the node's leaf element id.
+fn element_id<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Option::<std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+    Ok(raw.as_deref().and_then(decode_element_id))
 }
 
 /// What the window holds about one node beside the tree dump.
@@ -336,6 +386,7 @@ fn parse_raw_node(key: &str, node: &serde_json::Map<String, Json>) -> RawNode {
 struct NodeLookup {
     bounds: Option<Rect>,
     pointer: A11yPointerInteractions,
+    element_id: Option<String>,
 }
 
 /// What `parse_frame` resolves about a node from the whole tree.
@@ -427,125 +478,101 @@ fn to_ui_node(node: &RawNode, published: PublishedNode<'_>) -> UiNode {
 
 /// Append every node reachable from `start` to `order`, depth first, in the
 /// order the tree lists children.
-fn collect_order(
-    raw: &HashMap<String, RawNode>,
-    start: &[String],
-    host_key: Option<&str>,
-    visited: &mut HashSet<String>,
-    order: &mut Vec<String>,
-) {
-    let mut stack: Vec<String> = start.iter().rev().cloned().collect();
-    while let Some(key) = stack.pop() {
-        if host_key == Some(key.as_str()) || !visited.insert(key.clone()) {
-            continue;
+impl FrameTree {
+    /// Name every published node so that no two nodes share an identity.
+    ///
+    /// This is the same rule the patched GPUI applied to element paths, applied
+    /// to the ancestor path this module can reconstruct from the tree. Candidate
+    /// suffixes are compared as borrowed segment slices; a string is built once
+    /// per node, for the identity it settles on.
+    fn assign_identities(&self, order: &[usize]) -> Vec<String> {
+        let segments: Vec<Vec<&str>> = (0..self.nodes.len())
+            .map(|index| self.ancestor_path(index))
+            .collect();
+        let mut identities = vec![String::new(); self.nodes.len()];
+        let mut taken: HashSet<String> = HashSet::with_capacity(order.len());
+        let mut unresolved: Vec<usize> = order.to_vec();
+        let mut depth = 1usize;
+        while !unresolved.is_empty() {
+            let mut counts: HashMap<&[&str], usize> = HashMap::with_capacity(unresolved.len());
+            for &index in &unresolved {
+                *counts.entry(suffix(&segments[index], depth)).or_default() += 1;
+            }
+            let exhausted = unresolved
+                .iter()
+                .all(|&index| segments[index].len() <= depth);
+            let mut still = Vec::new();
+            let mut settled = Vec::new();
+            for index in unresolved {
+                let candidate = suffix(&segments[index], depth);
+                if counts.get(candidate).copied() == Some(1) {
+                    let joined = candidate.join("/");
+                    if !taken.contains(&joined) {
+                        identities[index] = joined;
+                        settled.push(index);
+                        continue;
+                    }
+                }
+                if exhausted {
+                    identities[index] = format!(
+                        "{}#{}",
+                        segments[index].join("/"),
+                        self.nodes[index].accesskit_id
+                    );
+                    settled.push(index);
+                    continue;
+                }
+                still.push(index);
+            }
+            for index in settled {
+                taken.insert(identities[index].clone());
+            }
+            unresolved = still;
+            depth += 1;
         }
-        order.push(key.clone());
-        if let Some(node) = raw.get(&key) {
-            for child in node.children.iter().rev() {
-                if raw.contains_key(child) {
-                    stack.push(child.clone());
+        identities
+    }
+
+    /// Normalized descendant text of every node in `order`: each text-role
+    /// child's value and each descendant's own collected text, in tree order.
+    fn content_texts(&self, order: &[usize]) -> Vec<Option<String>> {
+        let mut memo: Vec<Option<String>> = vec![None; self.nodes.len()];
+        // Children come after their parent in depth-first order, so fold back to front.
+        for &index in order.iter().rev() {
+            let mut joined = String::new();
+            for &child in &self.children[index] {
+                let child_node = &self.nodes[child];
+                if child_node.aria.is_redacted() {
+                    continue;
+                }
+                if is_text_role_name(&child_node.aria.role)
+                    && let Some(value) = &child_node.aria.value
+                {
+                    push_words(&mut joined, value);
+                }
+                if let Some(child_text) = memo[child].as_deref() {
+                    push_words(&mut joined, child_text);
                 }
             }
+            memo[index] = (!joined.is_empty()).then_some(joined);
         }
+        memo
     }
 }
 
-/// Name every published node so that no two nodes share an identity.
-///
-/// This is the same rule the patched GPUI applied to element paths, applied to
-/// the ancestor path this module can reconstruct from the accessibility tree.
-fn assign_identities(
-    order: &[String],
-    segments: &HashMap<String, Vec<String>>,
-    raw: &HashMap<String, RawNode>,
-) -> HashMap<String, String> {
-    let mut identities: HashMap<String, String> = HashMap::with_capacity(order.len());
-    let mut taken: HashSet<String> = HashSet::with_capacity(order.len());
-    let mut unresolved: Vec<&String> = order.iter().collect();
-    let mut depth = 1usize;
-    while !unresolved.is_empty() {
-        let mut counts: HashMap<String, usize> = HashMap::with_capacity(unresolved.len());
-        for key in &unresolved {
-            *counts
-                .entry(path_suffix(&segments[*key], depth))
-                .or_default() += 1;
-        }
-        let exhausted = unresolved.iter().all(|key| segments[*key].len() <= depth);
-        let mut settled: Vec<String> = Vec::new();
-        unresolved.retain(|key| {
-            let candidate = path_suffix(&segments[*key], depth);
-            if counts.get(&candidate).copied() == Some(1) && !taken.contains(&candidate) {
-                identities.insert((*key).clone(), candidate);
-                settled.push((*key).clone());
-                return false;
-            }
-            if exhausted {
-                let unique = format!("{}#{}", segments[*key].join("/"), raw[*key].accesskit_id);
-                identities.insert((*key).clone(), unique);
-                settled.push((*key).clone());
-                return false;
-            }
-            true
-        });
-        for key in settled {
-            taken.insert(identities[&key].clone());
-        }
-        depth += 1;
-    }
-    identities
+/// The trailing `depth` segments of a path.
+fn suffix<'a, 'b>(segments: &'a [&'b str], depth: usize) -> &'a [&'b str] {
+    &segments[segments.len().saturating_sub(depth)..]
 }
 
-/// The trailing `depth` segments of a path, joined for display.
-fn path_suffix(segments: &[String], depth: usize) -> String {
-    let start = segments.len().saturating_sub(depth);
-    segments[start..].join("/")
-}
-
-/// Normalized descendant text of a node: every text-role child's value and
-/// every descendant's own collected text, in tree order.
-fn content_text(
-    key: &str,
-    raw: &HashMap<String, RawNode>,
-    memo: &mut HashMap<String, String>,
-    visiting: &mut HashSet<String>,
-) -> String {
-    if let Some(text) = memo.get(key) {
-        return text.clone();
-    }
-    if !visiting.insert(key.to_owned()) {
-        return String::new();
-    }
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(node) = raw.get(key) {
-        for child in &node.children {
-            let Some(child_node) = raw.get(child) else {
-                continue;
-            };
-            if child_node.aria.is_redacted() {
-                continue;
-            }
-            if is_text_role_name(&child_node.aria.role)
-                && let Some(value) = &child_node.aria.value
-            {
-                let normalized = normalize_text(value);
-                if !normalized.is_empty() {
-                    parts.push(normalized);
-                }
-            }
-            let child_text = content_text(child, raw, memo, visiting);
-            if !child_text.is_empty() {
-                parts.push(child_text);
-            }
+/// Append `text`'s words to `joined`, single-space separated.
+fn push_words(joined: &mut String, text: &str) {
+    for word in text.split_whitespace() {
+        if !joined.is_empty() {
+            joined.push(' ');
         }
+        joined.push_str(word);
     }
-    visiting.remove(key);
-    let joined = parts.join(" ");
-    memo.insert(key.to_owned(), joined.clone());
-    joined
-}
-
-fn normalize_text(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Decode GPUI's `Debug` rendering of an [`ElementId`] into a usable identity.
@@ -554,6 +581,19 @@ fn normalize_text(text: &str) -> String {
 /// arrives as `Name("save")` and a named-and-indexed one as
 /// `NamedInteger("row", 3)`. Anything else keeps no element identity and falls
 /// back to the AccessKit node id.
+/// The identity a named element contributes, from the element id GPUI recorded.
+///
+/// Matches [`decode_element_id`]'s reading of the debug dump, so a debug and a
+/// release build of one app name their nodes the same way.
+fn element_id_name(id: &gpui::ElementId) -> Option<String> {
+    match id {
+        gpui::ElementId::Name(name) => Some(name.to_string()),
+        gpui::ElementId::NamedInteger(name, index) => Some(format!("{name}-{index}")),
+        gpui::ElementId::Integer(index) => Some(index.to_string()),
+        _ => None,
+    }
+}
+
 fn decode_element_id(raw: &str) -> Option<String> {
     if let Some(inner) = variant_inner(raw, "Name") {
         return decode_quoted(inner);
@@ -580,53 +620,6 @@ fn decode_quoted(raw: &str) -> Option<String> {
     serde_json::from_str::<String>(raw)
         .ok()
         .or_else(|| Some(raw.strip_prefix('"')?.strip_suffix('"')?.to_owned()))
-}
-
-fn parse_aria(aria: Option<&Json>) -> Aria {
-    let Some(aria) = aria else {
-        return Aria::default();
-    };
-    Aria {
-        role: aria
-            .get("role")
-            .and_then(Json::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        label: string_field(aria, "label"),
-        description: string_field(aria, "description"),
-        value: string_field(aria, "value"),
-        numeric_value: number_field(aria, "numeric_value"),
-        min: number_field(aria, "min_numeric_value"),
-        max: number_field(aria, "max_numeric_value"),
-        step: number_field(aria, "numeric_value_step"),
-        selected: aria.get("selected").and_then(Json::as_bool),
-        expanded: aria.get("expanded").and_then(Json::as_bool),
-        toggled: string_field(aria, "toggled"),
-        hidden: aria.get("hidden").and_then(Json::as_bool).unwrap_or(false),
-        disabled: aria
-            .get("disabled")
-            .and_then(Json::as_bool)
-            .unwrap_or(false),
-        on_action: aria
-            .get("on_action")
-            .and_then(Json::as_array)
-            .map(|actions| {
-                actions
-                    .iter()
-                    .filter_map(Json::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
-    }
-}
-
-fn string_field(object: &Json, key: &str) -> Option<String> {
-    object.get(key).and_then(Json::as_str).map(str::to_owned)
-}
-
-fn number_field(object: &Json, key: &str) -> Option<f64> {
-    object.get(key).and_then(Json::as_f64)
 }
 
 /// Map an AccessKit role name onto the protocol's role vocabulary.
@@ -1122,6 +1115,144 @@ mod tests {
             actions("locked"),
             Some(Vec::new()),
             "no listener, no inferred action"
+        );
+    }
+
+    struct Heavy {
+        rows: usize,
+    }
+
+    impl Render for Heavy {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("root")
+                .role(Role::Application)
+                .size_full()
+                .children((0..self.rows).map(|row| {
+                    div()
+                        .id(("row", row))
+                        .role(Role::ListItem)
+                        .hover(|style| style.opacity(0.9))
+                        .on_click(|_, _, _| {})
+                        .h(px(4.0))
+                        .child(Text::new(
+                            ("label", row).into(),
+                            SharedString::from(format!("Row {row}")),
+                        ))
+                }))
+        }
+    }
+
+    /// Per-stage cost of observing a ~5,000-node frame. Run with
+    /// `cargo test --release -p gpui-mcp --lib observation_stage_costs -- --ignored --nocapture`.
+    #[gpui::test]
+    #[ignore = "benchmark; prints timings rather than asserting"]
+    fn observation_stage_costs(cx: &mut TestAppContext) {
+        use std::time::Instant;
+        type Stage<'a> = (&'static str, Box<dyn FnMut() + 'a>);
+        let automation = Automation::isolated();
+        let for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            for_window.attach(window);
+            Heavy { rows: 2_500 }
+        });
+        visual.run_until_parked();
+        visual.update(Window::simulate_next_frame);
+        let json = visual
+            .update(|window, _| window.debug_a11y_tree_json())
+            .unwrap_or_default();
+        let parsed = super::parse_frame(&json, |_| NodeLookup::default()).unwrap_or_default();
+        let state = crate::registry::SharedState::new();
+        let tree = automation.snapshot();
+        let bytes = serde_json::to_vec(&tree).unwrap_or_default();
+        let mut stages: Vec<Stage<'_>> = vec![
+            (
+                "debug_a11y_tree_json",
+                Box::new(|| {
+                    let _ = visual.update(|window, _| window.debug_a11y_tree_json());
+                }),
+            ),
+            (
+                "parse_frame",
+                Box::new(|| {
+                    let _ = super::parse_frame(&json, |_| NodeLookup::default());
+                }),
+            ),
+            (
+                "publish_frame",
+                Box::new(|| {
+                    state.begin_frame();
+                    state.publish_frame(parsed.clone());
+                }),
+            ),
+            (
+                "tree to_vec",
+                Box::new(|| {
+                    let _ = serde_json::to_vec(&tree);
+                }),
+            ),
+            (
+                "tree from_slice",
+                Box::new(|| {
+                    let _ = serde_json::from_slice::<gpui_mcp_protocol::UiTree>(&bytes);
+                }),
+            ),
+        ];
+        eprintln!("nodes={} tree_bytes={}", tree.nodes.len(), bytes.len());
+        for (label, stage) in &mut stages {
+            let start = Instant::now();
+            for _ in 0..10 {
+                stage();
+            }
+            eprintln!(
+                "{label:<22} {:>8.2} ms",
+                start.elapsed().as_secs_f64() * 100.0
+            );
+        }
+    }
+
+    struct Toggle {
+        on: bool,
+    }
+
+    impl Render for Toggle {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div().id("root").role(Role::Application).size_full().child(
+                div()
+                    .id("switch")
+                    .role(Role::Button)
+                    .aria_disabled(!self.on)
+                    .w(px(80.0))
+                    .h(px(24.0)),
+            )
+        }
+    }
+
+    #[gpui::test]
+    #[ignore = "known gap: observation is armed only by bridge operations, so a frame the app draws on its own is not published"]
+    fn app_driven_changes_reach_the_tree(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let automation_for_window = automation.clone();
+        let (view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            Toggle { on: false }
+        });
+        visual.run_until_parked();
+        visual.update(Window::simulate_next_frame);
+        assert!(!automation.snapshot().nodes["switch"].state.enabled);
+
+        // The app changes its own state; no bridge operation arms observation.
+        visual.update(|_, cx| {
+            view.update(cx, |toggle, cx| {
+                toggle.on = true;
+                cx.notify();
+            });
+        });
+        visual.run_until_parked();
+        visual.update(Window::simulate_next_frame);
+        assert!(
+            automation.snapshot().nodes["switch"].state.enabled,
+            "a frame the app drew on its own is observed"
         );
     }
 

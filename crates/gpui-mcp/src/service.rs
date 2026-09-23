@@ -12,12 +12,13 @@ use gpui::{App, Window};
 use gpui_mcp_protocol::{
     AppId, ApplicationCommandDescriptor, ApplicationCommandResult, BridgeError, BridgeResult,
     Capabilities, Capability, ContextResource, ContextResourceDescriptor, EndpointDescriptor,
-    ErrorCode, Highlight, InstanceId, LiveDocument, LiveDocumentPreview, LiveDocumentSource,
-    LocalEndpoint, MAX_APPLICATION_COMMAND_OUTPUT_BYTES, MAX_APPLICATION_COMMAND_SCHEMA_BYTES,
-    MAX_APPLICATION_COMMANDS, MAX_CONTEXT_RESOURCE_BYTES, MAX_CONTEXT_RESOURCE_URI_BYTES,
-    MAX_CONTEXT_RESOURCES, MAX_ID_BYTES, MAX_LABEL_BYTES, MAX_LIVE_DOCUMENT_DIAGNOSTICS,
-    MAX_LIVE_DOCUMENT_SOURCE_BYTES, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, MAX_WAIT_MS,
-    NativeWindowId, Operation, PROTOCOL_VERSION, ProcessId, WireRequest, WireResponse,
+    ErrorCode, FrameStats, Highlight, InstanceId, LiveDocument, LiveDocumentPreview,
+    LiveDocumentSource, LocalEndpoint, MAX_APPLICATION_COMMAND_OUTPUT_BYTES,
+    MAX_APPLICATION_COMMAND_SCHEMA_BYTES, MAX_APPLICATION_COMMANDS, MAX_CONTEXT_RESOURCE_BYTES,
+    MAX_CONTEXT_RESOURCE_URI_BYTES, MAX_CONTEXT_RESOURCES, MAX_ID_BYTES, MAX_LABEL_BYTES,
+    MAX_LIVE_DOCUMENT_DIAGNOSTICS, MAX_LIVE_DOCUMENT_SOURCE_BYTES, MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES, MAX_WAIT_MS, NativeWindowId, Operation, PROTOCOL_VERSION, ProcessId,
+    WireRequest, WireResponse,
 };
 use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName as _, ToNsName as _,
@@ -608,14 +609,15 @@ fn handle_ui_operation(
             Ok(BridgeResult::Ack)
         }
         Operation::Focus { node_id } => {
-            let tree = state.tree();
-            let node = tree.nodes.get(&node_id).ok_or_else(|| {
-                BridgeError::new(ErrorCode::NotFound, "semantic node was not found")
-            })?;
-            let accesskit_id = node
-                .metadata
-                .get("accesskit_id")
-                .and_then(|id| id.parse::<u64>().ok())
+            let accesskit_id = state
+                .with_node(&node_id, |node| {
+                    node.metadata
+                        .get("accesskit_id")
+                        .and_then(|id| id.parse::<u64>().ok())
+                })
+                .ok_or_else(|| {
+                    BridgeError::new(ErrorCode::NotFound, "semantic node was not found")
+                })?
                 .ok_or_else(|| {
                     BridgeError::new(
                         ErrorCode::Unsupported,
@@ -882,14 +884,28 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
     if let Err(error) = validate_operation(&request.operation) {
         return WireResponse::failure(request.request_id, error);
     }
+    match run_operation(request.operation, context).await {
+        Ok(result) => WireResponse::success(request.request_id, result),
+        Err(error) => WireResponse::failure(request.request_id, error),
+    }
+}
 
-    let result = match request.operation {
+/// Run one authenticated, validated operation.
+async fn run_operation(
+    operation: Operation,
+    context: ConnectionContext,
+) -> Result<BridgeResult, BridgeError> {
+    match operation {
         Operation::Ping => Ok(BridgeResult::Pong {
             app_id: context.app_id,
             pid: context.pid,
             protocol_version: PROTOCOL_VERSION,
         }),
         Operation::GetTree => Ok(BridgeResult::Tree(context.state.tree())),
+        Operation::GetTreeIfChanged { known_generation } => Ok(context
+            .state
+            .tree_if_changed(known_generation)
+            .map_or(BridgeResult::TreeUnchanged, BridgeResult::Tree)),
         Operation::WaitForTree {
             after_generation,
             timeout_ms,
@@ -924,6 +940,20 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             context.state.set_highlights(Vec::new());
             request_ui_refresh(&context.command_tx, context.operation_timeout).await
         }
+        Operation::SettleFrames { rounds, timeout_ms } => settle_frames(
+            &context.state,
+            rounds,
+            Duration::from_millis(timeout_ms),
+            || {
+                dispatch_to_ui(
+                    Operation::Refresh,
+                    &context.command_tx,
+                    context.operation_timeout,
+                )
+            },
+        )
+        .await
+        .map(BridgeResult::FrameStats),
         Operation::GetFrameStats => Ok(BridgeResult::FrameStats(context.state.frame_stats())),
         Operation::GetPointerLocation => {
             dispatch_to_ui(
@@ -952,11 +982,33 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         | Operation::ExecuteApplicationCommand { .. }) => {
             dispatch_to_ui(operation, &context.command_tx, context.operation_timeout).await
         }
-    };
-    match result {
-        Ok(result) => WireResponse::success(request.request_id, result),
-        Err(error) => WireResponse::failure(request.request_id, error),
     }
+}
+
+/// Refresh, then wait for a frame newer than the one completed before that
+/// refresh, `rounds` times. Each wait starts from its own refresh's token, so a
+/// frame already in flight cannot satisfy a later round.
+async fn settle_frames<Refresh, Fut>(
+    state: &SharedState,
+    rounds: u8,
+    wait: Duration,
+    mut refresh: Refresh,
+) -> Result<FrameStats, BridgeError>
+where
+    Refresh: FnMut() -> Fut,
+    Fut: Future<Output = Result<BridgeResult, BridgeError>>,
+{
+    let mut settled = Err(invalid("settle needs at least one round"));
+    for _ in 0..rounds {
+        let BridgeResult::FrameStats(before) = refresh().await? else {
+            return Err(BridgeError::new(
+                ErrorCode::Internal,
+                "refresh returned the wrong result",
+            ));
+        };
+        settled = Ok(state.wait_for_frame(before.frame_count, wait).await?);
+    }
+    settled
 }
 
 async fn request_ui_refresh(
@@ -1016,6 +1068,13 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
             if *timeout_ms == 0 || *timeout_ms > MAX_WAIT_MS =>
         {
             Err(invalid("frame wait timeout must be between 1 and 30000 ms"))
+        }
+        Operation::SettleFrames { rounds, timeout_ms }
+            if !(1..=4).contains(rounds) || *timeout_ms == 0 || *timeout_ms > MAX_WAIT_MS =>
+        {
+            Err(invalid(
+                "settle needs 1-4 rounds and a 1-30000 ms timeout per round",
+            ))
         }
         Operation::SetHighlights { highlights } => validate_highlights(highlights),
         Operation::GetLogs { limit, min_level } => {
@@ -1448,11 +1507,61 @@ fn invalid(message: &'static str) -> BridgeError {
 
 #[cfg(test)]
 mod tests {
-    use gpui_mcp_protocol::{AppId, ContextResource, ContextResourceDescriptor};
+    use std::cell::Cell;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use gpui_mcp_protocol::{
+        AppId, BridgeResult, ContextResource, ContextResourceDescriptor, FrameStats,
+    };
 
     use super::{
-        BridgeConfig, encode_hex, validate_context_resource, validate_context_resource_list,
+        BridgeConfig, encode_hex, settle_frames, validate_context_resource,
+        validate_context_resource_list,
     };
+    use crate::registry::SharedState;
+
+    fn complete_frame(state: &SharedState) {
+        state.begin_frame();
+        state.publish_frame(Vec::new());
+        state.begin_root_paint();
+        state.finish_root_paint();
+    }
+
+    #[tokio::test]
+    async fn settle_waits_for_a_frame_after_each_refresh() {
+        let state: Arc<SharedState> = SharedState::new();
+        let refreshes = Cell::new(0u32);
+        let settled = settle_frames(&state, 2, Duration::from_secs(1), || {
+            refreshes.set(refreshes.get() + 1);
+            // The token read at refresh time, then the frame that refresh produces.
+            let before = state.frame_stats();
+            complete_frame(&state);
+            async move { Ok(BridgeResult::FrameStats(before)) }
+        })
+        .await;
+
+        assert_eq!(refreshes.get(), 2);
+        assert_eq!(
+            settled.map(|stats: FrameStats| stats.frame_count).ok(),
+            Some(state.frame_stats().frame_count),
+            "the result is the frame completed by the last refresh"
+        );
+    }
+
+    #[tokio::test]
+    async fn settle_times_out_when_no_frame_follows_a_refresh() {
+        let state: Arc<SharedState> = SharedState::new();
+        let settled = settle_frames(&state, 1, Duration::from_millis(20), || {
+            let before = state.frame_stats();
+            async move { Ok(BridgeResult::FrameStats(before)) }
+        })
+        .await;
+        assert!(
+            settled.is_err(),
+            "an already-completed frame must not satisfy the wait"
+        );
+    }
 
     #[test]
     fn application_identifier_blocks_path_traversal() {

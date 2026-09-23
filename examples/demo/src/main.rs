@@ -12,16 +12,29 @@ const TITLE: &str = "GPUI MCP Demo";
 /// `--endpoint-dir <absolute path>` keeps a driving test's discovery private to
 /// that test rather than sharing the developer's live endpoint directory.
 fn endpoint_dir() -> Option<std::path::PathBuf> {
+    argument_after("--endpoint-dir").map(std::path::PathBuf::from)
+}
+
+/// `--stress-rows <count>` appends that many list rows, for profiling the bridge
+/// against a large semantic tree.
+fn stress_rows() -> usize {
+    argument_after("--stress-rows")
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0)
+}
+
+fn argument_after(flag: &str) -> Option<String> {
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
-        if argument == "--endpoint-dir" {
-            return arguments.next().map(std::path::PathBuf::from);
+        if argument == flag {
+            return arguments.next();
         }
     }
     None
 }
 
 struct Demo {
+    stress_rows: usize,
     count: usize,
     locked: bool,
     search: FocusHandle,
@@ -208,6 +221,23 @@ impl Render for Demo {
                     ),
             )
             .child(self.lock_row(cx))
+            .when(self.stress_rows > 0, |this| {
+                this.child(
+                    div()
+                        .id("stress-list")
+                        .role(Role::List)
+                        .overflow_y_scroll()
+                        .h(px(80.0))
+                        .children((0..self.stress_rows).map(|row| {
+                            div()
+                                .id(("stress-row", row))
+                                .role(Role::ListItem)
+                                .aria_label(format!("Row {row}"))
+                                .hover(|style| style.bg(rgb(0x1a_20_2b)))
+                                .h(px(2.0))
+                        })),
+                )
+            })
             .role(Role::Application)
             .aria_label(TITLE)
     }
@@ -253,6 +283,7 @@ fn main() {
                 };
                 let automation = bridge.automation();
                 cx.new(|cx| Demo {
+                    stress_rows: stress_rows(),
                     count: 0,
                     locked: true,
                     search: cx.focus_handle(),

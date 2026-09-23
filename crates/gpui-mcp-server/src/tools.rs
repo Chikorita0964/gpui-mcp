@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
 use std::io::Cursor;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -32,7 +31,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
 
-use crate::client::{AppInfo, BridgeClient, BridgeRegistry};
+use crate::client::{AppInfo, BridgeClient, BridgeRegistry, TargetId};
 use crate::recording::{ArtifactStore, RecordingArtifact};
 
 mod application_commands;
@@ -49,7 +48,7 @@ const MAX_WAIT_MS: u64 = 30_000;
 
 #[derive(Default)]
 struct SnapshotStore {
-    trees: BTreeMap<String, UiTree>,
+    trees: BTreeMap<String, Arc<UiTree>>,
     images: BTreeMap<String, Screenshot>,
 }
 
@@ -64,7 +63,11 @@ pub(crate) struct GpuiMcp {
     pointer: Arc<Mutex<Point>>,
     artifacts: ArtifactStore,
     target_transition: Arc<tokio::sync::Mutex<()>>,
+    tree_cache: Arc<Mutex<Option<CachedTree>>>,
 }
+
+/// The last tree fetched, and the target it came from.
+type CachedTree = (TargetId, Arc<UiTree>);
 
 struct RecordingTask {
     cancellation: CancellationToken,
@@ -386,6 +389,7 @@ impl GpuiMcp {
             pointer: Arc::new(Mutex::new(Point::default())),
             artifacts,
             target_transition: Arc::new(tokio::sync::Mutex::new(())),
+            tree_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -401,12 +405,33 @@ impl GpuiMcp {
         router
     }
 
-    async fn tree(&self) -> Result<UiTree, String> {
-        let result = self.call(Operation::GetTree).await?;
-        match result {
-            BridgeResult::Tree(tree) => Ok(tree),
-            _ => Err("bridge returned the wrong result for the semantic tree".to_owned()),
-        }
+    /// The latest tree, revalidated by generation so an unchanged one is not re-sent.
+    async fn shared_tree(&self) -> Result<Arc<UiTree>, String> {
+        let client = self.client().await?;
+        let target = client.target_id();
+        let cached = self
+            .tree_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .filter(|(cached_target, _)| *cached_target == target)
+            .map(|(_, tree)| tree.clone());
+        let operation = match &cached {
+            Some(tree) => Operation::GetTreeIfChanged {
+                known_generation: tree.generation,
+            },
+            None => Operation::GetTree,
+        };
+        let tree = match (client.call(operation).await?, cached) {
+            (BridgeResult::Tree(tree), _) => Arc::new(tree),
+            (BridgeResult::TreeUnchanged, Some(cached)) => return Ok(cached),
+            _ => return Err("bridge returned the wrong result for the semantic tree".to_owned()),
+        };
+        *self
+            .tree_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((target, tree.clone()));
+        Ok(tree)
     }
 
     async fn ack(&self, operation: Operation) -> Result<(), String> {
@@ -589,7 +614,7 @@ impl GpuiMcp {
     }
 
     async fn element_with_action(&self, id: &str, action: NodeAction) -> Result<UiNode, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let node = get_node(&tree, id)?;
         if !node.state.visible || !node.state.enabled {
             return Err(format!("element {id:?} is not visible and enabled"));
@@ -600,20 +625,27 @@ impl GpuiMcp {
         Ok(node.clone())
     }
 
-    async fn wait_for_tree(&self, generation: u64, wait: Duration) -> Result<UiTree, String> {
+    async fn wait_for_tree(&self, generation: u64, wait: Duration) -> Result<Arc<UiTree>, String> {
         let timeout_ms = u64::try_from(wait.as_millis())
             .unwrap_or(MAX_WAIT_MS)
             .clamp(1, MAX_WAIT_MS);
-        match self
+        let client = self.client().await?;
+        let BridgeResult::Tree(tree) = client
             .call(Operation::WaitForTree {
                 after_generation: generation,
                 timeout_ms,
             })
             .await?
-        {
-            BridgeResult::Tree(tree) => Ok(tree),
-            _ => Err("bridge returned the wrong result for semantic tree wait".to_owned()),
-        }
+        else {
+            return Err("bridge returned the wrong result for semantic tree wait".to_owned());
+        };
+        let tree = Arc::new(tree);
+        *self
+            .tree_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some((client.target_id(), tree.clone()));
+        Ok(tree)
     }
 
     async fn wait_for_frame(&self, frame_count: u64, wait: Duration) -> Result<FrameStats, String> {
@@ -632,8 +664,21 @@ impl GpuiMcp {
         }
     }
 
+    /// Refresh and wait for a completed frame twice, in one bridge exchange.
     async fn settle_after_refresh(&self, wait: Duration) -> Result<FrameStats, String> {
-        settle_refresh_frames(wait, |operation| self.call(operation)).await
+        let timeout_ms = u64::try_from(wait.as_millis())
+            .unwrap_or(MAX_WAIT_MS)
+            .clamp(1, MAX_WAIT_MS);
+        match self
+            .call(Operation::SettleFrames {
+                rounds: SETTLE_ROUNDS,
+                timeout_ms,
+            })
+            .await?
+        {
+            BridgeResult::FrameStats(stats) => Ok(stats),
+            _ => Err("bridge returned the wrong result for frame settlement".to_owned()),
+        }
     }
 
     async fn capture(&self, target: ScreenshotTarget) -> Result<Screenshot, String> {
@@ -669,31 +714,9 @@ impl GpuiMcp {
     }
 }
 
-async fn settle_refresh_frames<F, Fut>(wait: Duration, mut call: F) -> Result<FrameStats, String>
-where
-    F: FnMut(Operation) -> Fut,
-    Fut: Future<Output = Result<BridgeResult, String>>,
-{
-    let timeout_ms = u64::try_from(wait.as_millis())
-        .unwrap_or(MAX_WAIT_MS)
-        .clamp(1, MAX_WAIT_MS);
-    let mut completed = None;
-    for _ in 0..2 {
-        let BridgeResult::FrameStats(before_refresh) = call(Operation::Refresh).await? else {
-            return Err("bridge returned the wrong completed-frame token for refresh".to_owned());
-        };
-        let BridgeResult::FrameStats(stats) = call(Operation::WaitForFrame {
-            after_frame_count: before_refresh.frame_count,
-            timeout_ms,
-        })
-        .await?
-        else {
-            return Err("bridge returned the wrong result for frame wait".to_owned());
-        };
-        completed = Some(stats);
-    }
-    completed.ok_or_else(|| "frame settlement did not request a refresh".to_owned())
-}
+/// Refresh rounds per input: the first frame reflects the event, the second any
+/// state its handlers scheduled for the following frame.
+const SETTLE_ROUNDS: u8 = 2;
 
 /// SEP-2549 cache hints on the results a peer negotiating protocol version
 /// 2026-07-28 or newer requires them on.
@@ -1193,78 +1216,15 @@ fn default_result_limit_for_test() -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
     use std::collections::{BTreeMap, BTreeSet};
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
-    use gpui_mcp_protocol::{BridgeResult, FrameStats, NodeState, Operation, UiNode};
+    use gpui_mcp_protocol::{NodeState, UiNode};
     use serde_json::json;
 
     use super::{
         FindArgs, Role, StartVideoRecordingArgs, UiTree, WaitStateArgs,
-        default_result_limit_for_test, find_nodes, settle_refresh_frames, state_matches, tree_diff,
+        default_result_limit_for_test, find_nodes, state_matches, tree_diff,
     };
-
-    #[tokio::test]
-    async fn mutation_settlement_waits_from_each_refresh_token() -> Result<(), String> {
-        let operations = Arc::new(Mutex::new(Vec::new()));
-        let responses = Arc::new(Mutex::new(VecDeque::from([
-            Ok(BridgeResult::FrameStats(FrameStats {
-                frame_count: 11,
-                ..FrameStats::default()
-            })),
-            Ok(BridgeResult::FrameStats(FrameStats {
-                frame_count: 12,
-                ..FrameStats::default()
-            })),
-            Ok(BridgeResult::FrameStats(FrameStats {
-                frame_count: 14,
-                ..FrameStats::default()
-            })),
-            Ok(BridgeResult::FrameStats(FrameStats {
-                frame_count: 15,
-                ..FrameStats::default()
-            })),
-        ])));
-        let recorded = operations.clone();
-        let queued = responses.clone();
-        let settled = settle_refresh_frames(Duration::from_secs(2), move |operation| {
-            recorded
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(operation);
-            let response = queued
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .pop_front()
-                .unwrap_or_else(|| Err("test response queue exhausted".to_owned()));
-            async move { response }
-        })
-        .await?;
-
-        assert_eq!(settled.frame_count, 15);
-        let operations = operations
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(matches!(operations[0], Operation::Refresh));
-        assert!(matches!(
-            operations[1],
-            Operation::WaitForFrame {
-                after_frame_count: 11,
-                ..
-            }
-        ));
-        assert!(matches!(operations[2], Operation::Refresh));
-        assert!(matches!(
-            operations[3],
-            Operation::WaitForFrame {
-                after_frame_count: 14,
-                ..
-            }
-        ));
-        Ok(())
-    }
 
     #[test]
     fn find_is_case_insensitive_by_default() {

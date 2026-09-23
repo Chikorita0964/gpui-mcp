@@ -203,7 +203,7 @@ impl GpuiMcp {
         Parameters(args): Parameters<DragElementArgs>,
     ) -> Result<Json<Value>, String> {
         let from = self.element_point(&args.from_id, NodeAction::Drag).await?;
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let to = require_bounds(get_node(&tree, &args.to_id)?)?.center();
         self.drag_between(from, to, args.steps).await?;
         Ok(ack_json("dragged"))
@@ -267,7 +267,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let text = get_node(&tree, &args.id)?
             .text
             .as_ref()
@@ -302,7 +302,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let value = get_node(&tree, &args.id)?
             .value
             .as_ref()
@@ -319,7 +319,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<SetValueArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let node = get_node(&tree, &args.id)?.clone();
 
         match node.role {
@@ -367,7 +367,7 @@ impl GpuiMcp {
 
     #[tool(description = "Count elements whose selected state is true.")]
     async fn get_selection_count(&self) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let count = tree
             .nodes
             .values()
@@ -383,7 +383,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let state = &get_node(&tree, &args.id)?.state;
         Ok(object_output(
             serde_json::to_value(state).map_err(encode_error)?,

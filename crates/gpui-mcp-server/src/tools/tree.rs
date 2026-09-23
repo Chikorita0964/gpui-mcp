@@ -9,7 +9,7 @@ use super::{
 impl GpuiMcp {
     #[tool(description = "Return the latest rendered GPUI semantic tree with real layout bounds")]
     async fn get_ui_tree(&self) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         Ok(object_output(
             serde_json::to_value(tree).map_err(encode_error)?,
         ))
@@ -22,7 +22,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<FindArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let nodes = find_nodes(&tree, &args);
         Ok(object_output(
             json!({ "count": nodes.len(), "elements": nodes }),
@@ -34,7 +34,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let node = get_node(&tree, &args.id)?;
         Ok(object_output(
             serde_json::to_value(node).map_err(encode_error)?,
@@ -46,7 +46,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let node = get_node(&tree, &args.id)?;
         let bounds = require_bounds(node)?;
         Ok(object_output(
@@ -61,7 +61,7 @@ impl GpuiMcp {
     ) -> Result<Json<Value>, String> {
         validate_timeout(args.timeout_ms)?;
         let started = Instant::now();
-        let mut tree = self.tree().await?;
+        let mut tree = self.shared_tree().await?;
         loop {
             let query = FindArgs {
                 query: Some(args.query.clone()),
@@ -104,7 +104,7 @@ impl GpuiMcp {
             return Err("at least one expected state must be specified".to_owned());
         }
         let started = Instant::now();
-        let mut tree = self.tree().await?;
+        let mut tree = self.shared_tree().await?;
         loop {
             if let Ok(node) = get_node(&tree, &args.id)
                 && state_matches(&node.state, &args)
@@ -132,7 +132,7 @@ impl GpuiMcp {
         Parameters(args): Parameters<SnapshotArgs>,
     ) -> Result<Json<Value>, String> {
         validate_name(&args.name)?;
-        let tree = self.tree().await?;
+        let tree = self.shared_tree().await?;
         let generation = tree.generation;
         let node_count = tree.nodes.len();
         let mut snapshots = self.snapshots.write().await;
@@ -185,7 +185,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<DiffCurrentArgs>,
     ) -> Result<Json<Value>, String> {
-        let current = self.tree().await?;
+        let current = self.shared_tree().await?;
         let snapshots = self.snapshots.read().await;
         let saved = snapshots
             .trees

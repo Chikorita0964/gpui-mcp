@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -253,18 +253,19 @@ impl SharedState {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let changed = tree.roots != roots || tree.nodes != nodes || tree.diagnostics != diagnostics;
-        if changed {
-            tree.generation = tree.generation.saturating_add(1);
+        if !changed {
+            // Keep the published maps; the fresh copies are dropped after the lock.
+            drop(tree);
+            return;
         }
+        tree.generation = tree.generation.saturating_add(1);
+        let previous_nodes = std::mem::replace(&mut tree.nodes, nodes);
         tree.roots = roots;
-        tree.nodes = nodes;
         tree.diagnostics = diagnostics;
         let generation = tree.generation;
         drop(tree);
-
-        if changed {
-            self.generation.send_replace(generation);
-        }
+        drop(previous_nodes);
+        self.generation.send_replace(generation);
     }
 
     pub(crate) fn tree(&self) -> UiTree {
@@ -272,6 +273,25 @@ impl SharedState {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Read one published node without cloning the tree.
+    pub(crate) fn with_node<R>(&self, id: &str, read: impl FnOnce(&UiNode) -> R) -> Option<R> {
+        self.tree
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .nodes
+            .get(id)
+            .map(read)
+    }
+
+    /// Clone the tree only when its generation is not `known_generation`.
+    pub(crate) fn tree_if_changed(&self, known_generation: u64) -> Option<UiTree> {
+        let tree = self
+            .tree
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (tree.generation != known_generation).then(|| tree.clone())
     }
 
     pub(crate) fn tree_generation(&self) -> u64 {
@@ -514,74 +534,108 @@ fn push_diagnostic(
 fn discard_invalid_relationships(pending: &mut PendingFrame) {
     let mut invalid = std::mem::take(&mut pending.invalid_ids);
     discard_missing_parents(pending, &mut invalid);
+    discard_parent_cycles(pending, &mut invalid);
+    discard_missing_parents(pending, &mut invalid);
+    pending.nodes.retain(|id, _| !invalid.contains(id));
+    pending.order.retain(|id| !invalid.contains(id));
+}
 
-    for start in pending.order.clone() {
-        if invalid.contains(&start) {
-            continue;
-        }
-        let mut path: Vec<String> = Vec::new();
-        let mut positions: BTreeMap<String, usize> = BTreeMap::new();
-        let mut current = start;
-        loop {
-            if invalid.contains(&current) {
+/// Omit every node that sits on a parent cycle, in one linear pass.
+///
+/// Each walk stops at the first node an earlier walk already settled, so every
+/// node is visited once rather than once per descendant.
+fn discard_parent_cycles(pending: &mut PendingFrame, invalid: &mut BTreeSet<String>) {
+    let order = std::mem::take(&mut pending.order);
+    let position: HashMap<&str, usize> = order
+        .iter()
+        .enumerate()
+        .map(|(index, id)| (id.as_str(), index))
+        .collect();
+    let parent: Vec<Option<usize>> = order
+        .iter()
+        .map(|id| {
+            pending
+                .nodes
+                .get(id)
+                .and_then(|node| node.parent.as_deref())
+                .and_then(|parent| position.get(parent).copied())
+        })
+        .collect();
+    // 0 = unvisited, 1 = on the current walk, 2 = settled.
+    let mut mark = vec![0_u8; order.len()];
+    let mut path: Vec<usize> = Vec::new();
+    for start in 0..order.len() {
+        let mut current = Some(start);
+        while let Some(index) = current {
+            if mark[index] == 2 || invalid.contains(&order[index]) {
                 break;
             }
-            if let Some(cycle_start) = positions.get(&current).copied() {
-                for id in &path[cycle_start..] {
-                    if invalid.insert(id.clone()) {
+            if mark[index] == 1 {
+                let cycle_start = path.iter().position(|&node| node == index).unwrap_or(0);
+                for &node in &path[cycle_start..] {
+                    if invalid.insert(order[node].clone()) {
                         push_diagnostic(
                             pending,
                             SemanticDiagnosticCode::ParentCycle,
-                            Some(id.clone()),
+                            Some(order[node].clone()),
                             "semantic node in a parent cycle was omitted",
                         );
                     }
                 }
                 break;
             }
-            positions.insert(current.clone(), path.len());
-            path.push(current.clone());
-            let Some(parent) = pending
-                .nodes
-                .get(&current)
-                .and_then(|node| node.parent.clone())
-            else {
-                break;
-            };
-            current = parent;
+            mark[index] = 1;
+            path.push(index);
+            current = parent[index];
+        }
+        for node in path.drain(..) {
+            mark[node] = 2;
         }
     }
-
-    discard_missing_parents(pending, &mut invalid);
-    pending.nodes.retain(|id, _| !invalid.contains(id));
-    pending.order.retain(|id| !invalid.contains(id));
+    pending.order = order;
 }
 
+/// Omit every node whose parent is absent or omitted, transitively.
+///
+/// Diagnostics follow the same wave order a repeated scan would produce: all
+/// nodes orphaned directly first, then their children, and so on.
 fn discard_missing_parents(pending: &mut PendingFrame, invalid: &mut BTreeSet<String>) {
-    loop {
-        let missing = pending
-            .order
-            .iter()
-            .filter(|id| !invalid.contains(*id))
-            .filter(|id| {
-                pending.nodes[*id].parent.as_ref().is_some_and(|parent| {
-                    invalid.contains(parent) || !pending.nodes.contains_key(parent)
-                })
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if missing.is_empty() {
-            break;
+    let mut children_of: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut wave: Vec<String> = Vec::new();
+    for id in &pending.order {
+        if invalid.contains(id) {
+            continue;
         }
-        for id in missing {
-            invalid.insert(id.clone());
-            push_diagnostic(
-                pending,
-                SemanticDiagnosticCode::MissingParent,
-                Some(id),
-                "semantic node whose parent was unavailable was omitted",
-            );
+        let Some(parent) = pending.nodes[id].parent.as_deref() else {
+            continue;
+        };
+        if invalid.contains(parent) || !pending.nodes.contains_key(parent) {
+            wave.push(id.clone());
+        } else {
+            children_of.entry(parent).or_default().push(id);
         }
+    }
+    let mut omitted: Vec<String> = Vec::new();
+    while !wave.is_empty() {
+        let mut next = Vec::new();
+        for id in wave {
+            if invalid.insert(id.clone()) {
+                if let Some(children) = children_of.get(id.as_str()) {
+                    next.extend(children.iter().map(|child| (*child).to_owned()));
+                }
+                omitted.push(id);
+            }
+        }
+        wave = next;
+    }
+    drop(children_of);
+    for id in omitted {
+        push_diagnostic(
+            pending,
+            SemanticDiagnosticCode::MissingParent,
+            Some(id),
+            "semantic node whose parent was unavailable was omitted",
+        );
     }
 }
 
@@ -743,6 +797,44 @@ mod tests {
             tree.diagnostics
                 .iter()
                 .any(|diagnostic| { diagnostic.code == SemanticDiagnosticCode::ParentCycle })
+        );
+    }
+
+    #[test]
+    fn invalid_relationships_report_each_omitted_node_once_in_a_stable_order() {
+        let state = SharedState::new();
+        state.begin_frame();
+        for (id, parent) in [
+            ("root", None),
+            ("kept", Some("root")),
+            ("orphan", Some("absent")),
+            ("orphan-child", Some("orphan")),
+            ("orphan-grandchild", Some("orphan-child")),
+            ("a", Some("b")),
+            ("b", Some("a")),
+            ("cycle-child", Some("a")),
+        ] {
+            assert!(state.record(node(id, parent)));
+        }
+        state.finish_frame();
+
+        let tree = state.tree();
+        assert_eq!(tree.nodes.keys().collect::<Vec<_>>(), ["kept", "root"]);
+        let omitted: Vec<(SemanticDiagnosticCode, &str)> = tree
+            .diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.node_id.as_deref().unwrap_or("")))
+            .collect();
+        assert_eq!(
+            omitted,
+            [
+                (SemanticDiagnosticCode::MissingParent, "orphan"),
+                (SemanticDiagnosticCode::MissingParent, "orphan-child"),
+                (SemanticDiagnosticCode::MissingParent, "orphan-grandchild"),
+                (SemanticDiagnosticCode::ParentCycle, "a"),
+                (SemanticDiagnosticCode::ParentCycle, "b"),
+                (SemanticDiagnosticCode::MissingParent, "cycle-child"),
+            ]
         );
     }
 
