@@ -694,7 +694,6 @@ fn assert_updated_tree(tree: &UiTree, old_generation: u64, state: &TestState, ex
         Some(expected_title)
     );
     assert!(tree.generation > old_generation);
-    assert_eq!(tree.nodes["published"].state.checked, Some(true));
 }
 
 #[gpui::test]
@@ -744,26 +743,16 @@ fn html_renders_to_gpui_and_uses_real_input(cx: &mut TestAppContext) {
     view.update(visual, |_, cx| cx.notify());
     visual.run_until_parked();
     pump_observation(visual);
-    assert_updated_tree(
-        &automation.snapshot(),
-        tree.generation,
-        &state,
-        "Draft titleX",
-    );
+    let updated = automation.snapshot();
+    assert_updated_tree(&updated, tree.generation, &state, "Draft titleX");
+    assert_eq!(updated.nodes["published"].state.checked, Some(true));
 }
 
-/// The C04 replacement path, kept ignored until the vendor exposes a
-/// window-taking replacement.
-///
-/// `Window::replace_input_text` probes the document range through
-/// `PlatformInputHandler::text_for_range`, which re-enters the window through
-/// the handler's `AsyncWindowContext` and fails inside the only context that
-/// can call the method, so it always returns `false`. Insertion through the
-/// same handler works and is covered by
-/// `html_renders_to_gpui_and_uses_real_input`; the blocker is recorded in the
-/// T09 report.
+/// The C04 replacement path: a click registers the focused input's handler,
+/// then `Window::replace_input_text` swaps the whole document through
+/// `PlatformInputHandler::replace_all_text`, and the bound state and the
+/// published tree both follow.
 #[gpui::test]
-#[ignore = "Window::replace_input_text cannot probe its document range inside a window update"]
 fn replaced_text_reaches_the_document(cx: &mut TestAppContext) {
     cx.update(gpui_mcp_html::init);
     let Some(fixture) = build_fixture() else {
@@ -787,9 +776,9 @@ fn replaced_text_reaches_the_document(cx: &mut TestAppContext) {
         );
     });
     visual.run_until_parked();
-    visual.update(|window, _| {
+    visual.update(|window, cx| {
         assert!(
-            window.replace_input_text("Replaced title"),
+            window.replace_input_text("Replaced title", cx),
             "the focused input handler owns the document"
         );
     });
