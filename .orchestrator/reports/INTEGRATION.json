@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "execution_id": "0f92430b-1ee0-4402-be5e-89841b1bbb76",
+  "execution_id": "e923c0be-a28c-4d8f-8cd8-8ec2816bb84f",
   "status": "completed",
   "input_commits": {
     "T02-OBSERVER-REWIRE": "805b92ce6415b902a8583405b2382fbbef142ff5",
     "T03-INPUT-REWIRE": "d5881b189d8883817592eee3c04d0bc1a02cec82",
-    "T04-SWEEP": "00a4bbac4f514ce66bd68a04ea6c1553c4a91906"
+    "T04-SWEEP": "57480191eb3d6a682a0654bbfaaa6027df7c39ca"
   },
-  "integration_commit": "0c33d5ed2b714b563a62b4f4b11c326b4436eee5",
+  "integration_commit": "55ccf940af6cf6492ff46ef32155ec52a398dd7e",
   "tests": [
     {
       "command": "cargo check --workspace",
@@ -22,6 +22,10 @@
       "result": "pass"
     },
     {
+      "command": "cargo check -p gpui-mcp-html --features visual-parity",
+      "result": "pass"
+    },
+    {
       "command": "coverage table check: docs/rewire-summary-b.md contains the four-row P-A/P-B/P-C/P-D table with window.rs:2695 for P-C",
       "result": "pass"
     }
@@ -29,7 +33,7 @@
   "mandatory_acceptance": {
     "B01-TREE-OBSERVATION-REWIRE": {
       "status": "satisfied",
-      "evidence": "Integrated observer.rs pulls Window::debug_a11y_tree_json() and publishes UiNodes with role, label, value, state, and parentage with frame-unique identities; git diff from e82b89b to HEAD touches no file under crates/gpui-mcp-protocol/; cargo check -p gpui-mcp --tests exits 0 with zero observer.rs diagnostics."
+      "evidence": "Integrated observer.rs pulls Window::debug_a11y_tree_json() and publishes UiNodes with role, label, value, state, and parentage with frame-unique identities; git diff from e82b89b to HEAD touches no file under crates/gpui-mcp-protocol/; cargo check -p gpui-mcp --tests exits 0."
     },
     "B02-ACTION-MAPPING": {
       "status": "satisfied",
@@ -37,15 +41,15 @@
     },
     "B03-SYNTHETIC-INPUT-ROUTING": {
       "status": "satisfied",
-      "evidence": "Integrated input.rs builds the same MouseMove/MouseDown/MouseUp/ScrollWheel PlatformInput variants and routes them through Window::dispatch_event (input.rs:115), with keystrokes through Window::dispatch_keystroke; cargo check -p gpui-mcp --tests and cargo check --workspace both exit 0."
+      "evidence": "Integrated input.rs builds the same MouseMove/MouseDown/MouseUp/ScrollWheel PlatformInput variants and routes them through Window::dispatch_event (input.rs:115), with keystrokes through Window::dispatch_keystroke; workspace and scoped checks both exit 0."
     },
     "B04-FOCUS-NAVIGATION": {
       "status": "satisfied",
-      "evidence": "Integrated input.rs dispatch_focus(handle, window, cx) routes through Window::focus(&FocusHandle) with test dispatch_focus_moves_focus_without_a_key_event and no synthetic key event; unreachable named-node to FocusHandle resolution is cited with gpui-pre lines and referred to Batch C; workspace check shows only the expected input.rs:184 unused warning."
+      "evidence": "Integrated input.rs dispatch_focus(handle, window, cx) routes through Window::focus(&FocusHandle) with no synthetic key event; unreachable named-node to FocusHandle resolution is cited with gpui-pre lines and referred to Batch C; only warning is input.rs:184 unused."
     },
     "B05-SWEEP-AND-CLASSIFICATION": {
       "status": "satisfied",
-      "evidence": "All three gates exit 0 with no errors: cargo check -p gpui-mcp --tests, cargo check --workspace, and cargo check -p gpui-mcp-html --tests (only warning input.rs:184 dispatch_focus unused); runtime.rs focus hook returns Unsupported exactly as service.rs does and the replaced-text scenario stops at the published tree."
+      "evidence": "All four gates exit 0 with no errors: cargo check --workspace, cargo check -p gpui-mcp --tests, cargo check -p gpui-mcp-html --tests, and cargo check -p gpui-mcp-html --features visual-parity (only warning input.rs:184 dispatch_focus unused); visual.rs focus path returns Unsupported with the focus-mapping citation."
     },
     "B06-REWIRE-COVERAGE-TABLE": {
       "status": "satisfied",
@@ -57,7 +61,7 @@
   "risks": [
     "examples/demo/src/main.rs lies outside every Batch B ownership entry and was changed only so cargo check --workspace exits 0; Master ratification required.",
     "The gpui-mcp-html runtime tests compile again but still cannot pass until Batch C: tree assertions need C02 activation and bounds-based dispatch needs C03.",
-    "Focus answers Unsupported and input.rs:184 warns unused until Batch C exposes the node-id to FocusHandle mapping."
+    "Focus answers Unsupported across service.rs, runtime hooks, and the visual parity fixture until Batch C exposes the node-id to FocusHandle mapping."
   ],
   "blockers": []
 }
