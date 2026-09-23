@@ -9,3 +9,11 @@ target/
 Thumbs.db
 *.log
 *.tmp
+
+#Local agent session
+AGENTS.md
+.agent/
+.kilo/
+.orchestrator/
+.vscode/
+.tmp/
