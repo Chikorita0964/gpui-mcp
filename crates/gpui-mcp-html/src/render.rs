@@ -541,7 +541,8 @@ impl LiveHtml {
         }
         // `aria_hidden`/`aria_disabled` and frame metadata have no stock
         // equivalent in gpui-pre 0.3.6; the renderer's hidden/disabled state and
-        // provenance are carried to Batch C (see docs/rewire-summary-b.md).
+        // provenance are dropped because stock GPUI has no such setters,
+        // tracked by the P-A row of docs/rewire-summary-b.md.
         if let UiRole::Heading(level) = element.role {
             host = host.aria_level(level.into());
         }
