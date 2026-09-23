@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "execution_id": "441fdb42-fac7-47ea-9c9a-10f3df795547",
+  "task_id": "T07-PATCHES-DOCS",
+  "status": "completed",
+  "summary": "Merged worker-2's C06 text-fallback commit and authored vendor/PATCHES.md: six sections (C01-C06) each recording file, item, what it opened, and why the stock gpui-pre 0.3.6 API was unreachable without it, with the exact hunks and a re-apply recipe, so the patch set can be reproduced on a newer gpui-pre from the document alone.",
+  "branch": "worker-1",
+  "implementation_commit": "30638206bdc56cadad2658bdc62a131e8cf95371",
+  "owned_files": [
+    "vendor/PATCHES.md"
+  ],
+  "changed_files": [
+    "vendor/PATCHES.md"
+  ],
+  "tests": [
+    {
+      "command": "cargo check --workspace",
+      "result": "pass"
+    },
+    {
+      "command": "cargo tree -p gpui-pre (resolves to vendor/gpui-pre at v0.3.6)",
+      "result": "pass"
+    },
+    {
+      "command": "doc coverage check: 18 required anchors present in vendor/PATCHES.md, six C01-C06 sections",
+      "result": "pass"
+    }
+  ],
+  "mandatory_acceptance": {
+    "C07-PATCHES-DOCUMENTATION": {
+      "status": "satisfied",
+      "evidence": "vendor/PATCHES.md records every patch item with file, item, what it opened, and why the native API was unreachable: C02 window.rs a11y_active_flag (stock window.rs:1607; only the platform adapter's activation callback flips it); C03 Window::a11y_node_bounds (A11y::node_bounds is pub(crate), window/a11y.rs:150); C04 Window::insert_input_text, Window::replace_input_text, and Window::a11y_focus_handle (the platform handler slot is crate-private; A11y::focus_ids window/a11y.rs:149, FocusHandle::for_id window.rs:558, and handle_a11y_action window.rs:6805 are pub(crate)); C05 the platform_mouse_position field and the bounds_changed adoption guard (stock window.rs:2695 overwrites the synthetic position); C06 fallback_with_requested_traits called from resolve_font (text_system.rs:255 builds the stack, text_system.rs:370 resolves it); plus C01 vendoring and the [patch.crates-io] entry. Each section carries the exact code hunk with its anchor, and the document includes a re-apply recipe and a verification table; the coverage check confirms all required anchors are present."
+    }
+  },
+  "risks": [
+    "gpui-pre's own test target cannot compile in this fork: pristine src/svg_renderer.rs include_bytes! paths point at Zed workspace assets (assets/fonts/...) that vendor/gpui-pre does not carry, so cargo check -p gpui-pre --tests exits 101 and C06's shipped unit test is compile-only here; pre-existing since C01 and outside vendor/PATCHES.md ownership.",
+    "Merging worker-2's commit also brought .orchestrator/reports/T03-INPUT-REWIRE.json and .orchestrator/reports/T04-INPUT-REWIRE.json into this branch from its ancestry.",
+    "vendor/PATCHES.md cites stock gpui-pre 0.3.6 line numbers as why anchors; they can drift on re-vendoring, so the item-name anchors are authoritative."
+  ],
+  "blockers": []
+}
