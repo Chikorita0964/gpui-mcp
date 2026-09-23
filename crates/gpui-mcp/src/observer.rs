@@ -34,7 +34,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Weak};
 
 use gpui::Window;
-use gpui_mcp_protocol::{NodeAction, NodeState, Role, TextInfo, UiNode, ValueInfo};
+use gpui::accesskit::NodeId;
+use gpui_mcp_protocol::{NodeAction, NodeState, Rect, Role, TextInfo, UiNode, ValueInfo};
 use serde_json::Value as Json;
 
 use crate::registry::{SharedState, rect_from_gpui};
@@ -58,18 +59,22 @@ impl BridgeObserver {
 
     /// Publish the accessibility tree of the window's last completed frame.
     ///
-    /// Does nothing while GPUI's accessibility tree is inactive; it becomes
-    /// active once assistive technology attaches to the window.
-    pub(crate) fn observe(&self, window: &Window) {
+    /// Returns `false` while no tree is available, which happens until a frame
+    /// completes with accessibility active.
+    fn observe_once(&self, window: &Window) -> bool {
         let Some(state) = self.state.upgrade() else {
-            return;
+            return false;
         };
         let Some(json) = window.debug_a11y_tree_json() else {
-            return;
+            return false;
         };
-        let Some(nodes) = parse_frame(&json) else {
+        let Some(nodes) = parse_frame(&json, |accesskit_id| {
+            window
+                .a11y_node_bounds(NodeId(accesskit_id))
+                .map(rect_from_gpui)
+        }) else {
             state.add_log("warn", "the accessibility tree could not be parsed");
-            return;
+            return false;
         };
         let mut content_bounds = window.bounds();
         content_bounds.size = window.viewport_size();
@@ -80,18 +85,33 @@ impl BridgeObserver {
         // completed-frame watch so `WaitForFrame` keeps answering.
         state.begin_root_paint();
         state.finish_root_paint();
+        true
     }
 
     /// Publish the accessibility tree of the next completed frame.
     ///
     /// Arm this after requesting a refresh so the published tree reflects it.
+    /// The tree only exists once a frame has completed with accessibility
+    /// active, so the callback re-arms for a few frames before giving up; a
+    /// force-disabled application therefore cannot spin.
     pub(crate) fn observe_on_next_frame(self: &Arc<Self>, window: &mut Window) {
+        self.observe_within_frames(window, OBSERVE_FRAME_ATTEMPTS);
+    }
+
+    fn observe_within_frames(self: &Arc<Self>, window: &mut Window, attempts: u8) {
         let observer = Arc::clone(self);
         window.on_next_frame(move |window, _cx| {
-            observer.observe(window);
+            if observer.observe_once(window) || attempts == 0 {
+                return;
+            }
+            observer.observe_within_frames(window, attempts - 1);
         });
     }
 }
+
+/// Frames to wait for the first accessibility tree after attaching or
+/// refreshing, so observation does not give up before a frame completes.
+const OBSERVE_FRAME_ATTEMPTS: u8 = 4;
 
 /// One node of `debug_a11y_tree_json()` before it is named.
 struct RawNode {
@@ -131,8 +151,11 @@ struct Aria {
 ///
 /// The document's host node is not published: it is GPUI's window node, it
 /// carries no element identity, and its children are the application's roots.
-/// Returns `None` when the document does not carry a node map.
-fn parse_frame(json: &str) -> Option<Vec<UiNode>> {
+/// `bounds_for` resolves each node's AccessKit id to its logical bounds; each
+/// published node also carries that id as `metadata["accesskit_id"]` so focus
+/// requests can resolve a handle. Returns `None` when the document does not
+/// carry a node map.
+fn parse_frame(json: &str, bounds_for: impl Fn(u64) -> Option<Rect>) -> Option<Vec<UiNode>> {
     let frame: Json = serde_json::from_str(json).ok()?;
     let nodes_json = frame.get("nodes")?.as_object()?;
     let root_key = frame.get("root").and_then(Json::as_str).map(str::to_owned);
@@ -281,6 +304,12 @@ fn parse_frame(json: &str) -> Option<Vec<UiNode>> {
             .get(key)
             .cloned()
             .unwrap_or_else(|| key.clone());
+        let accesskit_id = node.accesskit_id.parse::<u64>().ok();
+        let bounds = accesskit_id.and_then(&bounds_for);
+        let mut metadata = BTreeMap::new();
+        if let Some(accesskit_id) = accesskit_id {
+            metadata.insert("accesskit_id".to_owned(), accesskit_id.to_string());
+        }
         nodes.push(UiNode {
             id: identity,
             parent: parent_of
@@ -291,7 +320,7 @@ fn parse_frame(json: &str) -> Option<Vec<UiNode>> {
             role,
             label,
             description: node.aria.description.clone(),
-            bounds: None,
+            bounds,
             state: NodeState {
                 visible: true,
                 enabled: true,
@@ -307,7 +336,7 @@ fn parse_frame(json: &str) -> Option<Vec<UiNode>> {
             actions,
             text,
             value,
-            metadata: BTreeMap::new(),
+            metadata,
         });
     }
     Some(nodes)
@@ -657,12 +686,13 @@ fn label_from_content(name: &str, content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use gpui::accesskit::NodeId as A11yNodeId;
     use gpui::{
-        AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
+        AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
         ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-        StyledText, TestAppContext, Window, div, px,
+        TestAppContext, Text, Window, div, px,
     };
-    use gpui_mcp_protocol::{NodeAction, Role as McpRole, TextInfo, ValueInfo};
+    use gpui_mcp_protocol::{NodeAction, Rect, Role as McpRole, TextInfo, ValueInfo};
 
     use super::parse_frame;
     use crate::Automation;
@@ -699,7 +729,15 @@ mod tests {
 
     #[test]
     fn parses_roles_labels_values_states_and_parentage() {
-        let nodes = parse_frame(FRAME_JSON).unwrap_or_default();
+        let nodes = parse_frame(FRAME_JSON, |accesskit_id| {
+            (accesskit_id == 2).then_some(Rect {
+                x: 10.0,
+                y: 20.0,
+                width: 30.0,
+                height: 40.0,
+            })
+        })
+        .unwrap_or_default();
         assert!(!nodes.is_empty(), "the fixture parses");
         let tree: std::collections::HashMap<&str, &gpui_mcp_protocol::UiNode> =
             nodes.iter().map(|node| (node.id.as_str(), node)).collect();
@@ -707,7 +745,25 @@ mod tests {
         assert_eq!(nodes.len(), 10, "the window host node is not published");
         assert_eq!(tree["root"].role, McpRole::Application);
         assert_eq!(tree["root"].parent, None);
-        assert!(tree["root"].bounds.is_none(), "bounds arrive with C03");
+        assert!(
+            tree["root"].bounds.is_none(),
+            "a node without a bounds lookup stays empty"
+        );
+        assert_eq!(
+            tree["save"].bounds,
+            Some(Rect {
+                x: 10.0,
+                y: 20.0,
+                width: 30.0,
+                height: 40.0,
+            }),
+            "bounds resolve through the window's accessibility map"
+        );
+        assert_eq!(
+            tree["save"].metadata.get("accesskit_id").map(String::as_str),
+            Some("2"),
+            "the published node carries the id focus resolution needs"
+        );
 
         assert_eq!(tree["save"].parent.as_deref(), Some("root"));
         assert_eq!(tree["save"].role, McpRole::Button);
@@ -778,7 +834,9 @@ mod tests {
         assert_eq!(tree["root/y"].role, McpRole::Group);
     }
 
-    struct SemanticFixture;
+    struct SemanticFixture {
+        focus: FocusHandle,
+    }
 
     impl Render for SemanticFixture {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -792,24 +850,55 @@ mod tests {
                         .role(Role::Button)
                         .w(px(120.0))
                         .h(px(40.0))
-                        .child(StyledText::new("Save")),
+                        // gpui-pre only publishes a Label node for `Text` with
+                        // an id, so the button's content-derived label needs one.
+                        .child(Text::new("save-text".into(), "Save".into())),
+                )
+                .child(
+                    div()
+                        .id("field")
+                        .role(Role::TextInput)
+                        .track_focus(&self.focus)
+                        .w(px(120.0))
+                        .h(px(24.0)),
                 )
                 .child(div().id("status").child("Ready"))
         }
     }
 
     #[gpui::test]
-    #[ignore = "stock GPUI builds the tree only after a platform adapter activates it (Batch C: C02); \
-                the test platform provides no adapter, so debug_a11y_tree_json() returns None here"]
     fn observes_roles_labels_and_parentage(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let automation_for_window = automation.clone();
+        let focus = cx.update(|cx| cx.focus_handle());
+        let focus_for_window = focus.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);
-            SemanticFixture
+            SemanticFixture {
+                focus: focus_for_window,
+            }
         });
         visual.run_until_parked();
 
+        assert!(
+            visual.update(|window, _| window.debug_a11y_tree_json().is_some()),
+            "the accessibility tree is available without assistive technology (C02)"
+        );
+        let dump = visual
+            .update(|window, _| window.debug_a11y_tree_json())
+            .unwrap_or_default();
+        assert!(
+            dump.contains(r#"Name(\"root\")"#),
+            "the dump carries the application's elements: {dump}"
+        );
+        // Tests have no platform frame loop, so deliver the armed observation
+        // callback the way the platform would after the frame above.
+        visual.update(|window, cx| {
+            assert!(
+                window.simulate_next_frame(cx) > 0,
+                "the observation callback is armed"
+            );
+        });
         let tree = automation.snapshot();
         assert!(tree.diagnostics.is_empty());
         assert_eq!(tree.roots, ["root"]);
@@ -817,11 +906,36 @@ mod tests {
         assert_eq!(tree.nodes["save"].parent.as_deref(), Some("root"));
         assert_eq!(tree.nodes["save"].role, McpRole::Button);
         assert_eq!(tree.nodes["save"].label.as_deref(), Some("Save"));
-        assert!(tree.nodes["save"].bounds.is_none());
+        assert!(
+            tree.nodes["save"].bounds.is_some(),
+            "bounds arrive from the window's accessibility map (C03)"
+        );
         assert!(!tree.nodes["save"].state.focused);
         assert!(
             !tree.nodes.contains_key("status"),
             "elements without an explicit role are not in GPUI's accessibility tree"
+        );
+
+        // C04: the published accesskit id resolves the node's focus handle, and
+        // focusing it moves focus without a synthetic key event.
+        let accesskit_id = tree.nodes["field"]
+            .metadata
+            .get("accesskit_id")
+            .and_then(|id| id.parse::<u64>().ok());
+        assert!(accesskit_id.is_some(), "the field publishes its accesskit id");
+        let accesskit_id = accesskit_id.unwrap_or_default();
+        let resolved =
+            visual.update(|window, cx| window.a11y_focus_handle(A11yNodeId(accesskit_id), cx));
+        assert_eq!(resolved.as_ref(), Some(&focus));
+        visual.update(|window, cx| {
+            let Some(handle) = window.a11y_focus_handle(A11yNodeId(accesskit_id), cx) else {
+                return;
+            };
+            window.focus(&handle, cx);
+        });
+        assert_eq!(
+            visual.update(|window, cx| window.focused(cx)).as_ref(),
+            Some(&focus)
         );
     }
 
@@ -835,7 +949,7 @@ mod tests {
                 .id("tab-panel")
                 .role(Role::Group)
                 .size_full()
-                .child(StyledText::new(self.title.clone()))
+                .child(Text::new("panel-title".into(), self.title.clone()))
         }
     }
 
@@ -854,8 +968,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[ignore = "stock GPUI builds the tree only after a platform adapter activates it (Batch C: C02); \
-                the test platform provides no adapter, so debug_a11y_tree_json() returns None here"]
     fn repeated_element_ids_stay_frame_unique_and_grouped_by_parent(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let automation_for_window = automation.clone();
@@ -873,6 +985,14 @@ mod tests {
             }
         });
         visual.run_until_parked();
+        // Tests have no platform frame loop, so deliver the armed observation
+        // callback the way the platform would after the frame above.
+        visual.update(|window, cx| {
+            assert!(
+                window.simulate_next_frame(cx) > 0,
+                "the observation callback is armed"
+            );
+        });
 
         let tree = automation.snapshot();
         assert!(tree.diagnostics.is_empty());
