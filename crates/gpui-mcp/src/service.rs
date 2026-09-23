@@ -23,7 +23,7 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName as _, ToNsName as _,
     tokio::{Listener as LocalSocketListener, Stream as LocalSocketStream, prelude::*},
 };
-use rand::RngCore as _;
+use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};

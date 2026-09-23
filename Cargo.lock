@@ -2757,7 +2757,7 @@ dependencies = [
  "gpui-mcp-protocol",
  "interprocess",
  "objc2-app-kit 0.3.2",
- "rand 0.9.5",
+ "rand 0.10.3",
  "raw-window-handle",
  "serde_json",
  "subtle",
@@ -2773,7 +2773,7 @@ dependencies = [
 name = "gpui-mcp-capture"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "gpui-mcp-protocol",
  "image",
  "windows-capture 2.0.1",
@@ -2826,7 +2826,7 @@ name = "gpui-mcp-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "clap",
  "gpui-mcp-capture",
@@ -2839,7 +2839,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "sysinfo 0.37.2",
+ "sysinfo 0.39.6",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -8036,16 +8036,16 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.37.2"
+version = "0.39.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16607d5caffd1c07ce073528f9ed972d88db15dd44023fa57142963be3feb11f"
+checksum = "d2071df9448915b71c4fe6d25deaf1c22f12bd234f01540b77312bb8e41361e6"
 dependencies = [
  "libc",
  "memchr",
  "ntapi",
  "objc2-core-foundation",
  "objc2-io-kit",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
