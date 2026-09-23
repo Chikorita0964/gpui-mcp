@@ -25,6 +25,8 @@
 //!   and enabled.
 //! - Application metadata and redaction are not emitted, so
 //!   [`UiNode::metadata`] stays empty and text publishes unredacted.
+//! - Hover and Drag have no AccessKit action, so only Click, Focus, SetText,
+//!   SetValue, and Scroll can be reported.
 //! - The overlay paint pass has no stock equivalent, so highlight overlays are
 //!   not drawn.
 
@@ -32,7 +34,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Weak};
 
 use gpui::Window;
-use gpui_mcp_protocol::{NodeState, Role, TextInfo, UiNode, ValueInfo};
+use gpui_mcp_protocol::{NodeAction, NodeState, Role, TextInfo, UiNode, ValueInfo};
 use serde_json::Value as Json;
 
 use crate::registry::{SharedState, rect_from_gpui};
@@ -122,6 +124,7 @@ struct Aria {
     selected: Option<bool>,
     expanded: Option<bool>,
     toggled: Option<String>,
+    on_action: Vec<String>,
 }
 
 /// Translate one `debug_a11y_tree_json()` document into protocol nodes.
@@ -273,11 +276,13 @@ fn parse_frame(json: &str) -> Option<Vec<UiNode>> {
                 step: node.aria.step,
             }
         });
+        let actions = actions_from_names(role_name, &node.aria.on_action);
+        let identity = identities
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| key.clone());
         nodes.push(UiNode {
-            id: identities
-                .get(key)
-                .cloned()
-                .unwrap_or_else(|| key.clone()),
+            id: identity,
             parent: parent_of
                 .get(key)
                 .and_then(|parent| identities.get(parent))
@@ -299,7 +304,7 @@ fn parse_frame(json: &str) -> Option<Vec<UiNode>> {
                 selected: node.aria.selected,
                 expanded: node.aria.expanded,
             },
-            actions: Vec::new(),
+            actions,
             text,
             value,
             metadata: BTreeMap::new(),
@@ -480,6 +485,17 @@ fn parse_aria(aria: Option<&Json>) -> Aria {
         selected: aria.get("selected").and_then(Json::as_bool),
         expanded: aria.get("expanded").and_then(Json::as_bool),
         toggled: string_field(aria, "toggled"),
+        on_action: aria
+            .get("on_action")
+            .and_then(Json::as_array)
+            .map(|actions| {
+                actions
+                    .iter()
+                    .filter_map(Json::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -558,6 +574,67 @@ fn is_text_role_name(name: &str) -> bool {
     )
 }
 
+/// Whether the role accepts text replacement through its value.
+fn is_editable_text_role_name(name: &str) -> bool {
+    matches!(
+        name,
+        "TextInput"
+            | "MultilineTextInput"
+            | "SearchInput"
+            | "EmailInput"
+            | "PasswordInput"
+            | "PhoneNumberInput"
+            | "UrlInput"
+    )
+}
+
+/// Map a node's advertised AccessKit actions onto the bridge's vocabulary.
+///
+/// This is the rule the patched bridge applied to `supports_action`. The
+/// patch's behaviour-inferred Hover and Drag have no AccessKit action, so they
+/// can no longer be reported.
+///
+/// Dispatch is native: the platform adapter delivers action requests to the
+/// app's [`Window::on_a11y_action`] listeners and otherwise falls back to
+/// GPUI's built-in handling (Click clicks the node's bounds, Focus focuses it).
+/// The bridge registers no listeners of its own because a matching listener
+/// suppresses that fallback.
+fn actions_from_names(role_name: &str, on_action: &[String]) -> Vec<NodeAction> {
+    let supports = |name: &str| on_action.iter().any(|candidate| candidate == name);
+    let mut actions = Vec::new();
+    push_action(&mut actions, supports("Click"), NodeAction::Click);
+    push_action(&mut actions, supports("Focus"), NodeAction::Focus);
+    push_action(
+        &mut actions,
+        supports("ReplaceSelectedText")
+            || (is_editable_text_role_name(role_name) && supports("SetValue")),
+        NodeAction::SetText,
+    );
+    push_action(&mut actions, supports("SetValue"), NodeAction::SetValue);
+    push_action(
+        &mut actions,
+        SCROLL_ACTION_NAMES.iter().any(|name| supports(name)),
+        NodeAction::Scroll,
+    );
+    actions
+}
+
+fn push_action(actions: &mut Vec<NodeAction>, condition: bool, action: NodeAction) {
+    if condition && !actions.contains(&action) {
+        actions.push(action);
+    }
+}
+
+const SCROLL_ACTION_NAMES: [&str; 7] = [
+    "ScrollDown",
+    "ScrollLeft",
+    "ScrollRight",
+    "ScrollUp",
+    "ScrollIntoView",
+    "ScrollToPoint",
+    "SetScrollOffset",
+];
+
 /// Derive a label from descendant text for roles that have no label of their own.
 fn label_from_content(name: &str, content: &str) -> Option<String> {
     let labelled = matches!(
@@ -585,7 +662,7 @@ mod tests {
         ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
         StyledText, TestAppContext, Window, div, px,
     };
-    use gpui_mcp_protocol::{Role as McpRole, TextInfo, ValueInfo};
+    use gpui_mcp_protocol::{NodeAction, Role as McpRole, TextInfo, ValueInfo};
 
     use super::parse_frame;
     use crate::Automation;
@@ -607,8 +684,8 @@ mod tests {
       "nodes": {
         "a": { "accesskit_id": "0", "children": ["b"], "aria": { "role": "Window", "label": "Demo" } },
         "b": { "accesskit_id": "1", "children": ["c", "d", "g", "h", "i", "k", "l"], "element_id": "Name(\"root\")", "view": "demo::Root", "aria": { "role": "Application" } },
-        "c": { "accesskit_id": "2", "children": ["e"], "element_id": "Name(\"save\")", "aria": { "role": "Button" } },
-        "d": { "accesskit_id": "3", "element_id": "Name(\"volume\")", "aria": { "role": "Slider", "label": "Volume", "numeric_value": 3.0, "min_numeric_value": 0.0, "max_numeric_value": 11.0, "numeric_value_step": 1.0 } },
+        "c": { "accesskit_id": "2", "children": ["e"], "element_id": "Name(\"save\")", "aria": { "role": "Button", "on_action": ["Click", "Focus", "ReplaceSelectedText", "SetValue", "ScrollDown"] } },
+        "d": { "accesskit_id": "3", "element_id": "Name(\"volume\")", "aria": { "role": "Slider", "label": "Volume", "numeric_value": 3.0, "min_numeric_value": 0.0, "max_numeric_value": 11.0, "numeric_value_step": 1.0, "on_action": ["SetValue"] } },
         "e": { "accesskit_id": "4", "element_id": "Name(\"save-label\")", "aria": { "role": "Label", "value": "Save" } },
         "g": { "accesskit_id": "5", "element_id": "Name(\"panel\")", "aria": { "role": "Group" } },
         "h": { "accesskit_id": "6", "element_id": "Name(\"panel\")", "aria": { "role": "Group", "selected": true, "expanded": false, "toggled": "True" } },
@@ -622,9 +699,8 @@ mod tests {
 
     #[test]
     fn parses_roles_labels_values_states_and_parentage() {
-        let parsed = parse_frame(FRAME_JSON);
-        assert!(parsed.is_some(), "the fixture parses");
-        let nodes = parsed.unwrap_or_default();
+        let nodes = parse_frame(FRAME_JSON).unwrap_or_default();
+        assert!(!nodes.is_empty(), "the fixture parses");
         let tree: std::collections::HashMap<&str, &gpui_mcp_protocol::UiNode> =
             nodes.iter().map(|node| (node.id.as_str(), node)).collect();
 
@@ -643,6 +719,17 @@ mod tests {
         assert_eq!(tree["save"].children, Vec::<String>::new());
         assert!(!tree["save"].state.focused);
         assert!(tree["save"].state.visible && tree["save"].state.enabled);
+        assert_eq!(
+            tree["save"].actions,
+            [
+                NodeAction::Click,
+                NodeAction::Focus,
+                NodeAction::SetText,
+                NodeAction::SetValue,
+                NodeAction::Scroll,
+            ],
+            "advertised AccessKit actions map onto the bridge vocabulary"
+        );
 
         assert_eq!(tree["save-label"].parent.as_deref(), Some("save"));
         assert_eq!(tree["save-label"].role, McpRole::Text);
@@ -668,6 +755,7 @@ mod tests {
             })
         );
         assert!(tree["volume"].state.focused, "gpui_focus names the focused node");
+        assert_eq!(tree["volume"].actions, [NodeAction::SetValue]);
 
         assert_eq!(tree["root/panel#5"].role, McpRole::Group);
         assert_eq!(tree["root/panel#5"].state.selected, None);
@@ -711,6 +799,8 @@ mod tests {
     }
 
     #[gpui::test]
+    #[ignore = "stock GPUI builds the tree only after a platform adapter activates it (Batch C: C02); \
+                the test platform provides no adapter, so debug_a11y_tree_json() returns None here"]
     fn observes_roles_labels_and_parentage(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let automation_for_window = automation.clone();
@@ -764,6 +854,8 @@ mod tests {
     }
 
     #[gpui::test]
+    #[ignore = "stock GPUI builds the tree only after a platform adapter activates it (Batch C: C02); \
+                the test platform provides no adapter, so debug_a11y_tree_json() returns None here"]
     fn repeated_element_ids_stay_frame_unique_and_grouped_by_parent(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let automation_for_window = automation.clone();
