@@ -133,10 +133,9 @@ pub(crate) fn pointer_location(window: &Window) -> Point {
 /// feeding the character to the active input handler, so key bindings and text
 /// entry behave exactly as they do for platform keystrokes.
 ///
-/// Text replacement is not reachable from outside the crate: it needs the live
-/// `PlatformInputHandler`, and `Window::input_handlers` is `pub(crate)`
-/// (`window.rs:989`). The fork's `insert_input_text`/`replace_input_text`
-/// patches therefore stay unrewired until Batch C exposes the handler (C04).
+/// Text insertion and replacement route through [`Window::insert_input_text`]
+/// and [`Window::replace_input_text`], which the C04 visibility patch opens
+/// over the live `PlatformInputHandler` and its `replace_text_in_range`.
 pub(crate) fn dispatch_keyboard(
     command: InputCommand,
     window: &mut Window,
@@ -156,15 +155,19 @@ pub(crate) fn dispatch_keyboard(
                 window.dispatch_keystroke(parsed, cx);
             }
         }
-        InputCommand::TypeText { .. } => {
-            return Err(unsupported(
-                "text insertion needs GPUI's active input handler, which the bridge cannot reach (Batch C: C04)",
-            ));
+        InputCommand::TypeText { text } => {
+            if !window.insert_input_text(&text, cx) {
+                return Err(unsupported(
+                    "focused element has no active text input handler",
+                ));
+            }
         }
-        InputCommand::ReplaceText { .. } => {
-            return Err(unsupported(
-                "text replacement needs GPUI's active input handler, which the bridge cannot reach (Batch C: C04)",
-            ));
+        InputCommand::ReplaceText { text } => {
+            if !window.replace_input_text(&text) {
+                return Err(unsupported(
+                    "focused input cannot expose its complete document range",
+                ));
+            }
         }
     }
     Ok(())
@@ -176,11 +179,11 @@ pub(crate) fn dispatch_keyboard(
 /// patch: GPUI's [`Window::focus`] takes a `FocusHandle`, so the caller names the
 /// target through its handle and no synthetic key event is involved.
 ///
-/// Mapping a semantic node id to a `FocusHandle` from outside the crate is not
-/// possible in gpui-pre 0.3.6: `A11y::focus_ids` (`window/a11y.rs:149`) and
-/// `FocusHandle::for_id` (`window.rs:558`) are `pub(crate)`, and the only native
-/// `accesskit::NodeId`-to-focus path is `Window::handle_a11y_action`
-/// (`window.rs:6805`), also `pub(crate)`. That mapping is carried to Batch C.
+/// Mapping a semantic node id to a `FocusHandle` is not possible with the
+/// stock 0.3.6 API: `A11y::focus_ids` (`window/a11y.rs:149`) and
+/// `FocusHandle::for_id` (`window.rs:558`) are `pub(crate)`. The C04 visibility
+/// patch exposes them through [`Window::a11y_focus_handle`], which the bridge's
+/// `Focus` operation resolves before calling this function.
 pub(crate) fn dispatch_focus(handle: &FocusHandle, window: &mut Window, cx: &mut App) {
     window.focus(handle, cx);
 }
@@ -526,5 +529,58 @@ mod tests {
             dispatch_focus(&focus, window, cx);
             assert!(focus.is_focused(window));
         });
+    }
+
+    #[gpui::test]
+    fn synthetic_hover_survives_bounds_changed(cx: &mut TestAppContext) {
+        let visual = cx.add_empty_window();
+        visual.draw(
+            point(px(0.0), px(0.0)),
+            size(px(300.0), px(100.0)),
+            |_, _| div().id("hover-target").w(px(100.0)).h(px(100.0)),
+        );
+
+        let synthetic = Point { x: 50.0, y: 50.0 };
+        visual.update(|window, cx| {
+            assert_eq!(
+                dispatch_pointer(
+                    &PointerCommand::MouseMove {
+                        point: synthetic,
+                        pressed_button: None,
+                    },
+                    window,
+                    cx,
+                ),
+                Ok(())
+            );
+        });
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y))
+        );
+
+        // A resize must not adopt the unchanged platform position and cancel
+        // the synthetic hover (C05).
+        visual.update(|window, cx| window.bounds_changed(cx));
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "the synthetic pointer position survives bounds_changed"
+        );
+
+        // The platform's resize callback and its DPI-change path both land in
+        // `bounds_changed`, so the hover must survive those paths too.
+        visual.simulate_resize(size(px(400.0), px(200.0)));
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "the synthetic pointer position survives a resize"
+        );
+        visual.simulate_scale_factor_change(2.0);
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "the synthetic pointer position survives a DPI change"
+        );
     }
 }

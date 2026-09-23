@@ -8,8 +8,6 @@ use crate::{
 };
 
 const GPUI_MCP_REPOSITORY: &str = "https://github.com/themixednuts/gpui-mcp";
-const ZED_REPOSITORY: &str = "https://github.com/zed-industries/zed";
-const ZED_REVISION: &str = "82878540b5410b288a2c92cb9ee5675533e4d807";
 
 /// Inputs for a new standalone GPUI HTML project.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -121,7 +119,7 @@ impl ProjectSpec {
 ///
 /// The destination must not exist and the package name must be safe for Cargo
 /// and MCP discovery. An explicitly selected local workspace must contain the
-/// integration crates and the vendored GPUI patch.
+/// integration crates.
 pub fn generate(options: &ProjectSpec) -> Result<PathBuf, ScaffoldError> {
     validate_package_name(&options.name)?;
     if options.destination.exists() {
@@ -262,29 +260,15 @@ fn cargo_manifest(name: &str, dependencies: &ManifestDependencies<'_>) -> String
                 |revision| format!("rev = \"{revision}\""),
             );
             format!(
-                r#"gpui = "=0.2.2"
-gpui_platform = {{ git = "{ZED_REPOSITORY}", rev = "{ZED_REVISION}", features = ["font-kit", "wayland", "x11"] }}
+                r#"gpui = {{ package = "gpui-kit", version = "0.6" }}
 gpui-mcp = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}
-gpui-mcp-html = {{ git = "{GPUI_MCP_REPOSITORY}", {selector}, features = ["dev-watch"] }}
-
-[patch.crates-io]
-gpui = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}
-
-[patch."{ZED_REPOSITORY}"]
-gpui = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}"#
+gpui-mcp-html = {{ git = "{GPUI_MCP_REPOSITORY}", {selector}, features = ["dev-watch"] }}"#
             )
         }
         ManifestDependencies::LocalWorkspace(root) => format!(
-            r#"gpui = "=0.2.2"
-gpui_platform = {{ git = "{ZED_REPOSITORY}", rev = "{ZED_REVISION}", features = ["font-kit", "wayland", "x11"] }}
+            r#"gpui = {{ package = "gpui-kit", version = "0.6" }}
 gpui-mcp = {{ path = "{root}/crates/gpui-mcp" }}
-gpui-mcp-html = {{ path = "{root}/crates/gpui-mcp-html", features = ["dev-watch"] }}
-
-[patch.crates-io]
-gpui = {{ path = "{root}/vendor/gpui" }}
-
-[patch."{ZED_REPOSITORY}"]
-gpui = {{ path = "{root}/vendor/gpui" }}"#
+gpui-mcp-html = {{ path = "{root}/crates/gpui-mcp-html", features = ["dev-watch"] }}"#
         ),
     };
     format!(
@@ -389,7 +373,7 @@ fn build_live(window: &mut Window, cx: &App) -> Result<AppView, String> {{
 }}
 
 fn main() {{
-    gpui_platform::application().run(|cx: &mut App| {{
+    gpui::application().run(|cx: &mut App| {{
         gpui_mcp_html::init(cx);
         let bounds = Bounds::centered(None, size(px(800.0), px(600.0)), cx);
         let opened = cx.open_window(
@@ -509,7 +493,6 @@ fn validate_workspace(workspace: &Path) -> Result<(), ScaffoldError> {
     for manifest in [
         workspace.join("crates/gpui-mcp/Cargo.toml"),
         workspace.join("crates/gpui-mcp-html/Cargo.toml"),
-        workspace.join("vendor/gpui/Cargo.toml"),
     ] {
         if !manifest.is_file() {
             return Err(ScaffoldError::MissingWorkspaceCrate { manifest });
@@ -649,11 +632,10 @@ mod tests {
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
         assert!(manifest.contains("[workspace]"));
         assert!(manifest.contains("features = [\"dev-watch\"]"));
-        assert!(manifest.contains("gpui = \"=0.2.2\""));
+        assert!(manifest.contains("gpui = { package = \"gpui-kit\", version = \"0.6\" }"));
         assert!(manifest.contains("https://github.com/themixednuts/gpui-mcp"));
-        assert!(manifest.contains("https://github.com/zed-industries/zed"));
-        assert!(manifest.contains("[patch.crates-io]"));
-        assert!(manifest.contains("[patch.\"https://github.com/zed-industries/zed\"]"));
+        assert!(!manifest.contains("zed-industries"));
+        assert!(!manifest.contains("[patch"));
         assert!(!manifest.contains("path ="));
         let main = std::fs::read_to_string(destination.join("src/main.rs"))?;
         assert!(main.contains("ProjectWatcher"));
@@ -661,7 +643,7 @@ mod tests {
         assert!(!main.contains("NativeRoot"));
         assert!(!main.contains("Application::new"));
         assert!(!main.contains("Timer::after"));
-        assert!(main.contains("gpui_platform::application()"));
+        assert!(main.contains("gpui::application()"));
         assert!(main.contains("window::output_window_options(bounds)"));
         let window = std::fs::read_to_string(destination.join("src/window.rs"))?;
         assert!(window.contains("appears_transparent: false"));
@@ -694,9 +676,9 @@ mod tests {
         generate(&ProjectSpec::new("offline-app", &destination).workspace(workspace))?;
 
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
-        assert!(manifest.contains("gpui = \"=0.2.2\""));
+        assert!(manifest.contains("gpui = { package = \"gpui-kit\", version = \"0.6\" }"));
         assert!(manifest.contains("path ="));
-        assert!(manifest.contains("vendor/gpui"));
+        assert!(!manifest.contains("vendor/gpui"));
         assert!(!manifest.contains("git = \"https://github.com/themixednuts/gpui-mcp\""));
         Ok(())
     }

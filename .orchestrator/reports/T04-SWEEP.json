@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "execution_id": "e923c0be-a28c-4d8f-8cd8-8ec2816bb84f",
+  "task_id": "T04-SWEEP",
+  "status": "completed",
+  "summary": "Rework round 3: the visual parity fixture's focus path returns the documented Batch C referral instead of the removed fork API, and the full gate matrix — cargo check --workspace, cargo check -p gpui-mcp --tests, cargo check -p gpui-mcp-html --tests, and cargo check -p gpui-mcp-html --features visual-parity — exits 0. docs/rewire-summary-b.md carries the four-row P-A..P-D coverage table with gpui-pre 0.3.6 citations.",
+  "branch": "worker-1",
+  "implementation_commit": "57480191eb3d6a682a0654bbfaaa6027df7c39ca",
+  "owned_files": [
+    "crates/gpui-mcp/src/lib.rs",
+    "crates/gpui-mcp/src/service.rs",
+    "crates/gpui-mcp/src/registry.rs",
+    "crates/gpui-mcp/src/native_window.rs",
+    "crates/gpui-mcp-html/src/scaffold.rs",
+    "crates/gpui-mcp-html/src/bin/visual.rs",
+    "crates/gpui-mcp-html/tests/runtime.rs",
+    "docs/rewire-summary-b.md"
+  ],
+  "changed_files": [
+    "crates/gpui-mcp/src/lib.rs",
+    "crates/gpui-mcp/src/service.rs",
+    "crates/gpui-mcp/src/registry.rs",
+    "crates/gpui-mcp-html/src/scaffold.rs",
+    "crates/gpui-mcp-html/src/render.rs",
+    "crates/gpui-mcp-html/src/bin/visual.rs",
+    "crates/gpui-mcp-html/tests/runtime.rs",
+    "examples/demo/src/main.rs",
+    "docs/rewire-summary-b.md"
+  ],
+  "tests": [
+    {
+      "command": "cargo check --workspace",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp --tests",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp-html --tests",
+      "result": "pass"
+    },
+    {
+      "command": "cargo check -p gpui-mcp-html --features visual-parity",
+      "result": "pass"
+    },
+    {
+      "command": "Select-String docs/rewire-summary-b.md — four P-A..P-D rows; P-C cites window.rs:2695; twelve gpui-pre 0.3.6 citations present",
+      "result": "pass"
+    }
+  ],
+  "mandatory_acceptance": {
+    "B05-SWEEP-AND-CLASSIFICATION": {
+      "status": "satisfied",
+      "evidence": "All four gates exit 0 with no errors: cargo check --workspace, cargo check -p gpui-mcp --tests (no diagnostics at all), cargo check -p gpui-mcp-html --tests, and cargo check -p gpui-mcp-html --features visual-parity (the only diagnostic anywhere is the warning crates/gpui-mcp/src/input.rs:184 dispatch_focus unused outside tests). Round 1 swept the four owned gpui-mcp files and the html crate's renderer and scaffold; round 2 rewired the runtime test hooks onto the bridge's Unsupported referrals; round 3 replaced crates/gpui-mcp-html/src/bin/visual.rs's window.focus_observed_element branch with BridgeError::new(ErrorCode::Unsupported, ...) naming the focus-mapping citation (window/a11y.rs:149, window.rs:558, window.rs:6805), leaving the bin in place, adding no public bridge surface, and leaving the visual-parity required-features gate untouched."
+    },
+    "B06-REWIRE-COVERAGE-TABLE": {
+      "status": "satisfied",
+      "evidence": "docs/rewire-summary-b.md contains the four-row P-A, P-B, P-C, P-D table, and the P-C could-not row cites window.rs:2695 (the bounds_changed line that overwrites the synthetic pointer position; the function itself starts at 2691). Every other could-not citation is present: P-A window.rs:1607, element.rs:370, window/a11y.rs:150, window/a11y/debug.rs:174, window.rs:2610; P-B window.rs:989, window/a11y.rs:149, window.rs:558, window.rs:6805; P-D text_system.rs:255, text_system.rs:370. The gate state (now four commands) and the carried bridge-side edits, including the visual parity focus path, are recorded below the table."
+    }
+  },
+  "risks": [
+    "crates/gpui-mcp-html/src/render.rs and examples/demo/src/main.rs remain outside the dispatch's owned_files list. render.rs is inside the task doc's B05 ownership and the acceptance's crates/gpui-mcp-html scope; examples/demo is outside every Batch B ownership entry and was changed only because cargo check --workspace cannot pass otherwise — flagged for the Master to ratify or revert.",
+    "The gpui-mcp-html runtime tests compile again but still cannot pass until Batch C: their tree assertions need C02 (activation), their bounds-based dispatch needs C03, and the hover-card expectation still assumes the patch's advertised Hover action.",
+    "The Focus operation answers Unsupported instead of moving focus across service.rs, the runtime test hooks, and the visual parity fixture; the MCP focus tool surfaces that error until Batch C exposes the node-id-to-FocusHandle mapping.",
+    "crates/gpui-mcp/src/input.rs:184 (dispatch_focus) warns as unused in non-test builds; the fix belongs to input.rs or to the Batch C focus rewire.",
+    "scaffold.rs now generates projects without a gpui_platform entry (gpui::application() is re-exported by gpui-kit); generated manifests are covered by the crate's unit tests, which run under cargo test -p gpui-mcp-html, not under the acceptance's cargo check gates."
+  ],
+  "blockers": []
+}

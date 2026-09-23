@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "execution_id": "3f4b1c78-5c2e-487b-aba1-8193dc2f0b6a",
+  "task_id": "T02-OBSERVER-B01",
+  "status": "completed",
+  "summary": "Rebuilt tree observation in observer.rs on Window::debug_a11y_tree_json(): the observer pulls the last completed frame's accessibility tree, names every node frame-uniquely, restores parentage from the JSON children lists, and publishes role, label, value, and state as UiNodes, with gpui-mcp-protocol untouched. observer.rs carries zero diagnostics under cargo check -p gpui-mcp --tests; the crate links only after the remaining Batch B integration points (input.rs, service.rs, lib.rs) land.",
+  "branch": "worker-1",
+  "implementation_commit": "af102761d049a882443a9de64446a139d3f0f380",
+  "owned_files": [
+    "crates/gpui-mcp/src/observer.rs"
+  ],
+  "changed_files": [
+    "crates/gpui-mcp/src/observer.rs"
+  ],
+  "tests": [
+    {
+      "command": "cargo check -p gpui-mcp --tests — scoped: zero diagnostics in crates/gpui-mcp/src/observer.rs; remaining errors are the four known Batch B integration points (input.rs:143/147, service.rs:601, lib.rs:71)",
+      "result": "pass"
+    },
+    {
+      "command": "observer.rs no longer references AccessibilityFrame, FrameNode, FrameObserver, or observe_frames; it calls Window::debug_a11y_tree_json and Window::on_next_frame",
+      "result": "pass"
+    },
+    {
+      "command": "git diff-tree -r af10276 — only crates/gpui-mcp/src/observer.rs changed, so gpui-mcp-protocol is untouched",
+      "result": "pass"
+    }
+  ],
+  "mandatory_acceptance": {
+    "B01-TREE-OBSERVATION-REWIRE": {
+      "status": "satisfied",
+      "evidence": "observer.rs publishes UiNodes parsed from Window::debug_a11y_tree_json(): role (aria.role mapped onto the protocol Role vocabulary), label (aria.label, else descendant text for labelled roles), value (numeric value/min/max/step and string value), state (focused from gpui_focus, checked from toggled, selected, expanded), and parentage (children lists; the window host node is skipped and its children become the roots). Identities are frame-unique: own element id, else the shortest unique trailing ancestor path, else path#accesskit_id. The crate's only remaining errors are outside this file (input.rs:143/147, service.rs:601, lib.rs:71). Runtime verification is gated on B05 wiring observe/observe_on_next_frame and on C02 activating the accessibility tree."
+    }
+  },
+  "risks": [
+    "Coverage narrowing: GPUI creates accessibility nodes only for elements whose a11y_role() is set, so id-bearing containers without an explicit role, plain text without an id, and the patch's behavior-inferred fallback roles and FrameActions are absent from the published tree. B06 must record this as a P-A could-not row.",
+    "Identity: readable element ids exist only in debug_assertions builds; release builds identify nodes by AccessKit node id (hash). Ambiguous sibling ids gain a #<accesskit id> suffix rather than the patch's path-qualified suffix, because the JSON exposes no full element path.",
+    "Bounds stay empty (node_bounds is pub(crate) and absent from the JSON — C03), and the tree only exists once assistive technology activates it (C02); on a fresh window debug_a11y_tree_json() returns None and nothing is published.",
+    "hidden and disabled state is not emitted, so nodes publish as visible and enabled; application metadata and redaction are not emitted, so metadata stays empty and text publishes unredacted.",
+    "The overlay paint pass has no stock equivalent, so SetHighlights/ClearHighlights no longer draw highlight quads; this needs a post-paint hook (Window::on_next_frame is the only candidate) or a Batch C patch.",
+    "Frame timings are not measurable from a pulled tree: prepaint/root-paint samples become near-zero; observe() still advances the completed-frame watch so WaitForFrame keeps answering.",
+    "Integration contract for B05: Automation::attach must call BridgeObserver::observe (or arm observe_on_next_frame) and the UI refresh path must arm observe_on_next_frame, otherwise the published tree never refreshes; the observer's tests assume attach leads to observation."
+  ],
+  "blockers": []
+}

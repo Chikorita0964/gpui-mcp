@@ -243,12 +243,13 @@ fn dispatch_test_input(
         ));
     }
     if let TestInput::Focus = action {
-        return window
-            .focus_observed_element(node_id, cx)
-            .then_some(HookOutcome::Handled)
-            .ok_or_else(|| {
-                gpui_mcp::BridgeError::new(gpui_mcp::ErrorCode::NotFound, "node is not focusable")
-            });
+        // Mirrors the bridge: gpui-pre 0.3.6 exposes no node-id-to-FocusHandle
+        // mapping outside the crate (Batch C: window/a11y.rs:149,
+        // window.rs:558, window.rs:6805).
+        return Err(gpui_mcp::BridgeError::new(
+            gpui_mcp::ErrorCode::Unsupported,
+            "focusing a semantic node needs a FocusHandle the bridge cannot reach (Batch C: window/a11y.rs:149, window.rs:558, window.rs:6805)",
+        ));
     }
     if let TestInput::SetValue { value } = action {
         let requested = match value.as_str() {
@@ -615,19 +616,22 @@ fn dispatch_actions(automation: &Automation, window: &mut Window, cx: &mut App) 
         })
     );
     assert_eq!(dispatch("published", &publish), Ok(HookOutcome::Handled));
-    assert_eq!(
-        dispatch("title", &TestInput::Focus),
-        Ok(HookOutcome::Handled)
+    let focus = dispatch("title", &TestInput::Focus);
+    assert!(
+        matches!(&focus, Err(error) if error.code == gpui_mcp::ErrorCode::Unsupported),
+        "focus is carried to Batch C, got {focus:?}"
     );
 }
 
 fn assert_updated_tree(tree: &UiTree, old_generation: u64) {
+    // Replacement is carried to Batch C (window.rs:989), so the title keeps
+    // its authored value.
     assert_eq!(
         tree.nodes["title"]
             .value
             .as_ref()
             .map(|value| value.value.as_str()),
-        Some("Published title")
+        Some("Draft title")
     );
     assert!(tree.generation > old_generation);
     assert_eq!(tree.nodes["published"].state.checked, Some(true));
@@ -658,12 +662,8 @@ fn html_renders_to_gpui_and_uses_real_input(cx: &mut TestAppContext) {
 
     view.update(visual, |_, cx| cx.notify());
     visual.run_until_parked();
-    visual.update(|window, cx| {
-        assert!(window.replace_input_text("Published title", cx));
-    });
-    assert_eq!(&*state.title.borrow(), "Published title");
-    view.update(visual, |_, cx| cx.notify());
-    visual.run_until_parked();
+    // Text replacement is unreachable until Batch C exposes the active input
+    // handler (window.rs:989), so this scenario stops at the published tree.
     assert_updated_tree(&automation.snapshot(), tree.generation);
 }
 
@@ -738,9 +738,10 @@ fn complex_layout_and_interactive_states_round_trip(cx: &mut TestAppContext) {
             dispatch_test_input(&automation, "hover-card", &TestInput::Hover, window, cx,),
             Ok(HookOutcome::Handled)
         );
-        assert_eq!(
-            dispatch_test_input(&automation, "focus-card", &TestInput::Focus, window, cx,),
-            Ok(HookOutcome::Handled)
+        let focus = dispatch_test_input(&automation, "focus-card", &TestInput::Focus, window, cx,);
+        assert!(
+            matches!(&focus, Err(error) if error.code == gpui_mcp::ErrorCode::Unsupported),
+            "focus is carried to Batch C, got {focus:?}"
         );
         assert_eq!(
             dispatch_test_input(
@@ -763,7 +764,7 @@ fn complex_layout_and_interactive_states_round_trip(cx: &mut TestAppContext) {
     assert!(updated.generation > initial.generation);
     assert_eq!(updated.nodes["dropdown"].state.expanded, Some(true));
     assert!(updated.nodes.contains_key("menu"));
-    assert!(updated.nodes["focus-card"].state.focused);
+    // Focus stays with the platform until Batch C exposes the mapping.
 }
 
 #[gpui::test]

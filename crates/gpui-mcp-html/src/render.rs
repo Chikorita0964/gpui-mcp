@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gpui::{
     AlignItems, AlignSelf, AnyElement, App, AppContext as _, BoxShadow, Context, DefiniteLength,
-    Div, Entity, FocusHandle, FontFallbacks, FontWeight, FrameAction, GridPlacement,
+    Div, Entity, FocusHandle, FontFallbacks, FontWeight, GridPlacement,
     InteractiveElement as _, IntoElement, Length, Overflow, ParentElement as _, Render,
     Role as AccessibleRole, ScrollHandle, SharedString, Stateful, StatefulInteractiveElement as _,
     Styled, Toggled, Window, div, point, px, relative, rgba,
@@ -539,10 +539,9 @@ impl LiveHtml {
         if let Some(role) = role {
             host = host.role(role);
         }
-        host = host
-            .aria_hidden(!state.visible)
-            .aria_disabled(!state.enabled)
-            .frame_metadata("html_tag", element.source_tag.to_string());
+        // `aria_hidden`/`aria_disabled` and frame metadata have no stock
+        // equivalent in gpui-pre 0.3.6; the renderer's hidden/disabled state and
+        // provenance are carried to Batch C (see docs/rewire-summary-b.md).
         if let UiRole::Heading(level) = element.role {
             host = host.aria_level(level.into());
         }
@@ -559,12 +558,6 @@ impl LiveHtml {
         if let Some(expanded) = state.expanded {
             host = host.aria_expanded(expanded);
         }
-        if let Some(authored_id) = attribute(element, "id") {
-            host = host.frame_metadata("authored_id", authored_id);
-        }
-        if let Some(component_id) = attribute(element, "component") {
-            host = host.frame_metadata("component_id", component_id);
-        }
         if let Some(label) = accessible_label(element, &property_values) {
             host = host.aria_label(label);
         }
@@ -579,21 +572,15 @@ impl LiveHtml {
             });
         }
         if let Some(text) = element_text(element, &property_values, &bindings) {
-            if text.redacted {
-                host = host.frame_redacted(true);
-            } else if is_editable_role(role) {
+            // A redacted value stays unpublished; writable text exposes its
+            // value so the semantic tree carries it.
+            if !text.redacted && (text.editable || is_editable_role(role)) {
                 host = host.aria_value(text.text);
-            }
-            if text.editable && !text.redacted {
-                host = host.frame_action(FrameAction::SetText);
             }
         }
         if let Some(value) = element_value(element, &property_values, &bindings) {
-            if !is_editable_role(role) {
+            if !is_editable_role(role) || value.editable {
                 host = host.aria_value(value.value);
-            }
-            if value.editable {
-                host = host.frame_action(FrameAction::SetValue);
             }
         }
 
