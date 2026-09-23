@@ -1,25 +1,9 @@
 # Vendored dependencies
 
 `gpui/` is GPUI 0.2.2 from Zed commit
-`69e2130295c2649963eb639fc70b4f2ee8ea1624`. It carries six downstream source
-changes:
-
-- `DispatchEventResult` is public so callers can use GPUI's already-public
-  `Window::dispatch_event` method.
-- Programmatic pointer input remains authoritative when the platform later
-  repeats its last unchanged cursor position. A real native pointer move still
-  takes ownership immediately.
-- Font fallback changes only the family while preserving the requested
-  features, weight, and style. This keeps fallback text consistent with the
-  caller's typography request and the Chromium/GPUI visual-parity fixtures.
-- `Window::native_window_id` exposes the platform window identity already held
-  by GPUI so capture can survive application title changes.
-- A rendered semantic frame is collected from stable element IDs, real
-  interactivity, layout bounds, text, and focus handles. `FrameObserver` exposes
-  completed frames and a post-paint overlay without maintaining a second UI
-  graph.
-- `Window::insert_input_text` and `Window::replace_input_text` route text through
-  the focused element's active `InputHandler`, including IME-aware editors.
+`16c9aa7ea6d897a8044d9501cde1b295256722f2`. It carries the downstream source
+changes inventoried in `gpui/PATCHES.md`, each checked against upstream as of
+2026-09-22 and still unmerged there.
 
 The crate's Apache-2.0 license is retained in `gpui/LICENSE-APACHE`.
 

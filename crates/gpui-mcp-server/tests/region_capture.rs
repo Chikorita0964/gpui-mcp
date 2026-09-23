@@ -12,15 +12,16 @@
 //! fixture's field draws focus as a one-pixel, high-contrast ring on its own
 //! bounds, and hover as a low-contrast fill across its whole interior. A crop
 //! that refreshes on layout but not on paint still passes the second alone. The
-//! assertion in each case is byte equality against the same rectangle of a full
-//! window capture, taken in both capture orders.
+//! assertion in each case compares the same rectangle of a full window capture
+//! in both capture orders. One channel level of native capture color jitter is
+//! ignored; a shifted crop or a stale visual state still fails.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use image::RgbaImage;
+use image::{Rgba, RgbaImage};
 use serde_json::{Value as JsonValue, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
@@ -29,6 +30,7 @@ use tokio::time::timeout;
 
 const REPLY_TIMEOUT: Duration = Duration::from_mins(1);
 const DISCOVERY_DEADLINE: Duration = Duration::from_secs(45);
+const VISUAL_SETTLE_DEADLINE: Duration = Duration::from_secs(5);
 /// The rectangle the fixture's focusable field occupies, grown by a margin, so a
 /// focus treatment drawn just outside the element's own bounds is still inside
 /// the crop and a null reading cannot be blamed on the margin.
@@ -233,7 +235,7 @@ fn rectangle(bounds: &JsonValue) -> Result<(f64, f64, f64, f64), String> {
     Ok((read("x")?, read("y")?, read("width")?, read("height")?))
 }
 
-/// The only position at which `tile` appears in `image`, byte for byte.
+/// Find where `tile` appears in `image`, allowing native color jitter.
 ///
 /// This is the oracle for "the same rectangle": it reads the region's place in
 /// the window out of the pixels instead of recomputing the mapping the server
@@ -241,18 +243,29 @@ fn rectangle(bounds: &JsonValue) -> Result<(f64, f64, f64, f64), String> {
 fn locate(image: &RgbaImage, tile: &RgbaImage) -> Option<(u32, u32)> {
     let (width, height) = (image.width(), image.height());
     let (tile_width, tile_height) = (tile.width(), tile.height());
-    if tile_width > width || tile_height > height {
+    if tile_width == 0 || tile_height == 0 || tile_width > width || tile_height > height {
         return None;
     }
+    let samples = [
+        (0, 0),
+        (tile_width / 2, 0),
+        (tile_width - 1, 0),
+        (0, tile_height / 2),
+        (tile_width / 2, tile_height / 2),
+        (tile_width - 1, tile_height / 2),
+        (0, tile_height - 1),
+        (tile_width / 2, tile_height - 1),
+        (tile_width - 1, tile_height - 1),
+    ];
     (0..=height - tile_height)
         .flat_map(|top| (0..=width - tile_width).map(move |left| (left, top)))
         .find(|&(left, top)| {
-            (0..tile_height).all(|row| {
-                let from = (top + row) as usize * width as usize + left as usize;
-                let into = row as usize * tile_width as usize;
-                let count = tile_width as usize;
-                image.as_raw()[from * 4..(from + count) * 4]
-                    == tile.as_raw()[into * 4..(into + count) * 4]
+            samples.iter().all(|&(x, y)| {
+                colors_match(*image.get_pixel(left + x, top + y), *tile.get_pixel(x, y))
+            }) && (0..tile_height).all(|y| {
+                (0..tile_width).all(|x| {
+                    colors_match(*image.get_pixel(left + x, top + y), *tile.get_pixel(x, y))
+                })
             })
         })
 }
@@ -261,14 +274,23 @@ fn sub_image(image: &RgbaImage, left: u32, top: u32, width: u32, height: u32) ->
     image::imageops::crop_imm(image, left, top, width, height).to_image()
 }
 
+/// Count pixels whose color differs by more than native capture's observed
+/// one-level channel jitter.
 fn differing_pixels(left: &RgbaImage, right: &RgbaImage) -> usize {
     if left.dimensions() != right.dimensions() {
         return usize::MAX;
     }
     left.pixels()
         .zip(right.pixels())
-        .filter(|(left, right)| left != right)
+        .filter(|(left, right)| !colors_match(**left, **right))
         .count()
+}
+
+fn colors_match(left: Rgba<u8>, right: Rgba<u8>) -> bool {
+    left.0
+        .iter()
+        .zip(right.0.iter())
+        .all(|(left, right)| left.abs_diff(*right) <= 1)
 }
 
 /// Wait until exactly the fixture is discoverable through the private endpoint
@@ -346,26 +368,32 @@ async fn measure(server: &mut Server) -> Result<(), String> {
         "height": height + CROP_MARGIN * 2.0,
     });
 
-    let away = (x + width * 2.0, y);
+    let away = (0.0, 0.0);
     return_to_rest(server, away).await?;
-    let parked_region = server
-        .call_image("screenshot_region", region.clone())
-        .await?;
-    let parked_window = server.call_image("screenshot", json!({})).await?;
-
-    let anchor = locate(&parked_window, &parked_region).ok_or_else(|| {
-        "the region crop does not appear anywhere in the full window capture".to_owned()
-    })?;
+    let parked_region = stable_region(server, &region).await?;
+    let anchor_since = Instant::now();
+    let anchor = loop {
+        let parked_window = server.call_image("screenshot", json!({})).await?;
+        if let Some(anchor) = locate(&parked_window, &parked_region) {
+            break anchor;
+        }
+        if anchor_since.elapsed() >= VISUAL_SETTLE_DEADLINE {
+            return Err("the resting crop did not appear in the full window".to_owned());
+        }
+    };
 
     // Two shapes of change, because they fail differently and one alone is not
     // insurance: a focus ring is a thin, high-contrast edge on the rectangle's
     // own bounds, and a hover fill is a large, low-contrast area inside it. A
     // crop that refreshes on layout but not on paint still passes the second.
-    for (change, tool) in [
-        ("the focus ring", "focus_element"),
-        ("the hover fill", "hover_element"),
+    // The fill changes thousands of pixels while the focus ring changes tens.
+    // This keeps a late frame from the previous phase from satisfying the gate.
+    for (change, tool, minimum_changed_pixels) in [
+        ("the focus ring", "focus_element", 20),
+        ("the hover fill", "hover_element", 1_000),
     ] {
         return_to_rest(server, away).await?;
+        let resting_region = stable_region(server, &region).await?;
         server.call(tool, json!({ "id": "search" })).await?;
         if tool == "focus_element" {
             let state = server
@@ -379,46 +407,96 @@ async fn measure(server: &mut Server) -> Result<(), String> {
         }
 
         for region_first in [true, false] {
-            let (changed_region, changed_window) = if region_first {
-                let crop = server
-                    .call_image("screenshot_region", region.clone())
-                    .await?;
-                (crop, server.call_image("screenshot", json!({})).await?)
-            } else {
-                let window = server.call_image("screenshot", json!({})).await?;
-                (
-                    server
-                        .call_image("screenshot_region", region.clone())
-                        .await?,
-                    window,
-                )
-            };
-
-            // Refuse the comparison unless the change reached the crop at all.
-            // Without this a crop that never refreshes and an application that
-            // never repaints read exactly the same.
-            assert!(
-                differing_pixels(&parked_region, &changed_region) > 0,
-                "{change} must reach the region crop; it was byte-identical to the resting crop"
-            );
-
-            let expected = sub_image(
-                &changed_window,
-                anchor.0,
-                anchor.1,
-                changed_region.width(),
-                changed_region.height(),
-            );
-            assert_eq!(
-                differing_pixels(&changed_region, &expected),
-                0,
-                "with {change} applied the region crop must equal the same rectangle of a \
-                 full window capture (region captured {} the window)",
-                if region_first { "before" } else { "after" }
-            );
+            compare_changed_capture_pair(
+                server,
+                &region,
+                &resting_region,
+                anchor,
+                change,
+                minimum_changed_pixels,
+                region_first,
+            )
+            .await?;
         }
     }
 
+    Ok(())
+}
+
+async fn stable_region(server: &mut Server, region: &JsonValue) -> Result<RgbaImage, String> {
+    let started = Instant::now();
+    let mut previous = server
+        .call_image("screenshot_region", region.clone())
+        .await?;
+    let mut repeats = 0;
+    loop {
+        let current = server
+            .call_image("screenshot_region", region.clone())
+            .await?;
+        if differing_pixels(&previous, &current) == 0 {
+            repeats += 1;
+            if repeats == 2 {
+                return Ok(current);
+            }
+        } else {
+            repeats = 0;
+        }
+        if started.elapsed() >= VISUAL_SETTLE_DEADLINE {
+            return Err("the resting crop did not stabilize".to_owned());
+        }
+        previous = current;
+    }
+}
+
+async fn compare_changed_capture_pair(
+    server: &mut Server,
+    region: &JsonValue,
+    parked_region: &RgbaImage,
+    anchor: (u32, u32),
+    change: &str,
+    minimum_changed_pixels: usize,
+    region_first: bool,
+) -> Result<(), String> {
+    // Native capture can still return an older compositor frame after GPUI
+    // confirms focus or hover. Compare only once both capture paths show the change.
+    let changed_since = Instant::now();
+    let (changed_region, expected) = loop {
+        let (crop, window) = if region_first {
+            let crop = server
+                .call_image("screenshot_region", region.clone())
+                .await?;
+            (crop, server.call_image("screenshot", json!({})).await?)
+        } else {
+            let window = server.call_image("screenshot", json!({})).await?;
+            (
+                server
+                    .call_image("screenshot_region", region.clone())
+                    .await?,
+                window,
+            )
+        };
+        let expected = sub_image(&window, anchor.0, anchor.1, crop.width(), crop.height());
+        if differing_pixels(parked_region, &crop) >= minimum_changed_pixels
+            && differing_pixels(parked_region, &expected) >= minimum_changed_pixels
+        {
+            break (crop, expected);
+        }
+        if changed_since.elapsed() >= VISUAL_SETTLE_DEADLINE {
+            return Err(format!(
+                "both native captures did not show {change} before the deadline: crop changed {} pixels, full-window rectangle changed {} pixels",
+                differing_pixels(parked_region, &crop),
+                differing_pixels(parked_region, &expected),
+            ));
+        }
+    };
+
+    assert_eq!(
+        differing_pixels(&changed_region, &expected),
+        0,
+        "with {change} applied the region crop must match the same rectangle of a \
+         full window capture within one color level (region captured {} the window)",
+        if region_first { "before" } else { "after" }
+    );
     Ok(())
 }
 

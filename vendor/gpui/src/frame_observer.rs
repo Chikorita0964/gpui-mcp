@@ -100,9 +100,14 @@ impl FrameNode {
         self.redacted
     }
 
-    /// Return normalized descendant text collected during prepaint.
+    /// Return normalized descendant text collected during prepaint, or an
+    /// empty string when this node is redacted.
     pub fn content_text(&self) -> &str {
-        &self.content_text
+        if self.redacted {
+            ""
+        } else {
+            &self.content_text
+        }
     }
 
     /// Return the AccessKit node ID derived from the complete GPUI element path.
@@ -303,6 +308,9 @@ impl FrameBuilder {
                 .rev()
                 .find(|node| node.path == parent.path)
             {
+                if node.redacted {
+                    continue;
+                }
                 if !node.content_text.is_empty() {
                     node.content_text.push(' ');
                 }
