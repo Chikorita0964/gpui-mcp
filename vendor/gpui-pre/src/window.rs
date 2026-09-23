@@ -2334,23 +2334,16 @@ impl Window {
     }
 
     /// gpui-mcp patch (C04): replace the complete document owned by the focused
-    /// input handler through `PlatformInputHandler::replace_text_in_range`.
+    /// input handler through `PlatformInputHandler::replace_all_text`.
     ///
     /// Returns `false` when the handler cannot provide its document range.
-    pub fn replace_input_text(&mut self, text: &str) -> bool {
+    pub fn replace_input_text(&mut self, text: &str, cx: &mut App) -> bool {
         let Some(mut input_handler) = self.platform_window.take_input_handler() else {
             return false;
         };
-        let mut document_range = None;
-        let available = input_handler
-            .text_for_range(0..usize::MAX, &mut document_range)
-            .is_some()
-            && document_range.is_some();
-        if let Some(document_range) = document_range {
-            input_handler.replace_text_in_range(Some(document_range), text);
-        }
+        let replaced = input_handler.replace_all_text(text, self, cx);
         self.platform_window.set_input_handler(input_handler);
-        available
+        replaced
     }
 
     /// Remove focus from all elements within this context's window.

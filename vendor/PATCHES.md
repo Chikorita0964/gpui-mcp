@@ -12,7 +12,8 @@ The set falls into two classes:
   `Window::a11y_focus_handle`. These open an existing implementation and add no
   behavior beyond the gate they open.
 - **Ported fork-patch behavior**: C04's document-range probe in
-  `Window::replace_input_text`, C05's pointer-tracking field with move detection
+  `PlatformInputHandler::replace_all_text` (called from
+  `Window::replace_input_text`), C05's pointer-tracking field with move detection
   in `bounds_changed`, and C06's trait-fill in `resolve_font`. These carry
   behavior the fork's own patch applied before the rewire — pointer ownership
   and synthetic-input preservation from P-C, and fallback traits from P-D — as
@@ -86,12 +87,37 @@ pub fn a11y_node_bounds(&self, node_id: accesskit::NodeId) -> Option<Bounds<Pixe
 
 | | |
 |---|---|
-| File | `vendor/gpui-pre/src/window.rs` |
-| Item | `Window::insert_input_text` and `Window::replace_input_text` (after `Window::focus`), plus `Window::a11y_focus_handle` (next to `debug_a11y_tree_json`) |
-| Opened | Text insertion and replacement through the focused element's live `PlatformInputHandler` (`dispatch_input` and `replace_text_in_range`), used by `input.rs`; and resolution of an accessibility `NodeId` to its `FocusHandle`, used by the `Focus` operation in `service.rs`. |
-| Why | The platform window and its handler slot are crate-private, so the live handler is unreachable from the bridge; `A11y::focus_ids` (`window/a11y.rs:149`) and `FocusHandle::for_id` (`window.rs:558`) are `pub(crate)`, and the only stock `NodeId`-to-focus path is `Window::handle_a11y_action` (`window.rs:6805`), also `pub(crate)`. |
+| File | `vendor/gpui-pre/src/platform.rs` and `vendor/gpui-pre/src/window.rs` |
+| Item | `PlatformInputHandler::replace_all_text` (platform.rs, after `dispatch_input`); `Window::insert_input_text` and `Window::replace_input_text` (window.rs, after `Window::focus`); plus `Window::a11y_focus_handle` (window.rs, next to `debug_a11y_tree_json`) |
+| Opened | Text insertion and replacement through the focused element's live `PlatformInputHandler` (`dispatch_input` and `replace_all_text`), used by `input.rs`; and resolution of an accessibility `NodeId` to its `FocusHandle`, used by the `Focus` operation in `service.rs`. |
+| Why | The platform window and its handler slot are crate-private, so the live handler is unreachable from the bridge; `A11y::focus_ids` (`window/a11y.rs:149`) and `FocusHandle::for_id` (`window.rs:558`) are `pub(crate)`, and the only stock `NodeId`-to-focus path is `Window::handle_a11y_action` (`window.rs:6805`), also `pub(crate)`. The stock handler wrappers (`text_for_range`, `replace_text_in_range`) re-enter the window through `AsyncWindowContext::update`, so `replace_all_text` reaches the handler with the caller's window and context instead. |
 
 ```rust
+// vendor/gpui-pre/src/platform.rs, after `dispatch_input`
+/// gpui-mcp patch (C04): replace the complete document owned by this
+/// handler.
+///
+/// Reaches the handler with the caller's window and context, so
+/// `Window::replace_input_text` does not re-enter the window through
+/// `AsyncWindowContext::update`.
+pub fn replace_all_text(&mut self, text: &str, window: &mut Window, cx: &mut App) -> bool {
+    let mut document_range = None;
+    if self
+        .handler
+        .text_for_range(0..usize::MAX, &mut document_range, window, cx)
+        .is_none()
+    {
+        return false;
+    }
+    let Some(document_range) = document_range else {
+        return false;
+    };
+    self.handler
+        .replace_text_in_range(Some(document_range), text, window, cx);
+    true
+}
+
+// vendor/gpui-pre/src/window.rs, after `Window::focus`
 /// gpui-mcp patch (C04): insert text through the focused element's active
 /// input handler.
 ///
@@ -106,25 +132,19 @@ pub fn insert_input_text(&mut self, text: &str, cx: &mut App) -> bool {
 }
 
 /// gpui-mcp patch (C04): replace the complete document owned by the focused
-/// input handler through `PlatformInputHandler::replace_text_in_range`.
+/// input handler through `PlatformInputHandler::replace_all_text`.
 ///
 /// Returns `false` when the handler cannot provide its document range.
-pub fn replace_input_text(&mut self, text: &str) -> bool {
+pub fn replace_input_text(&mut self, text: &str, cx: &mut App) -> bool {
     let Some(mut input_handler) = self.platform_window.take_input_handler() else {
         return false;
     };
-    let mut document_range = None;
-    let available = input_handler
-        .text_for_range(0..usize::MAX, &mut document_range)
-        .is_some()
-        && document_range.is_some();
-    if let Some(document_range) = document_range {
-        input_handler.replace_text_in_range(Some(document_range), text);
-    }
+    let replaced = input_handler.replace_all_text(text, self, cx);
     self.platform_window.set_input_handler(input_handler);
-    available
+    replaced
 }
 
+// vendor/gpui-pre/src/window.rs, next to `debug_a11y_tree_json`
 /// gpui-mcp patch (C04): resolve an accessibility node to its focus handle.
 ///
 /// Returns `None` when the node does not track focus in the current frame.

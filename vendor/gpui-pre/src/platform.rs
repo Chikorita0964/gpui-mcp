@@ -1774,6 +1774,29 @@ impl PlatformInputHandler {
         self.handler.replace_text_in_range(None, input, window, cx);
     }
 
+    /// gpui-mcp patch (C04): replace the complete document owned by this
+    /// handler.
+    ///
+    /// Reaches the handler with the caller's window and context, so
+    /// `Window::replace_input_text` does not re-enter the window through
+    /// `AsyncWindowContext::update`.
+    pub fn replace_all_text(&mut self, text: &str, window: &mut Window, cx: &mut App) -> bool {
+        let mut document_range = None;
+        if self
+            .handler
+            .text_for_range(0..usize::MAX, &mut document_range, window, cx)
+            .is_none()
+        {
+            return false;
+        }
+        let Some(document_range) = document_range else {
+            return false;
+        };
+        self.handler
+            .replace_text_in_range(Some(document_range), text, window, cx);
+        true
+    }
+
     pub fn compute_ime_candidate_bounds(
         marked_range: Option<Range<usize>>,
         selection: &UTF16Selection,
