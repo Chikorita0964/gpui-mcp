@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "execution_id": "63aae056-93b6-48d1-81fc-c4c7ff3ea046",
+  "status": "completed",
+  "input_commits": {
+    "T01-BIND-AND-SURVEY": "e82b89b8a0f05e6755abdcd67ed5e4cf4d5884bc"
+  },
+  "integration_commit": "e82b89b8a0f05e6755abdcd67ed5e4cf4d5884bc",
+  "tests": [
+    {
+      "command": "cargo check --workspace — Batch A survey capture (exit 101 expected at this stage; 1 error site captured)",
+      "result": "pass"
+    },
+    {
+      "command": "workspace manifest check: gpui-kit alias present; no zed-industries / =0.2.2 / vendor/gpui / [patch] references; vendor/gpui absent",
+      "result": "pass"
+    },
+    {
+      "command": "survey coverage check: every error location captured from cargo check appears in docs/rewire-survey.md",
+      "result": "pass"
+    }
+  ],
+  "mandatory_acceptance": {
+    "A01-GPUI-KIT-ALIAS-BINDING": {
+      "status": "satisfied",
+      "evidence": "Integrated Cargo.toml declares gpui = { package = \"gpui-kit\", version = \"0.6\" }; both [patch] blocks and the vendor/gpui workspace exclude are removed; vendor/gpui/ absent (vendor/ holds only README.md); grep over *.toml finds no zed-industries, =0.2.2, or vendor/gpui; cargo check resolves Checking gpui-kit v0.6.6."
+    },
+    "A02-COMPILATION-ERROR-SURVEY": {
+      "status": "satisfied",
+      "evidence": "cargo check --workspace on the integrated result exits 101 with a single E0432 at crates/gpui-mcp/src/observer.rs:4:5 (AccessibilityFrame, FrameAction, FrameNode, FrameObserver); docs/rewire-survey.md classifies the compiler error plus masked source-audit items (lib.rs:71 observe_frames; input.rs:143/147 insert/replace_input_text; service.rs:601 focus_observed_element) by P-A/P-B with candidate native APIs and Batch C referrals (window.rs:1607, window/a11y.rs:150, window.rs:989, window.rs:2691, text_system.rs:255)."
+    }
+  },
+  "conflicts_resolved": [],
+  "unresolved_conflicts": [],
+  "risks": [
+    "cargo check --workspace exits 101 at Batch A by design (observer.rs P-A imports); the full exit-0 gate closes only after Batches B and C.",
+    "gpui-mcp-html, examples/demo, and examples/runtime-showcase were not type-checked because gpui-mcp failed first; their errors remain unclassified for Batch B/B05."
+  ],
+  "blockers": []
+}
