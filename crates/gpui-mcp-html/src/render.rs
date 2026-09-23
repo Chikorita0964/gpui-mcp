@@ -9,6 +9,7 @@ use gpui::{
     InteractiveElement as _, IntoElement, Length, Overflow, ParentElement as _, Render,
     Role as AccessibleRole, ScrollHandle, SharedString, Stateful, StatefulInteractiveElement as _,
     Styled, Toggled, Window, div, point, px, relative, rgba,
+    accesskit::{Action as AccessibleAction, ActionData},
 };
 use gpui_mcp::{Automation, MAX_LABEL_BYTES, MAX_TEXT_BYTES};
 use htmlswap::{
@@ -582,6 +583,13 @@ impl LiveHtml {
             if !is_editable_role(role) || value.editable {
                 host = host.aria_value(value.value);
             }
+        }
+        if let Some(input) = text_input.filter(|_| state.enabled && !is_password(element)) {
+            host = host.on_a11y_action(AccessibleAction::SetValue, move |data, window, cx| {
+                if let Some(ActionData::Value(value)) = data {
+                    input.update(cx, |input, cx| input.set_text(value, window, cx));
+                }
+            });
         }
 
         host.into_any_element()

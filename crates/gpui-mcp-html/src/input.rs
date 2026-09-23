@@ -180,6 +180,15 @@ impl RuntimeTextInput {
         self.focus_handle.clone()
     }
 
+    /// Replace the whole document, as an accessibility `SetValue` request does.
+    pub(crate) fn set_text(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.behavior.disabled {
+            return;
+        }
+        let all = 0..self.content.encode_utf16().count();
+        self.replace(Some(&all), text, window, cx);
+    }
+
     fn cursor(&self) -> usize {
         if self.selection_reversed {
             self.selection.start

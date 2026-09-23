@@ -616,7 +616,12 @@ fn assert_initial_tree(tree: &UiTree, state: &TestState) {
         })
     );
     assert_eq!(tree.nodes["save"].label.as_deref(), Some("Save"));
+    assert!(
+        tree.nodes["title"].actions.contains(&NodeAction::SetText),
+        "an editable text input accepts set_text through its SetValue listener"
+    );
     assert_eq!(tree.nodes["secret"].role, Role::TextInput);
+    assert!(!tree.nodes["secret"].actions.contains(&NodeAction::SetText));
     assert_eq!(
         tree.nodes["secret"]
             .text
