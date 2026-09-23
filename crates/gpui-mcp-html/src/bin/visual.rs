@@ -280,12 +280,12 @@ fn apply_fixture_action(
             )
         })?;
     if matches!(action, FixtureAction::Focus) {
-        if window.focus_observed_element(&node.id, cx) {
-            return Ok(());
-        }
+        // Mirrors the bridge: gpui-pre 0.3.6 exposes no node-id-to-FocusHandle
+        // mapping outside the crate (Batch C: window/a11y.rs:149,
+        // window.rs:558, window.rs:6805).
         return Err(gpui_mcp::BridgeError::new(
-            gpui_mcp::ErrorCode::NotFound,
-            "fixture semantic element is not focusable",
+            gpui_mcp::ErrorCode::Unsupported,
+            "focusing a semantic node needs a FocusHandle the bridge cannot reach (Batch C: window/a11y.rs:149, window.rs:558, window.rs:6805)",
         ));
     }
     let bounds = node.bounds.ok_or_else(|| {
