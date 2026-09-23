@@ -1,12 +1,11 @@
 {
   "schema_version": 1,
-  "execution_id": "4f3bc3c9-1d9f-455c-be24-4f4202659fa9",
+  "execution_id": "a314b11e-a227-4eb9-8474-3092348d1b79",
   "status": "completed",
   "input_commits": {
-    "T10-REPLACE-TEXT-VENDOR-PATCH": "e20b45b207d89fc71d9d21f885eef144f632b601",
-    "T11-HTML-RUNTIME-VERIFY": "81046be1ca4bc62a55472c7f00b10e1fa632ca15"
+    "T12-RENDER-DOC-REWORK": "1e657f2615733ec051cde83197ad7a2b5680a637"
   },
-  "integration_commit": "8f8d68d1a096d7edcbcba2e5e2b5239ec8cd10ce",
+  "integration_commit": "4e899328a50c6955381b9e0547d83f8055edf11e",
   "tests": [
     {
       "command": "cargo check --workspace",
@@ -25,45 +24,45 @@
       "result": "pass"
     },
     {
-      "command": "vendor/PATCHES.md accuracy check: replace_all_text vendor patch and C01-C06 coverage documented",
+      "command": "vendor/PATCHES.md accuracy check: C01-C06 coverage with replace_all_text vendor patch documented",
       "result": "pass"
     }
   ],
   "mandatory_acceptance": {
     "C01-VENDOR-GPUI-PRE": {
       "status": "satisfied",
-      "evidence": "cargo tree -p gpui-pre resolves gpui-pre v0.3.6 to vendor/gpui-pre; cargo check --workspace exits 0 with everything else from crates.io."
+      "evidence": "cargo tree -p gpui-pre resolves gpui-pre v0.3.6 to vendor/gpui-pre; cargo check --workspace exits 0."
     },
     "C02-A11Y-ACTIVATION-GATE": {
       "status": "satisfied",
-      "evidence": "debug_a11y_tree_json() returns Some on a fresh window; all 7 html runtime tests assert against the published completed-frame tree and pass."
+      "evidence": "debug_a11y_tree_json() returns Some on a fresh window; all 7 html runtime tests pass against the published tree."
     },
     "C03-NODE-BOUNDS-EXPOSURE": {
       "status": "satisfied",
-      "evidence": "Window::a11y_node_bounds exposes Bounds<Pixels> from A11y::node_bounds in logical pixels; observer publishes them and runtime assertions pass."
+      "evidence": "per-node bounds resolve through Window::a11y_node_bounds in logical pixels; observer and runtime assertions pass."
     },
     "C04-INPUT-HANDLER-EXPOSURE": {
       "status": "satisfied",
-      "evidence": "PlatformInputHandler::replace_all_text plus Window::replace_input_text carry replacement without re-entrancy; replaced_text_reaches_the_document passes un-ignored and the suite reports 7 passed, 0 failed, 0 ignored."
+      "evidence": "PlatformInputHandler::replace_all_text and Window::replace_input_text carry replacement; replaced_text_reaches_the_document passes."
     },
     "C05-POINTER-POSITION-PRESERVATION": {
       "status": "satisfied",
-      "evidence": "bounds_changed preserves synthetic hover; input test synthetic_hover_survives_bounds_changed passes and all 21 gpui-mcp lib tests pass."
+      "evidence": "input test synthetic_hover_survives_bounds_changed passes; all 21 gpui-mcp lib tests pass."
     },
     "C06-TEXT-FALLBACK-STACK": {
       "status": "satisfied",
-      "evidence": "resolve_font rebuilds fallback candidates via fallback_with_requested_traits preserving weight, style, and features; workspace check exits 0."
+      "evidence": "resolve_font rebuilds fallback candidates via fallback_with_requested_traits preserving weight, style, and features."
     },
     "C07-PATCHES-DOCUMENTATION": {
       "status": "satisfied",
-      "evidence": "vendor/PATCHES.md records every C01-C06 change including platform.rs replace_all_text with file, item, what it opened, and why the native API was unreachable."
+      "evidence": "vendor/PATCHES.md records every C01-C06 change; render.rs comment states dropped semantics track the P-A row rather than Batch C."
     }
   },
   "conflicts_resolved": [],
   "unresolved_conflicts": [],
   "risks": [
-    "Only Click and Focus are advertised on accessibility nodes, so hover and scroll tools still cannot answer; non-editable text stays unpublished.",
-    "gpui-pre own test target cannot compile in-repo because vendored svg_renderer and example fonts use absent include_bytes asset paths."
+    "Only Click and Focus are advertised on accessibility nodes, so hover and scroll tools still cannot answer.",
+    "gpui-pre own test target cannot compile in-repo because vendored assets use absent include_bytes paths."
   ],
   "blockers": []
 }
