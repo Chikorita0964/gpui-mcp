@@ -13,3 +13,4 @@
 *.png binary
 *.gif binary
 *.mp4 binary
+vendor/** -text

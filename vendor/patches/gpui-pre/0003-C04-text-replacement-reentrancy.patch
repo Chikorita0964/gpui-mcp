@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Chico <jjjm6000@gmail.com>
+Date: Wed, 23 Sep 2026 18:33:30 +0900
+Subject: [PATCH] Fix C04 text replacement window re-entrancy
+
+Source: gpui-mcp e20b45b
+
+diff --git a/src/platform.rs b/src/platform.rs
+index c03653e..fbbea44 100644
+--- a/src/platform.rs
++++ b/src/platform.rs
+@@ -1774,6 +1774,29 @@ impl PlatformInputHandler {
+         self.handler.replace_text_in_range(None, input, window, cx);
+     }
+ 
++    /// gpui-mcp patch (C04): replace the complete document owned by this
++    /// handler.
++    ///
++    /// Reaches the handler with the caller's window and context, so
++    /// `Window::replace_input_text` does not re-enter the window through
++    /// `AsyncWindowContext::update`.
++    pub fn replace_all_text(&mut self, text: &str, window: &mut Window, cx: &mut App) -> bool {
++        let mut document_range = None;
++        if self
++            .handler
++            .text_for_range(0..usize::MAX, &mut document_range, window, cx)
++            .is_none()
++        {
++            return false;
++        }
++        let Some(document_range) = document_range else {
++            return false;
++        };
++        self.handler
++            .replace_text_in_range(Some(document_range), text, window, cx);
++        true
++    }
++
+     pub fn compute_ime_candidate_bounds(
+         marked_range: Option<Range<usize>>,
+         selection: &UTF16Selection,
+diff --git a/src/window.rs b/src/window.rs
+index b27fb81..e4dcea4 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -2334,23 +2334,16 @@ impl Window {
+     }
+ 
+     /// gpui-mcp patch (C04): replace the complete document owned by the focused
+-    /// input handler through `PlatformInputHandler::replace_text_in_range`.
++    /// input handler through `PlatformInputHandler::replace_all_text`.
+     ///
+     /// Returns `false` when the handler cannot provide its document range.
+-    pub fn replace_input_text(&mut self, text: &str) -> bool {
++    pub fn replace_input_text(&mut self, text: &str, cx: &mut App) -> bool {
+         let Some(mut input_handler) = self.platform_window.take_input_handler() else {
+             return false;
+         };
+-        let mut document_range = None;
+-        let available = input_handler
+-            .text_for_range(0..usize::MAX, &mut document_range)
+-            .is_some()
+-            && document_range.is_some();
+-        if let Some(document_range) = document_range {
+-            input_handler.replace_text_in_range(Some(document_range), text);
+-        }
++        let replaced = input_handler.replace_all_text(text, self, cx);
+         self.platform_window.set_input_handler(input_handler);
+-        available
++        replaced
+     }
+ 
+     /// Remove focus from all elements within this context's window.

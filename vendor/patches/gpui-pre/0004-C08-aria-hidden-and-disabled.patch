@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Chico <jjjm6000@gmail.com>
+Date: Wed, 23 Sep 2026 20:08:45 +0900
+Subject: [PATCH] feat(gpui-pre): add aria_hidden and aria_disabled builders
+
+Source: gpui-mcp 4c597df
+
+diff --git a/src/elements/div.rs b/src/elements/div.rs
+index c32ac99..cc95994 100644
+--- a/src/elements/div.rs
++++ b/src/elements/div.rs
+@@ -1402,6 +1402,19 @@ pub trait StatefulInteractiveElement: InteractiveElement {
+         self
+     }
+ 
++    /// gpui-mcp patch (C08): exclude this element and its descendants from
++    /// accessibility tools.
++    fn aria_hidden(mut self, hidden: bool) -> Self {
++        self.interactivity().aria.hidden = hidden;
++        self
++    }
++
++    /// gpui-mcp patch (C08): report that this element does not accept input.
++    fn aria_disabled(mut self, disabled: bool) -> Self {
++        self.interactivity().aria.disabled = disabled;
++        self
++    }
++
+     /// Set the numeric value for this element.
+     fn aria_numeric_value(mut self, value: f64) -> Self {
+         self.interactivity().aria.numeric_value = Some(value);
+@@ -2119,6 +2132,9 @@ pub(crate) struct AriaProperties {
+     pub(crate) column_index: Option<usize>,
+     pub(crate) row_count: Option<usize>,
+     pub(crate) column_count: Option<usize>,
++    // gpui-mcp patch (C08): AccessKit hidden and disabled flags.
++    pub(crate) hidden: bool,
++    pub(crate) disabled: bool,
+ }
+ 
+ /// The interactivity struct. Powers all of the general-purpose
+@@ -3585,6 +3601,12 @@ impl Interactivity {
+         if let Some(count) = self.aria.column_count {
+             node.set_column_count(count);
+         }
++        if self.aria.hidden {
++            node.set_hidden();
++        }
++        if self.aria.disabled {
++            node.set_disabled();
++        }
+         if !self.click_listeners.is_empty() {
+             node.add_action(accesskit::Action::Click);
+         }
+diff --git a/src/window/a11y/debug.rs b/src/window/a11y/debug.rs
+index ae98aa5..1e0338f 100644
+--- a/src/window/a11y/debug.rs
++++ b/src/window/a11y/debug.rs
+@@ -271,6 +271,13 @@ fn node_to_json(
+     if let Some(v) = node.orientation() {
+         aria.insert("orientation".into(), json!(format!("{v:?}")));
+     }
++    // gpui-mcp patch (C08): emit the flags `aria_hidden`/`aria_disabled` set.
++    if node.is_hidden() {
++        aria.insert("hidden".into(), json!(true));
++    }
++    if node.is_disabled() {
++        aria.insert("disabled".into(), json!(true));
++    }
+ 
+     // Numeric properties.
+     if let Some(v) = node.numeric_value() {

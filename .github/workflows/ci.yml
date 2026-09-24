@@ -51,6 +51,10 @@ jobs:
       - name: Install pinned Playwright Chromium
         run: npx playwright install --with-deps --no-shell chromium
 
+      - name: Verify vendored crates against their patch series
+        shell: pwsh
+        run: Get-ChildItem vendor/patches -Directory | ForEach-Object { ./vendor/patch.ps1 verify $_.Name }
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 

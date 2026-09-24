@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Chico <jjjm6000@gmail.com>
+Date: Wed, 23 Sep 2026 23:14:05 +0900
+Subject: [PATCH] feat(gpui-pre): keep accessibility element ids in release
+ builds
+
+Source: gpui-mcp 2372e20
+
+diff --git a/src/element.rs b/src/element.rs
+index c61f416..93ef201 100644
+--- a/src/element.rs
++++ b/src/element.rs
+@@ -389,6 +389,9 @@ impl<E: Element> Drawable<E> {
+                                 .a11y
+                                 .pointer_interactions
+                                 .insert(node_id, self.element.a11y_pointer_interactions());
++                            if let Some(leaf) = global_id.0.last() {
++                                window.a11y.element_ids.insert(node_id, leaf.clone());
++                            }
+                             pushed_a11y_node = window.a11y.nodes.push(node_id, node);
+                             #[cfg(debug_assertions)]
+                             if pushed_a11y_node {
+diff --git a/src/window.rs b/src/window.rs
+index 7e5b6b1..a82771c 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -6833,6 +6833,12 @@ impl Window {
+         self.a11y.node_bounds.get(&node_id).copied()
+     }
+ 
++    /// gpui-mcp patch (C13): the leaf element id of an accessibility node, in
++    /// every build type. The debug dump carries it only with `debug_assertions`.
++    pub fn a11y_element_id(&self, node_id: accesskit::NodeId) -> Option<ElementId> {
++        self.a11y.element_ids.get(&node_id).cloned()
++    }
++
+     /// gpui-mcp patch (C12): pointer interactions an accessibility node handles.
+     pub fn a11y_pointer_interactions(
+         &self,
+diff --git a/src/window/a11y.rs b/src/window/a11y.rs
+index 0787c79..b0d09ba 100644
+--- a/src/window/a11y.rs
++++ b/src/window/a11y.rs
+@@ -160,6 +160,8 @@ pub(crate) struct A11y {
+     pub(crate) focus_ids: FxHashMap<NodeId, FocusId>,
+     pub(crate) node_bounds: FxHashMap<NodeId, Bounds<Pixels>>,
+     pub(crate) pointer_interactions: FxHashMap<NodeId, A11yPointerInteractions>,
++    // gpui-mcp patch (C13): each node's leaf element id, in every build type.
++    pub(crate) element_ids: FxHashMap<NodeId, ElementId>,
+     pub(crate) action_listeners: FxHashMap<NodeId, Vec<(Action, A11yActionListener)>>,
+     /// The window's title, used to label the root node so assistive
+     /// technology can tell windows apart.
+@@ -189,6 +191,7 @@ impl A11y {
+             focus_ids: FxHashMap::default(),
+             node_bounds: FxHashMap::default(),
+             pointer_interactions: FxHashMap::default(),
++            element_ids: FxHashMap::default(),
+             action_listeners: FxHashMap::default(),
+             window_title,
+             last_focus_without_node: None,
+@@ -284,6 +287,7 @@ impl A11y {
+     pub(crate) fn begin_frame(&mut self) {
+         self.focus_ids.clear();
+         self.pointer_interactions.clear();
++        self.element_ids.clear();
+         self.node_bounds.clear();
+         self.action_listeners.clear();
+         self.nodes.begin_frame(self.window_title.as_ref());

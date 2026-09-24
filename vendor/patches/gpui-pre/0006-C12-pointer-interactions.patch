@@ -1,0 +1,158 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Chico <jjjm6000@gmail.com>
+Date: Wed, 23 Sep 2026 22:04:33 +0900
+Subject: [PATCH] feat(gpui-pre): report hover, drag, and scroll interactions
+ per node
+
+Source: gpui-mcp 91775dd
+
+diff --git a/src/element.rs b/src/element.rs
+index d655625..c61f416 100644
+--- a/src/element.rs
++++ b/src/element.rs
+@@ -121,6 +121,12 @@ pub trait Element: 'static + IntoElement {
+     /// See the [accessibility guide](crate::_accessibility) for an overview.
+     fn write_a11y_info(&self, _node: &mut accesskit::Node) {}
+ 
++    /// gpui-mcp patch (C12): pointer interactions this element handles that
++    /// AccessKit has no action for. Called only when `a11y_role()` returns `Some`.
++    fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
++        crate::A11yPointerInteractions::default()
++    }
++
+     /// Add synthetic child nodes to an [`Element`] that has an
+     /// [`.id()`][Element::id] and a [`.role()`][Element::a11y_role].
+     ///
+@@ -379,6 +385,10 @@ impl<E: Element> Drawable<E> {
+                             });
+                             self.element.write_a11y_info(&mut node);
+                             window.a11y.node_bounds.insert(node_id, bounds);
++                            window
++                                .a11y
++                                .pointer_interactions
++                                .insert(node_id, self.element.a11y_pointer_interactions());
+                             pushed_a11y_node = window.a11y.nodes.push(node_id, node);
+                             #[cfg(debug_assertions)]
+                             if pushed_a11y_node {
+diff --git a/src/elements/div.rs b/src/elements/div.rs
+index 34ee8fc..5c201d3 100644
+--- a/src/elements/div.rs
++++ b/src/elements/div.rs
+@@ -1925,6 +1925,10 @@ impl Element for Div {
+         self.interactivity.write_a11y_info(node);
+     }
+ 
++    fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
++        self.interactivity.a11y_pointer_interactions()
++    }
++
+     fn a11y_synthetic_children(
+         &mut self,
+         _prepaint: &mut Self::PrepaintState,
+@@ -3621,6 +3625,21 @@ impl Interactivity {
+             node.add_action(*action);
+         }
+     }
++
++    /// gpui-mcp patch (C12): the pointer interactions these listeners and styles handle.
++    pub(crate) fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
++        crate::A11yPointerInteractions {
++            hover: self.hover_style.is_some()
++                || self.group_hover_style.is_some()
++                || self.hover_listener.is_some()
++                || !self.mouse_move_listeners.is_empty()
++                || self.tooltip_builder.is_some(),
++            drag: self.drag_listener.is_some(),
++            scroll: self.scroll_offset.is_some()
++                || self.tracked_scroll_handle.is_some()
++                || !self.scroll_wheel_listeners.is_empty(),
++        }
++    }
+ }
+ 
+ /// The per-frame state of an interactive element. Used for tracking stateful interactions like clicks
+@@ -4136,6 +4155,10 @@ where
+         self.element.write_a11y_info(node);
+     }
+ 
++    fn a11y_pointer_interactions(&self) -> crate::A11yPointerInteractions {
++        self.element.a11y_pointer_interactions()
++    }
++
+     fn a11y_synthetic_children(
+         &mut self,
+         prepaint: &mut Self::PrepaintState,
+diff --git a/src/window.rs b/src/window.rs
+index e4dcea4..7e5b6b1 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -66,7 +66,7 @@ use uuid::Uuid;
+ pub(crate) mod a11y;
+ mod prompts;
+ 
+-pub use a11y::A11ySubtreeBuilder;
++pub use a11y::{A11yPointerInteractions, A11ySubtreeBuilder};
+ 
+ use self::a11y::A11y;
+ #[cfg(not(target_family = "wasm"))]
+@@ -6833,6 +6833,14 @@ impl Window {
+         self.a11y.node_bounds.get(&node_id).copied()
+     }
+ 
++    /// gpui-mcp patch (C12): pointer interactions an accessibility node handles.
++    pub fn a11y_pointer_interactions(
++        &self,
++        node_id: accesskit::NodeId,
++    ) -> Option<A11yPointerInteractions> {
++        self.a11y.pointer_interactions.get(&node_id).copied()
++    }
++
+     /// gpui-mcp patch (C04): resolve an accessibility node to its focus handle.
+     ///
+     /// Returns `None` when the node does not track focus in the current frame.
+diff --git a/src/window/a11y.rs b/src/window/a11y.rs
+index 234e7f0..0787c79 100644
+--- a/src/window/a11y.rs
++++ b/src/window/a11y.rs
+@@ -119,6 +119,17 @@ pub(crate) const ROOT_NODE_ID: NodeId = NodeId(0);
+ pub(crate) type A11yActionListener =
+     Box<dyn FnMut(Option<&accesskit::ActionData>, &mut Window, &mut App) + 'static>;
+ 
++/// gpui-mcp patch (C12): pointer interactions an element handles that AccessKit has no action for.
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub struct A11yPointerInteractions {
++    /// The element restyles or runs listeners on hover, or shows a tooltip.
++    pub hover: bool,
++    /// The element starts a drag.
++    pub drag: bool,
++    /// The element scrolls or handles scroll-wheel input.
++    pub scroll: bool,
++}
++
+ /// Per-window accessibility state.
+ ///
+ /// Manages the AccessKit tree that is built each frame and the mappings
+@@ -148,6 +159,7 @@ pub(crate) struct A11y {
+     pub(crate) nodes: A11yNodeBuilder,
+     pub(crate) focus_ids: FxHashMap<NodeId, FocusId>,
+     pub(crate) node_bounds: FxHashMap<NodeId, Bounds<Pixels>>,
++    pub(crate) pointer_interactions: FxHashMap<NodeId, A11yPointerInteractions>,
+     pub(crate) action_listeners: FxHashMap<NodeId, Vec<(Action, A11yActionListener)>>,
+     /// The window's title, used to label the root node so assistive
+     /// technology can tell windows apart.
+@@ -176,6 +188,7 @@ impl A11y {
+             nodes: A11yNodeBuilder::new(),
+             focus_ids: FxHashMap::default(),
+             node_bounds: FxHashMap::default(),
++            pointer_interactions: FxHashMap::default(),
+             action_listeners: FxHashMap::default(),
+             window_title,
+             last_focus_without_node: None,
+@@ -270,6 +283,7 @@ impl A11y {
+     /// Clear per-frame state and push the root node to start a new frame.
+     pub(crate) fn begin_frame(&mut self) {
+         self.focus_ids.clear();
++        self.pointer_interactions.clear();
+         self.node_bounds.clear();
+         self.action_listeners.clear();
+         self.nodes.begin_frame(self.window_title.as_ref());

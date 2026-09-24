@@ -24,22 +24,28 @@ The set falls into two classes:
 
 ## Re-applying the set
 
-1. Copy the `gpui-pre` source at the version `gpui-kit` pins into
-   `vendor/gpui-pre` (extract the `.crate` archive, or run `cargo vendor`).
-2. Apply the hunks below. Each names its anchor: the stock item it modifies or
-   the item it sits next to.
-3. Add the workspace patch so the graph resolves to the vendored tree:
+The series lives in `vendor/patches/gpui-pre`; `vendor/README.md` lists the
+commands. To move to a newer `gpui-pre`:
 
-   ```toml
-   [patch.crates-io]
-   gpui-pre = { path = "vendor/gpui-pre" }
-   ```
+1. Set the new version on every `gpui-pre-*` crate in the workspace manifest,
+   matching the `gpui-kit` release.
+2. Run `./vendor/patch.ps1 update gpui-pre <version>`. On a conflict, resolve
+   it in the reported scratch repository, `git am --continue`, then re-export
+   the series.
+3. Drop any patch whose capability the new release exposes natively.
+4. Run the full CI gate.
 
-4. Confirm `cargo tree -p gpui-pre` resolves to `vendor/gpui-pre` and that
-   `cargo check --workspace` exits 0.
-5. On a newer `gpui-pre`, re-verify that each stock item still exists and the
-   capability is still unreachable, and drop any patch whose capability the
-   newer version exposes natively.
+| Patch file | Sections below |
+|---|---|
+| `0001` | C02 (superseded by `0008`), C03, C04, C05 |
+| `0002` | C06 |
+| `0003` | C04 |
+| `0004` | C08 |
+| `0005` | C11 |
+| `0006` | C12 |
+| `0007` | C13 |
+| `0008` | C14, C15 |
+| `0009` | C05 (stationary platform mouse moves) |
 
 ## C01 - Vendored crate and workspace patch
 
