@@ -46,6 +46,8 @@ pub fn native_window_id(window: &gpui::Window) -> Option<NativeWindowId> {
 pub struct Automation {
     pub(crate) state: Arc<SharedState>,
     observer: Arc<BridgeObserver>,
+    /// Build the tree only while a client uses the bridge, instead of always.
+    on_demand: bool,
 }
 
 impl Automation {
@@ -56,30 +58,36 @@ impl Automation {
     /// background thread is created.
     #[must_use]
     pub fn isolated() -> Self {
-        Self::new(SharedState::new())
+        Self::new(SharedState::new(), false)
     }
 
-    fn new(state: Arc<SharedState>) -> Self {
+    pub(crate) fn new(state: Arc<SharedState>, on_demand: bool) -> Self {
         let observer = BridgeObserver::new(&state);
-        Self { state, observer }
+        Self {
+            state,
+            observer,
+            on_demand,
+        }
     }
 
     /// Attach semantic observation to a window.
     ///
-    /// GPUI's accessibility tree is readable only after a completed frame, so
-    /// attaching arms observation of the next frame. Every caller that requests
-    /// a refresh must arm it again through [`Self::observe_on_next_frame`]; the
-    /// bridge's UI pump does this for each operation that changes the UI.
+    /// Every frame the window draws is counted, and the semantic tree is
+    /// published whenever a frame changes it, including frames the application
+    /// draws on its own. Isolated automation builds the tree from the next
+    /// frame on; a bridge builds it only while a client uses the bridge.
     ///
     /// Calling this more than once for the same automation and window is a no-op.
     pub fn attach(&self, window: &mut gpui::Window) {
-        self.observe_on_next_frame(window);
-        window.refresh();
+        window.add_a11y_frame_observer(self.observer.clone());
+        if !self.on_demand {
+            self.set_observed(window, true);
+        }
     }
 
-    /// Arm publication of the accessibility tree the next completed frame carries.
-    pub(crate) fn observe_on_next_frame(&self, window: &mut gpui::Window) {
-        self.observer.observe_on_next_frame(window);
+    /// Build the window's accessibility tree every frame, or stop building it.
+    pub(crate) fn set_observed(&self, window: &mut gpui::Window, observed: bool) {
+        self.observer.set_observed(window, observed);
     }
 
     /// Create isolated in-process automation without IPC for GPUI runtime tests.
@@ -107,7 +115,7 @@ impl Automation {
         self.state.tree_generation()
     }
 
-    /// Return the count of the most recently completed root-paint frame.
+    /// Return the count of frames the attached window has drawn.
     ///
     /// This is available only to deterministic runtime tests. A frame is not
     /// counted until the observed window has finished painting.

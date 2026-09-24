@@ -68,15 +68,31 @@ pub(crate) struct A11yDebug {
 }
 
 impl A11yDebug {
+    /// gpui-mcp patch (C14): whether `update` differs from the captured tree.
+    pub(crate) fn differs(
+        &self,
+        update: &TreeUpdate,
+        gpui_focus: Option<NodeId>,
+        active_descendant: Option<NodeId>,
+    ) -> bool {
+        self.last_tree_update.as_ref() != Some(update)
+            || self.last_gpui_focus != gpui_focus
+            || self.last_active_descendant != active_descendant
+    }
+
     pub(crate) fn capture(
         &mut self,
         update: &TreeUpdate,
+        changed: bool,
         gpui_focus: Option<NodeId>,
         active_descendant: Option<NodeId>,
         window_title: Option<&SharedString>,
         frame: FrameDebugInfo,
     ) {
-        self.last_tree_update = Some(update.clone());
+        // gpui-mcp patch (C14): an unchanged tree keeps its captured copy.
+        if changed {
+            self.last_tree_update = Some(update.clone());
+        }
         self.last_gpui_focus = gpui_focus;
         self.last_active_descendant = active_descendant;
         self.frame_number += 1;

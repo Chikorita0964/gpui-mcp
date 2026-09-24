@@ -366,23 +366,9 @@ fn dispatch_pointer_test_input(
     }
 }
 
-/// Matches the observer's own frame budget while it re-arms without a tree.
-const OBSERVATION_PUMP_ATTEMPTS: usize = 5;
-
-/// Deliver the frame callbacks the fixture armed, the way the platform would
-/// after a completed frame.
-///
-/// `LiveHtml::render` arms the pull-based observer every frame and tests have
-/// no platform frame loop, so [`Window::simulate_next_frame`] runs the armed
-/// callbacks until none re-arm; the observer then publishes the tree of the
-/// frame the fixture already completed.
+/// Draw every pending frame; the observer publishes each one as it completes.
 fn pump_observation(visual: &mut VisualTestContext) {
-    for _ in 0..OBSERVATION_PUMP_ATTEMPTS {
-        let delivered = visual.update(Window::simulate_next_frame);
-        if delivered == 0 {
-            break;
-        }
-    }
+    visual.run_until_parked();
 }
 
 #[derive(Clone)]

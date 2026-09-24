@@ -423,9 +423,8 @@ impl GpuiMcp {
             None => Operation::GetTree,
         };
         let tree = match (client.call(operation).await?, cached) {
-            (BridgeResult::Tree(tree), _) => Arc::new(tree),
             (BridgeResult::TreeUnchanged, Some(cached)) => return Ok(cached),
-            _ => return Err("bridge returned the wrong result for the semantic tree".to_owned()),
+            (result, cached) => apply_tree_result(result, cached)?,
         };
         *self
             .tree_cache
@@ -630,16 +629,29 @@ impl GpuiMcp {
             .unwrap_or(MAX_WAIT_MS)
             .clamp(1, MAX_WAIT_MS);
         let client = self.client().await?;
-        let BridgeResult::Tree(tree) = client
+        let target = client.target_id();
+        let cached = self
+            .tree_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .filter(|(cached_target, tree)| {
+                *cached_target == target && tree.generation == generation
+            })
+            .map(|(_, tree)| tree.clone());
+        let result = client
             .call(Operation::WaitForTree {
                 after_generation: generation,
                 timeout_ms,
             })
-            .await?
-        else {
-            return Err("bridge returned the wrong result for semantic tree wait".to_owned());
+            .await?;
+        let tree = match (result, cached) {
+            // The cache moved on since the caller read `generation`.
+            (BridgeResult::TreeDelta(_), None) => {
+                apply_tree_result(client.call(Operation::GetTree).await?, None)?
+            }
+            (result, cached) => apply_tree_result(result, cached)?,
         };
-        let tree = Arc::new(tree);
         *self
             .tree_cache
             .lock()
@@ -714,9 +726,28 @@ impl GpuiMcp {
     }
 }
 
-/// Refresh rounds per input: the first frame reflects the event, the second any
-/// state its handlers scheduled for the following frame.
+/// Frames to settle per input at most: the first reflects the event; the bridge
+/// waits for a second only while its handlers left a redraw pending.
 const SETTLE_ROUNDS: u8 = 2;
+
+/// Turn a bridge tree answer into a tree, applying a delta to `cached`.
+fn apply_tree_result(
+    result: BridgeResult,
+    cached: Option<Arc<UiTree>>,
+) -> Result<Arc<UiTree>, String> {
+    match (result, cached) {
+        (BridgeResult::Tree(tree), _) => Ok(Arc::new(tree)),
+        (BridgeResult::TreeDelta(delta), Some(cached)) => {
+            let mut tree = Arc::unwrap_or_clone(cached);
+            if delta.apply(&mut tree) {
+                Ok(Arc::new(tree))
+            } else {
+                Err("bridge sent a semantic tree delta for another generation".to_owned())
+            }
+        }
+        _ => Err("bridge returned the wrong result for the semantic tree".to_owned()),
+    }
+}
 
 /// SEP-2549 cache hints on the results a peer negotiating protocol version
 /// 2026-07-28 or newer requires them on.

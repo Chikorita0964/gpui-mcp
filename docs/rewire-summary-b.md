@@ -25,7 +25,11 @@ This table is the Batch B snapshot, and its citations name stock 0.3.6 behavior.
 Batch C closed the activation (C02), bounds (C03), focus and text replacement
 (C04), pointer (C05), fallback (C06), and hidden/disabled state (C08) gaps
 through the patches in `vendor/PATCHES.md`; redaction is read from
-`Role::PasswordInput` bridge-side.
+`Role::PasswordInput` bridge-side. Later patches closed the rest of P-A: C11-C13
+restore clickable roles, Hover/Drag/Scroll, and release-build element ids; C14
+replaces the pulled JSON dump with a frame observer that reads AccessKit nodes
+as each frame completes, publishes only changed frames, measures frame phases,
+and paints highlight overlays; C15 replaces C02 with activation on request.
 
 ## Carried bridge-side edits
 

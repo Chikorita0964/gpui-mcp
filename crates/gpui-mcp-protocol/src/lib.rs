@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Current wire protocol version.
-pub const PROTOCOL_VERSION: u16 = 13;
+pub const PROTOCOL_VERSION: u16 = 14;
 /// Maximum accepted request frame, including its four-byte length prefix.
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 /// Maximum accepted response frame. Screenshots are base64 encoded inside it.
@@ -489,6 +489,52 @@ pub struct UiTree {
     pub diagnostics: Vec<SemanticDiagnostic>,
 }
 
+/// The changes that turn the tree at `base_generation` into the tree at `generation`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TreeDelta {
+    /// Generation the delta applies to.
+    pub base_generation: u64,
+    /// Generation the delta produces.
+    pub generation: u64,
+    /// Root identifiers, present only when they changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roots: Option<Vec<String>>,
+    /// Added or changed nodes, complete.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub upserted: Vec<UiNode>,
+    /// Identifiers of removed nodes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+    /// Diagnostics, present only when they changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<Vec<SemanticDiagnostic>>,
+}
+
+impl TreeDelta {
+    /// Apply the delta to `tree`, which must be at [`Self::base_generation`].
+    ///
+    /// Returns `false`, leaving `tree` untouched, when the generations do not match.
+    pub fn apply(self, tree: &mut UiTree) -> bool {
+        if tree.generation != self.base_generation {
+            return false;
+        }
+        for id in self.removed {
+            tree.nodes.remove(&id);
+        }
+        for node in self.upserted {
+            tree.nodes.insert(node.id.clone(), node);
+        }
+        if let Some(roots) = self.roots {
+            tree.roots = roots;
+        }
+        if let Some(diagnostics) = self.diagnostics {
+            tree.diagnostics = diagnostics;
+        }
+        tree.generation = self.generation;
+        true
+    }
+}
+
 /// Stable code for a semantic-tree validation problem.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -932,6 +978,8 @@ pub enum Operation {
     GetTree,
     /// Return the latest semantic tree only when its generation differs from
     /// `known_generation`; otherwise answer [`BridgeResult::TreeUnchanged`].
+    /// A newer tree arrives as a [`BridgeResult::TreeDelta`] from
+    /// `known_generation` while the bridge still retains the changes since then.
     GetTreeIfChanged {
         /// Generation of the tree the caller already holds.
         known_generation: u64,
@@ -951,7 +999,9 @@ pub enum Operation {
         /// Stable semantic node identifier.
         node_id: String,
     },
-    /// Wait without polling until a newer semantic tree is published.
+    /// Wait without polling until a newer semantic tree is published. The tree
+    /// arrives as a [`BridgeResult::TreeDelta`] from `after_generation` when
+    /// the bridge still retains the changes since then.
     WaitForTree {
         /// Return immediately when the current generation is newer than this value.
         after_generation: u64,
@@ -1042,6 +1092,8 @@ pub enum BridgeResult {
     Tree(UiTree),
     /// The tree still has the generation the caller already holds.
     TreeUnchanged,
+    /// The changes from the generation the caller holds to the latest one.
+    TreeDelta(TreeDelta),
     /// Operation completed without a richer result.
     Ack,
     /// Current GPUI client-area geometry.

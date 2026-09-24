@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui_mcp_protocol::{
     BridgeError, ErrorCode, FrameStats, Highlight, LogEntry, MAX_ID_BYTES, MAX_LABEL_BYTES,
     MAX_METADATA_FIELDS, MAX_METADATA_KEY_BYTES, MAX_METADATA_VALUE_BYTES, MAX_TEXT_BYTES,
-    MAX_TREE_NODES, Rect, SemanticDiagnostic, SemanticDiagnosticCode, UiNode, UiTree,
+    MAX_TREE_NODES, Rect, SemanticDiagnostic, SemanticDiagnosticCode, TreeDelta, UiNode, UiTree,
     WindowGeometry,
 };
 use tokio::sync::watch;
@@ -13,6 +14,70 @@ use tokio::time::timeout;
 
 const MAX_TIMING_SAMPLES: usize = 240;
 const MAX_DIAGNOSTICS: usize = 128;
+/// Published generations whose changes stay available for deltas.
+const MAX_CHANGE_RECORDS: usize = 64;
+
+/// What one published generation changed relative to the one before it.
+#[derive(Debug)]
+struct ChangeRecord {
+    generation: u64,
+    ids: Vec<String>,
+    roots: bool,
+    diagnostics: bool,
+}
+
+#[derive(Debug, Default)]
+struct Published {
+    tree: UiTree,
+    changes: VecDeque<ChangeRecord>,
+}
+
+impl Published {
+    /// The changes from `known` to the current generation, while every step is retained.
+    fn delta_since(&self, known: u64) -> Option<TreeDelta> {
+        let tree = &self.tree;
+        let first = known.checked_add(1)?;
+        let start = self
+            .changes
+            .iter()
+            .position(|change| change.generation == first)?;
+        let mut ids = BTreeSet::new();
+        let mut roots = false;
+        let mut diagnostics = false;
+        for change in self.changes.iter().skip(start) {
+            ids.extend(change.ids.iter().map(String::as_str));
+            roots |= change.roots;
+            diagnostics |= change.diagnostics;
+        }
+        // A delta touching more ids than the tree holds costs more than the tree.
+        if ids.len() > tree.nodes.len() {
+            return None;
+        }
+        let mut delta = TreeDelta {
+            base_generation: known,
+            generation: tree.generation,
+            roots: roots.then(|| tree.roots.clone()),
+            upserted: Vec::new(),
+            removed: Vec::new(),
+            diagnostics: diagnostics.then(|| tree.diagnostics.clone()),
+        };
+        for id in ids {
+            match tree.nodes.get(id) {
+                Some(node) => delta.upserted.push(node.clone()),
+                None => delta.removed.push(id.to_owned()),
+            }
+        }
+        Some(delta)
+    }
+}
+
+/// The latest tree relative to a generation the caller holds.
+#[derive(Debug)]
+pub(crate) enum TreeUpdate {
+    Unchanged,
+    Delta(TreeDelta),
+    Full(UiTree),
+}
 
 #[derive(Debug, Default)]
 struct PendingFrame {
@@ -26,31 +91,27 @@ struct PendingFrame {
 #[derive(Debug)]
 struct TimingState {
     previous_frame: Option<Instant>,
-    prepaint_started: Option<Instant>,
-    root_paint_started: Option<Instant>,
     frame_count: u64,
     intervals: VecDeque<Duration>,
     prepaint: VecDeque<Duration>,
-    root_paint: VecDeque<Duration>,
+    paint: VecDeque<Duration>,
 }
 
 impl Default for TimingState {
     fn default() -> Self {
         Self {
             previous_frame: None,
-            prepaint_started: None,
-            root_paint_started: None,
             frame_count: 0,
             intervals: VecDeque::with_capacity(MAX_TIMING_SAMPLES),
             prepaint: VecDeque::with_capacity(MAX_TIMING_SAMPLES),
-            root_paint: VecDeque::with_capacity(MAX_TIMING_SAMPLES),
+            paint: VecDeque::with_capacity(MAX_TIMING_SAMPLES),
         }
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct SharedState {
-    tree: RwLock<UiTree>,
+    published: RwLock<Published>,
     pending: Mutex<PendingFrame>,
     highlights: RwLock<Vec<Highlight>>,
     timings: Mutex<TimingState>,
@@ -58,6 +119,8 @@ pub(crate) struct SharedState {
     generation: watch::Sender<u64>,
     completed_frame: watch::Sender<FrameStats>,
     window_geometry: RwLock<Option<WindowGeometry>>,
+    observing: AtomicBool,
+    last_activity: Mutex<Instant>,
 }
 
 impl SharedState {
@@ -65,7 +128,7 @@ impl SharedState {
         let (generation, _) = watch::channel(0);
         let (completed_frame, _) = watch::channel(FrameStats::default());
         Arc::new(Self {
-            tree: RwLock::new(UiTree::default()),
+            published: RwLock::new(Published::default()),
             pending: Mutex::new(PendingFrame::default()),
             highlights: RwLock::new(Vec::new()),
             timings: Mutex::new(TimingState::default()),
@@ -73,12 +136,40 @@ impl SharedState {
             generation,
             completed_frame,
             window_geometry: RwLock::new(None),
+            observing: AtomicBool::new(false),
+            last_activity: Mutex::new(Instant::now()),
         })
     }
 
-    pub(crate) fn begin_frame(&self) {
+    /// Whether the observed window builds its accessibility tree every frame.
+    pub(crate) fn is_observing(&self) -> bool {
+        self.observing.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn set_observing(&self, observing: bool) {
+        self.observing.store(observing, Ordering::Release);
+    }
+
+    /// Record that a client used the bridge.
+    pub(crate) fn touch(&self) {
+        *self
+            .last_activity
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
+    }
+
+    /// Time since a client last used the bridge.
+    pub(crate) fn idle_for(&self) -> Duration {
+        self.last_activity
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .elapsed()
+    }
+
+    /// Count one drawn frame and its measured phases, and wake frame waiters.
+    pub(crate) fn complete_frame(&self, prepaint: Duration, paint: Duration) {
         let now = Instant::now();
-        {
+        let stats = {
             let mut timings = self
                 .timings
                 .lock()
@@ -90,10 +181,14 @@ impl SharedState {
                     now.saturating_duration_since(previous),
                 );
             }
-            timings.prepaint_started = Some(now);
-            timings.root_paint_started = None;
-        }
+            push_sample(&mut timings.prepaint, prepaint);
+            push_sample(&mut timings.paint, paint);
+            frame_stats_from_timings(&timings)
+        };
+        self.completed_frame.send_replace(stats);
+    }
 
+    pub(crate) fn begin_frame(&self) {
         let mut pending = self
             .pending
             .lock()
@@ -112,45 +207,6 @@ impl SharedState {
                 "the previous semantic frame did not reach root paint",
             );
         }
-    }
-
-    pub(crate) fn finish_prepaint(&self) {
-        let now = Instant::now();
-        let mut timings = self
-            .timings
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(started) = timings.prepaint_started.take() {
-            push_sample(
-                &mut timings.prepaint,
-                now.saturating_duration_since(started),
-            );
-        }
-    }
-
-    pub(crate) fn begin_root_paint(&self) {
-        self.timings
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .root_paint_started = Some(Instant::now());
-    }
-
-    pub(crate) fn finish_root_paint(&self) {
-        let now = Instant::now();
-        let stats = {
-            let mut timings = self
-                .timings
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(started) = timings.root_paint_started.take() {
-                push_sample(
-                    &mut timings.root_paint,
-                    now.saturating_duration_since(started),
-                );
-            }
-            frame_stats_from_timings(&timings)
-        };
-        self.completed_frame.send_replace(stats);
     }
 
     pub(crate) fn set_window_geometry(&self, content_bounds: Rect, scale_factor: f32) {
@@ -223,10 +279,10 @@ impl SharedState {
     }
 
     pub(crate) fn publish_frame(&self, nodes: impl IntoIterator<Item = UiNode>) {
+        self.begin_frame();
         for node in nodes {
             self.record(node);
         }
-        self.finish_prepaint();
         self.finish_frame();
     }
 
@@ -248,67 +304,100 @@ impl SharedState {
         let diagnostics = std::mem::take(&mut pending.diagnostics);
         drop(pending);
 
-        let mut tree = self
-            .tree
+        let mut published = self
+            .published
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let changed = tree.roots != roots || tree.nodes != nodes || tree.diagnostics != diagnostics;
-        if !changed {
+        let tree = &published.tree;
+        let mut ids: Vec<String> = nodes
+            .iter()
+            .filter(|(id, node)| tree.nodes.get(*id) != Some(*node))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.extend(
+            tree.nodes
+                .keys()
+                .filter(|id| !nodes.contains_key(*id))
+                .cloned(),
+        );
+        let roots_changed = tree.roots != roots;
+        let diagnostics_changed = tree.diagnostics != diagnostics;
+        if ids.is_empty() && !roots_changed && !diagnostics_changed {
             // Keep the published maps; the fresh copies are dropped after the lock.
-            drop(tree);
+            drop(published);
             return;
         }
-        tree.generation = tree.generation.saturating_add(1);
-        let previous_nodes = std::mem::replace(&mut tree.nodes, nodes);
-        tree.roots = roots;
-        tree.diagnostics = diagnostics;
-        let generation = tree.generation;
-        drop(tree);
+        let generation = published.tree.generation.saturating_add(1);
+        published.tree.generation = generation;
+        let previous_nodes = std::mem::replace(&mut published.tree.nodes, nodes);
+        published.tree.roots = roots;
+        published.tree.diagnostics = diagnostics;
+        if published.changes.len() == MAX_CHANGE_RECORDS {
+            published.changes.pop_front();
+        }
+        published.changes.push_back(ChangeRecord {
+            generation,
+            ids,
+            roots: roots_changed,
+            diagnostics: diagnostics_changed,
+        });
+        drop(published);
         drop(previous_nodes);
         self.generation.send_replace(generation);
     }
 
     pub(crate) fn tree(&self) -> UiTree {
-        self.tree
+        self.published
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tree
             .clone()
     }
 
     /// Read one published node without cloning the tree.
     pub(crate) fn with_node<R>(&self, id: &str, read: impl FnOnce(&UiNode) -> R) -> Option<R> {
-        self.tree
+        self.published
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tree
             .nodes
             .get(id)
             .map(read)
     }
 
-    /// Clone the tree only when its generation is not `known_generation`.
-    pub(crate) fn tree_if_changed(&self, known_generation: u64) -> Option<UiTree> {
-        let tree = self
-            .tree
+    /// The latest tree relative to `known_generation`: nothing when it is
+    /// current, its changes while they are retained, and otherwise all of it.
+    pub(crate) fn tree_since(&self, known_generation: u64) -> TreeUpdate {
+        let published = self
+            .published
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        (tree.generation != known_generation).then(|| tree.clone())
+        if published.tree.generation == known_generation {
+            return TreeUpdate::Unchanged;
+        }
+        published.delta_since(known_generation).map_or_else(
+            || TreeUpdate::Full(published.tree.clone()),
+            TreeUpdate::Delta,
+        )
     }
 
     pub(crate) fn tree_generation(&self) -> u64 {
-        self.tree
+        self.published
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tree
             .generation
     }
 
+    /// Wait for a generation newer than `after_generation`, then answer as
+    /// [`Self::tree_since`] does.
     pub(crate) async fn wait_for_tree(
         &self,
         after_generation: u64,
         wait: Duration,
-    ) -> Result<UiTree, BridgeError> {
-        let current = self.tree();
-        if current.generation > after_generation {
-            return Ok(current);
+    ) -> Result<TreeUpdate, BridgeError> {
+        if self.tree_generation() > after_generation {
+            return Ok(self.tree_since(after_generation));
         }
 
         let mut receiver = self.generation.subscribe();
@@ -325,7 +414,7 @@ impl SharedState {
         timeout(wait, changed)
             .await
             .map_err(|_| BridgeError::new(ErrorCode::Timeout, "semantic tree wait timed out"))??;
-        Ok(self.tree())
+        Ok(self.tree_since(after_generation))
     }
 
     pub(crate) async fn wait_for_frame(
@@ -355,17 +444,22 @@ impl SharedState {
             .map_err(|_| BridgeError::new(ErrorCode::Timeout, "frame wait timed out"))?
     }
 
-    /// Retain the current highlight set.
-    ///
-    /// Nothing draws highlights yet: the patched overlay paint pass is gone and
-    /// stock GPUI exposes no post-paint hook, so highlight drawing remains
-    /// unimplemented, tracked by the P-A overlay row of
-    /// `docs/rewire-summary-b.md`.
+    /// Replace the highlight set the frame observer paints over the window.
     pub(crate) fn set_highlights(&self, highlights: Vec<Highlight>) {
         *self
             .highlights
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = highlights;
+    }
+
+    /// Read the current highlight set without cloning it.
+    pub(crate) fn with_highlights<R>(&self, read: impl FnOnce(&[Highlight]) -> R) -> R {
+        read(
+            &self
+                .highlights
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     pub(crate) fn frame_stats(&self) -> FrameStats {
@@ -673,7 +767,7 @@ fn push_sample(samples: &mut VecDeque<Duration>, sample: Duration) {
 fn frame_stats_from_timings(timings: &TimingState) -> FrameStats {
     let (frame_interval_average_ms, frame_interval_max_ms) = timing_summary(&timings.intervals);
     let (prepaint_average_ms, prepaint_max_ms) = timing_summary(&timings.prepaint);
-    let (root_paint_average_ms, root_paint_max_ms) = timing_summary(&timings.root_paint);
+    let (root_paint_average_ms, root_paint_max_ms) = timing_summary(&timings.paint);
     FrameStats {
         frame_count: timings.frame_count,
         sample_count: u32::try_from(timings.intervals.len()).unwrap_or(u32::MAX),
@@ -741,7 +835,7 @@ mod tests {
 
     use gpui_mcp_protocol::{NodeState, Role, SemanticDiagnosticCode, UiNode};
 
-    use super::SharedState;
+    use super::{SharedState, TreeUpdate};
 
     fn node(id: &str, parent: Option<&str>) -> UiNode {
         UiNode {
@@ -850,36 +944,92 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tree_wait_wakes_when_a_new_generation_is_published() -> Result<(), String> {
+    async fn tree_wait_wakes_with_the_changes_since_the_known_generation() -> Result<(), String> {
         let state = SharedState::new();
+        state.publish_frame([node("kept", None)]);
         let waiter_state = state.clone();
         let waiter =
             tokio::spawn(
-                async move { waiter_state.wait_for_tree(0, Duration::from_secs(1)).await },
+                async move { waiter_state.wait_for_tree(1, Duration::from_secs(1)).await },
             );
         tokio::task::yield_now().await;
 
-        state.begin_frame();
-        assert!(state.record(node("published", None)));
-        state.finish_frame();
+        state.publish_frame([node("kept", None), node("added", Some("kept"))]);
 
-        let tree = waiter
+        let update = waiter
             .await
             .map_err(|error| error.to_string())?
             .map_err(|error| error.message)?;
-        assert_eq!(tree.generation, 1);
-        assert!(tree.nodes.contains_key("published"));
+        let TreeUpdate::Delta(delta) = update else {
+            return Err(format!("expected a delta, got {update:?}"));
+        };
+        assert_eq!(delta.base_generation, 1);
+        assert_eq!(delta.generation, 2);
+        let ids: Vec<&str> = delta.upserted.iter().map(|node| node.id.as_str()).collect();
+        assert_eq!(ids, ["added", "kept"], "a new child changes its parent");
         Ok(())
     }
 
-    #[tokio::test]
-    async fn frame_wait_wakes_after_unchanged_semantics_finish_paint() -> Result<(), String> {
+    #[test]
+    fn deltas_chain_generations_and_rebuild_the_tree() {
         let state = SharedState::new();
-        state.begin_frame();
-        assert!(state.record(node("stable", None)));
-        state.finish_frame();
-        state.begin_root_paint();
-        state.finish_root_paint();
+        let stable = || node("stable", None);
+        state.publish_frame([node("a", None), node("b", Some("a")), stable()]);
+        let base = state.tree();
+        state.publish_frame([node("a", None), node("c", Some("a")), stable()]);
+        state.publish_frame([
+            node("z", None),
+            node("a", None),
+            node("c", Some("a")),
+            stable(),
+        ]);
+
+        let update = state.tree_since(base.generation);
+        let TreeUpdate::Delta(delta) = update else {
+            unreachable!("retained generations answer with a delta, got {update:?}");
+        };
+        assert_eq!(delta.removed, ["b"]);
+        assert!(delta.upserted.iter().all(|node| node.id != "stable"));
+        assert_eq!(
+            delta.roots.as_deref(),
+            Some(&["z".to_owned(), "a".to_owned(), "stable".to_owned()][..])
+        );
+        let mut patched = base;
+        assert!(delta.apply(&mut patched));
+        assert_eq!(patched, state.tree());
+
+        assert!(matches!(
+            state.tree_since(state.tree_generation()),
+            TreeUpdate::Unchanged
+        ));
+        assert!(
+            matches!(state.tree_since(999), TreeUpdate::Full(_)),
+            "an unknown generation gets the whole tree"
+        );
+    }
+
+    #[test]
+    fn deltas_fall_back_to_the_full_tree_once_history_is_dropped() {
+        let state = SharedState::new();
+        state.publish_frame([node("a", None), node("b", None)]);
+        let base = state.tree_generation();
+        for index in 0..=super::MAX_CHANGE_RECORDS {
+            let mut changed = node("a", None);
+            changed.label = Some(index.to_string());
+            state.publish_frame([changed, node("b", None)]);
+        }
+        assert!(matches!(state.tree_since(base), TreeUpdate::Full(_)));
+        assert!(matches!(
+            state.tree_since(state.tree_generation() - 1),
+            TreeUpdate::Delta(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn frame_wait_wakes_for_frames_that_publish_nothing() -> Result<(), String> {
+        let state = SharedState::new();
+        state.publish_frame([node("stable", None)]);
+        state.complete_frame(Duration::from_millis(2), Duration::from_millis(3));
         assert_eq!(state.tree().generation, 1);
 
         let waiter_state = state.clone();
@@ -889,53 +1039,17 @@ mod tests {
             );
         tokio::task::yield_now().await;
 
-        state.begin_frame();
-        assert!(state.record(node("stable", None)));
-        state.finish_frame();
-        state.begin_root_paint();
-        state.finish_root_paint();
+        state.complete_frame(Duration::from_millis(4), Duration::from_millis(5));
 
-        let observed_frame = waiter
+        let observed = waiter
             .await
             .map_err(|error| error.to_string())?
             .map_err(|error| error.message)?;
-        assert_eq!(observed_frame.frame_count, 2);
-        assert_eq!(state.tree().generation, 1);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn frame_wait_never_returns_a_started_but_incomplete_frame() -> Result<(), String> {
-        let state = SharedState::new();
-        state.begin_frame();
-        assert!(state.record(node("stable", None)));
-        state.finish_frame();
-        state.begin_root_paint();
-        state.finish_root_paint();
-
-        state.begin_frame();
-        assert!(state.record(node("stable", None)));
-        state.finish_frame();
-        state.begin_root_paint();
-        assert_eq!(state.frame_stats().frame_count, 1);
-
-        let wait = state.wait_for_frame(1, Duration::from_secs(1));
-        tokio::pin!(wait);
-        tokio::select! {
-            biased;
-            result = &mut wait => {
-                return Err(format!(
-                    "frame wait completed before root paint: {:?}",
-                    result.map_err(|error| error.message)
-                ));
-            }
-            () = tokio::task::yield_now() => {}
-        }
-
-        state.finish_root_paint();
-        let observed = wait.await.map_err(|error| error.message)?;
         assert_eq!(observed.frame_count, 2);
-        assert_eq!(state.frame_stats(), observed);
+        assert_eq!(observed.sample_count, 1);
+        assert!((observed.prepaint_max_ms - 4.0).abs() < 0.01);
+        assert!((observed.root_paint_average_ms - 4.0).abs() < 0.01);
+        assert_eq!(state.tree().generation, 1);
         Ok(())
     }
 }

@@ -35,12 +35,15 @@ use tokio_util::sync::CancellationToken;
 
 use crate::Automation;
 use crate::input;
-use crate::registry::SharedState;
+use crate::registry::{SharedState, TreeUpdate};
 
 const MAX_CONNECTIONS: usize = 8;
 const COMMAND_CAPACITY: usize = 64;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_mins(30);
+/// How long the window keeps building its tree after the last client request.
+const OBSERVATION_IDLE: Duration = Duration::from_secs(30);
+const OBSERVATION_IDLE_CHECK: Duration = Duration::from_secs(5);
 
 /// Configuration for one GPUI window bridge.
 #[derive(Clone, Debug)]
@@ -309,7 +312,7 @@ impl BridgeHandle {
         let token = encode_hex(&token_bytes);
         let instance_id = random_instance_id();
         let state = SharedState::new();
-        let automation = Automation::new(state.clone());
+        let automation = Automation::new(state.clone(), true);
         automation.attach(window);
         let pid = ProcessId::new(std::process::id()).ok_or(StartError::InvalidProcessId)?;
         let native_window_id = crate::native_window_id(window);
@@ -532,8 +535,17 @@ impl Drop for BridgeHandle {
     }
 }
 
+/// Work the network side asks the UI thread to do.
+enum UiRequest {
+    Operation(Operation),
+    /// Start building the accessibility tree every frame.
+    Observe,
+    /// Whether the window will draw again without being asked.
+    RedrawPending,
+}
+
 struct UiCommand {
-    operation: Operation,
+    request: UiRequest,
     response: oneshot::Sender<Result<BridgeResult, BridgeError>>,
 }
 
@@ -546,20 +558,30 @@ fn spawn_ui_pump(
     resource_host: Rc<ResourceHost>,
     command_host: Rc<CommandHost>,
 ) {
+    let idle_automation = automation.clone();
     window
         .spawn(cx, async move |cx| {
             while let Ok(command) = receiver.recv().await {
                 let result = cx
-                    .update(|window, cx| {
-                        handle_ui_operation(
-                            command.operation,
+                    .update(|window, cx| match command.request {
+                        UiRequest::Operation(operation) => handle_ui_operation(
+                            operation,
                             &automation,
                             &document_host,
                             &resource_host,
                             &command_host,
                             window,
                             cx,
-                        )
+                        ),
+                        UiRequest::Observe => {
+                            automation.set_observed(window, true);
+                            Ok(BridgeResult::Ack)
+                        }
+                        UiRequest::RedrawPending => Ok(if window.is_redraw_pending() {
+                            BridgeResult::Ack
+                        } else {
+                            BridgeResult::TreeUnchanged
+                        }),
                     })
                     .unwrap_or_else(|error| {
                         tracing::warn!(%error, "GPUI window rejected an automation update");
@@ -572,15 +594,24 @@ fn spawn_ui_pump(
             }
         })
         .detach();
-}
-
-/// Request a frame and publish the accessibility tree it completes with.
-///
-/// Observation is pull-based: a tree exists only for a completed frame, so the
-/// bridge arms [`Automation::observe_on_next_frame`] before every refresh.
-fn refresh_and_observe(automation: &Automation, window: &mut Window) {
-    automation.observe_on_next_frame(window);
-    window.refresh();
+    // Stop building the tree once clients go quiet; the next request restarts it.
+    window
+        .spawn(cx, async move |cx| {
+            loop {
+                cx.background_executor().timer(OBSERVATION_IDLE_CHECK).await;
+                let state = &idle_automation.state;
+                if !state.is_observing() || state.idle_for() < OBSERVATION_IDLE {
+                    continue;
+                }
+                if cx
+                    .update(|window, _| idle_automation.set_observed(window, false))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        })
+        .detach();
 }
 
 #[allow(clippy::too_many_lines)]
@@ -600,12 +631,12 @@ fn handle_ui_operation(
             // Each primitive pointer event completes through the same painted-frame contract as
             // keyboard input. Compound gestures issue one operation per event, so callers can
             // deterministically settle a frame between drag moves without sleeping.
-            refresh_and_observe(automation, window);
+            window.refresh();
             Ok(BridgeResult::Ack)
         }
         Operation::Input { command } => {
             input::dispatch_keyboard(command, window, cx)?;
-            refresh_and_observe(automation, window);
+            window.refresh();
             Ok(BridgeResult::Ack)
         }
         Operation::Focus { node_id } => {
@@ -636,14 +667,14 @@ fn handle_ui_operation(
         }
         Operation::Refresh => {
             let completed = state.frame_stats();
-            refresh_and_observe(automation, window);
+            window.refresh();
             Ok(BridgeResult::FrameStats(completed))
         }
         Operation::GetPointerLocation => Ok(BridgeResult::PointerLocation(
             input::pointer_location(window),
         )),
         Operation::ClearHighlights => {
-            refresh_and_observe(automation, window);
+            window.refresh();
             Ok(BridgeResult::Ack)
         }
         Operation::GetLiveDocument => {
@@ -670,7 +701,7 @@ fn handle_ui_operation(
             };
             let preview = validate_live_document_preview(preview)?;
             if preview.applied {
-                refresh_and_observe(automation, window);
+                window.refresh();
             }
             Ok(BridgeResult::LiveDocumentPreview(preview))
         }
@@ -718,7 +749,7 @@ fn handle_ui_operation(
                 return Err(invalid_host_result("command"));
             }
             let result = validate_application_command_result(result)?;
-            refresh_and_observe(automation, window);
+            window.refresh();
             Ok(BridgeResult::ApplicationCommand(result))
         }
         _ => Err(BridgeError::new(
@@ -884,9 +915,49 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
     if let Err(error) = validate_operation(&request.operation) {
         return WireResponse::failure(request.request_id, error);
     }
-    match run_operation(request.operation, context).await {
+    context.state.touch();
+    if !matches!(request.operation, Operation::Ping) {
+        ensure_observing(&context).await;
+    }
+    let result = run_operation(request.operation, context.clone()).await;
+    context.state.touch();
+    match result {
         Ok(result) => WireResponse::success(request.request_id, result),
         Err(error) => WireResponse::failure(request.request_id, error),
+    }
+}
+
+/// Start building the tree if it is off, and wait for the first frame that
+/// carries one, so the request sees a current tree.
+async fn ensure_observing(context: &ConnectionContext) {
+    if context.state.is_observing() {
+        return;
+    }
+    let before = context.state.frame_stats().frame_count;
+    let started = dispatch(
+        UiRequest::Observe,
+        &context.command_tx,
+        context.operation_timeout,
+    )
+    .await;
+    let published = match started {
+        Ok(_) => context
+            .state
+            .wait_for_frame(before, context.operation_timeout)
+            .await
+            .map(drop),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = published {
+        tracing::debug!(message = %error.message, "semantic observation did not start");
+    }
+}
+
+fn tree_result(update: TreeUpdate) -> BridgeResult {
+    match update {
+        TreeUpdate::Unchanged => BridgeResult::TreeUnchanged,
+        TreeUpdate::Delta(delta) => BridgeResult::TreeDelta(delta),
+        TreeUpdate::Full(tree) => BridgeResult::Tree(tree),
     }
 }
 
@@ -902,10 +973,9 @@ async fn run_operation(
             protocol_version: PROTOCOL_VERSION,
         }),
         Operation::GetTree => Ok(BridgeResult::Tree(context.state.tree())),
-        Operation::GetTreeIfChanged { known_generation } => Ok(context
-            .state
-            .tree_if_changed(known_generation)
-            .map_or(BridgeResult::TreeUnchanged, BridgeResult::Tree)),
+        Operation::GetTreeIfChanged { known_generation } => {
+            Ok(tree_result(context.state.tree_since(known_generation)))
+        }
         Operation::WaitForTree {
             after_generation,
             timeout_ms,
@@ -913,7 +983,7 @@ async fn run_operation(
             .state
             .wait_for_tree(after_generation, Duration::from_millis(timeout_ms))
             .await
-            .map(BridgeResult::Tree),
+            .map(tree_result),
         Operation::WaitForFrame {
             after_frame_count,
             timeout_ms,
@@ -951,6 +1021,17 @@ async fn run_operation(
                     context.operation_timeout,
                 )
             },
+            || async {
+                matches!(
+                    dispatch(
+                        UiRequest::RedrawPending,
+                        &context.command_tx,
+                        context.operation_timeout,
+                    )
+                    .await,
+                    Ok(BridgeResult::Ack)
+                )
+            },
         )
         .await
         .map(BridgeResult::FrameStats),
@@ -985,47 +1066,48 @@ async fn run_operation(
     }
 }
 
-/// Refresh, then wait for a frame newer than the one completed before that
-/// refresh, `rounds` times. Each wait starts from its own refresh's token, so a
-/// frame already in flight cannot satisfy a later round.
-async fn settle_frames<Refresh, Fut>(
+/// Refresh and wait for a frame newer than the one completed before that
+/// refresh; then, up to `rounds` frames in all, keep waiting while the window
+/// still has a redraw pending, which is how state a handler scheduled for a
+/// later frame lands. Each wait starts from its own token, so a frame already
+/// in flight cannot satisfy a later round.
+async fn settle_frames<Refresh, RefreshFut, Pending, PendingFut>(
     state: &SharedState,
     rounds: u8,
     wait: Duration,
     mut refresh: Refresh,
+    mut redraw_pending: Pending,
 ) -> Result<FrameStats, BridgeError>
 where
-    Refresh: FnMut() -> Fut,
-    Fut: Future<Output = Result<BridgeResult, BridgeError>>,
+    Refresh: FnMut() -> RefreshFut,
+    RefreshFut: Future<Output = Result<BridgeResult, BridgeError>>,
+    Pending: FnMut() -> PendingFut,
+    PendingFut: Future<Output = bool>,
 {
-    let mut settled = Err(invalid("settle needs at least one round"));
-    for _ in 0..rounds {
-        let BridgeResult::FrameStats(before) = refresh().await? else {
-            return Err(BridgeError::new(
-                ErrorCode::Internal,
-                "refresh returned the wrong result",
-            ));
-        };
-        settled = Ok(state.wait_for_frame(before.frame_count, wait).await?);
+    if rounds == 0 {
+        return Err(invalid("settle needs at least one round"));
     }
-    settled
+    let BridgeResult::FrameStats(before) = refresh().await? else {
+        return Err(BridgeError::new(
+            ErrorCode::Internal,
+            "refresh returned the wrong result",
+        ));
+    };
+    let mut settled = state.wait_for_frame(before.frame_count, wait).await?;
+    for _ in 1..rounds {
+        if !redraw_pending().await {
+            break;
+        }
+        settled = state.wait_for_frame(settled.frame_count, wait).await?;
+    }
+    Ok(settled)
 }
 
 async fn request_ui_refresh(
     command_tx: &Sender<UiCommand>,
     operation_timeout: Duration,
 ) -> Result<BridgeResult, BridgeError> {
-    let (response_tx, response_rx) = oneshot::channel();
-    command_tx
-        .try_send(UiCommand {
-            operation: Operation::ClearHighlights,
-            response: response_tx,
-        })
-        .map_err(|_| BridgeError::new(ErrorCode::Busy, "UI command queue is full"))?;
-    timeout(operation_timeout, response_rx)
-        .await
-        .map_err(|_| BridgeError::new(ErrorCode::Timeout, "UI operation timed out"))?
-        .map_err(|_| BridgeError::new(ErrorCode::Internal, "UI command pump stopped"))?
+    dispatch_to_ui(Operation::ClearHighlights, command_tx, operation_timeout).await
 }
 
 async fn dispatch_to_ui(
@@ -1033,10 +1115,23 @@ async fn dispatch_to_ui(
     command_tx: &Sender<UiCommand>,
     operation_timeout: Duration,
 ) -> Result<BridgeResult, BridgeError> {
+    dispatch(
+        UiRequest::Operation(operation),
+        command_tx,
+        operation_timeout,
+    )
+    .await
+}
+
+async fn dispatch(
+    request: UiRequest,
+    command_tx: &Sender<UiCommand>,
+    operation_timeout: Duration,
+) -> Result<BridgeResult, BridgeError> {
     let (response_tx, response_rx) = oneshot::channel();
     command_tx
         .try_send(UiCommand {
-            operation,
+            request,
             response: response_tx,
         })
         .map_err(|_| BridgeError::new(ErrorCode::Busy, "UI command queue is full"))?;
@@ -1522,40 +1617,60 @@ mod tests {
     use crate::registry::SharedState;
 
     fn complete_frame(state: &SharedState) {
-        state.begin_frame();
         state.publish_frame(Vec::new());
-        state.begin_root_paint();
-        state.finish_root_paint();
+        state.complete_frame(Duration::ZERO, Duration::ZERO);
     }
 
     #[tokio::test]
-    async fn settle_waits_for_a_frame_after_each_refresh() {
+    async fn settle_waits_for_follow_up_frames_only_while_a_redraw_is_pending() {
         let state: Arc<SharedState> = SharedState::new();
         let refreshes = Cell::new(0u32);
-        let settled = settle_frames(&state, 2, Duration::from_secs(1), || {
-            refreshes.set(refreshes.get() + 1);
-            // The token read at refresh time, then the frame that refresh produces.
-            let before = state.frame_stats();
-            complete_frame(&state);
-            async move { Ok(BridgeResult::FrameStats(before)) }
-        })
+        let pending_checks = Cell::new(0u32);
+        let settled = settle_frames(
+            &state,
+            3,
+            Duration::from_secs(1),
+            || {
+                refreshes.set(refreshes.get() + 1);
+                // The token read at refresh time, then the frame that refresh produces.
+                let before = state.frame_stats();
+                complete_frame(&state);
+                async move { Ok(BridgeResult::FrameStats(before)) }
+            },
+            || {
+                pending_checks.set(pending_checks.get() + 1);
+                // One follow-up frame is scheduled, then the window is idle.
+                let pending = pending_checks.get() == 1;
+                if pending {
+                    complete_frame(&state);
+                }
+                async move { pending }
+            },
+        )
         .await;
 
-        assert_eq!(refreshes.get(), 2);
+        assert_eq!(refreshes.get(), 1, "one refresh per settle");
+        assert_eq!(pending_checks.get(), 2, "stops at the first idle check");
         assert_eq!(
             settled.map(|stats: FrameStats| stats.frame_count).ok(),
-            Some(state.frame_stats().frame_count),
-            "the result is the frame completed by the last refresh"
+            Some(2),
+            "the result is the follow-up frame"
         );
     }
 
     #[tokio::test]
     async fn settle_times_out_when_no_frame_follows_a_refresh() {
         let state: Arc<SharedState> = SharedState::new();
-        let settled = settle_frames(&state, 1, Duration::from_millis(20), || {
-            let before = state.frame_stats();
-            async move { Ok(BridgeResult::FrameStats(before)) }
-        })
+        let settled = settle_frames(
+            &state,
+            1,
+            Duration::from_millis(20),
+            || {
+                let before = state.frame_stats();
+                async move { Ok(BridgeResult::FrameStats(before)) }
+            },
+            || async { false },
+        )
         .await;
         assert!(
             settled.is_err(),

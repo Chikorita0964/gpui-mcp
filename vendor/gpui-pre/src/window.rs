@@ -66,7 +66,7 @@ use uuid::Uuid;
 pub(crate) mod a11y;
 mod prompts;
 
-pub use a11y::{A11yPointerInteractions, A11ySubtreeBuilder};
+pub use a11y::{A11yFrame, A11yFrameObserver, A11yPointerInteractions, A11ySubtreeBuilder};
 
 use self::a11y::A11y;
 #[cfg(not(target_family = "wasm"))]
@@ -1246,6 +1246,8 @@ pub struct Window {
     #[cfg(feature = "profiler")]
     debug_frame_overlay: crate::debug_overlay::DebugFrameOverlay,
     pub(crate) a11y: A11y,
+    // gpui-mcp patch (C14): in-process observers of every drawn frame.
+    a11y_frame_observers: Vec<Arc<dyn A11yFrameObserver>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1609,10 +1611,7 @@ impl Window {
         }
 
         let accessibility_force_disabled = cx.accessibility_force_disabled;
-        // gpui-mcp patch (C02): start the accessibility tree active so
-        // `Window::debug_a11y_tree_json` observes every frame without assistive
-        // technology attached. A platform adapter can still deactivate it.
-        let a11y_active_flag = Arc::new(AtomicBool::new(!accessibility_force_disabled));
+        let a11y_active_flag = Arc::new(AtomicBool::new(false));
 
         #[cfg(not(target_family = "wasm"))]
         if !accessibility_force_disabled {
@@ -2110,6 +2109,7 @@ impl Window {
                 accessibility_force_disabled,
                 initial_window_title,
             ),
+            a11y_frame_observers: Vec::new(),
         })
     }
 
@@ -3445,6 +3445,10 @@ impl Window {
         if self.focus != focus_before_listeners {
             self.refresh();
         }
+        // gpui-mcp patch (C15): observation turned on mid-draw needs a tree frame.
+        if mem::take(&mut self.a11y.redraw_after_draw) {
+            self.refresh();
+        }
         self.needs_present.set(true);
 
         #[cfg(feature = "profiler")]
@@ -3549,6 +3553,7 @@ impl Window {
     }
 
     fn draw_roots(&mut self, cx: &mut App) {
+        let frame_started = Instant::now();
         self.invalidator.set_phase(DrawPhase::Prepaint);
         self.tooltip_bounds.take();
 
@@ -3618,6 +3623,7 @@ impl Window {
         self.mouse_hit_test = self.next_frame.hit_test(self.mouse_position);
 
         // Now actually paint the elements.
+        let paint_started = Instant::now();
         self.invalidator.set_phase(DrawPhase::Paint);
         root_element.paint(self, cx);
 
@@ -3637,13 +3643,25 @@ impl Window {
         #[cfg(any(feature = "inspector", debug_assertions))]
         self.paint_inspector_hitbox(cx);
 
+        // gpui-mcp patch (C14): observer overlays paint above everything else.
+        let observers = self.a11y_frame_observers.clone();
+        for observer in &observers {
+            observer.paint_overlay(self, cx);
+        }
+        let paint_finished = Instant::now();
+
         // a11y may have been activated/deactivated halfway through the frame
         let a11y_active_start_of_frame = self.a11y.is_active();
         self.a11y.sync_active_flag();
         let a11y_active_end_of_frame = self.a11y.is_active();
 
-        let should_send_a11y_update = a11y_active_start_of_frame && a11y_active_end_of_frame;
+        // gpui-mcp patch (C15): only assistive technology receives updates.
+        let should_send_a11y_update = a11y_active_start_of_frame
+            && a11y_active_end_of_frame
+            && self.a11y.platform_active();
 
+        let mut tree_update = None;
+        let mut changed = false;
         if a11y_active_start_of_frame {
             // Harvest frame metadata for the debug dump while the live window
             // and frame are still in scope.
@@ -3653,15 +3671,30 @@ impl Window {
                 tab_stop_count: self.next_frame.tab_stops.tab_stop_count(),
             };
             // clear the builder state regardless
-            let tree_update = self.a11y.end_frame(frame_info);
+            let (update, frame_changed) = self.a11y.end_frame(frame_info);
+            tree_update = Some(update);
+            changed = frame_changed;
+        }
 
-            if should_send_a11y_update {
-                log::debug!(
-                    "Sending a11y tree update: {} nodes",
-                    tree_update.nodes.len()
-                );
-                self.platform_window.a11y_tree_update(tree_update);
+        if !observers.is_empty() {
+            let frame = A11yFrame {
+                tree: tree_update.as_ref(),
+                gpui_focus: self.a11y.gpui_focus(),
+                changed,
+                prepaint: paint_started.duration_since(frame_started),
+                paint: paint_finished.duration_since(paint_started),
+            };
+            for observer in &observers {
+                observer.frame_finished(self, &frame);
             }
+        }
+
+        if should_send_a11y_update && let Some(tree_update) = tree_update {
+            log::debug!(
+                "Sending a11y tree update: {} nodes",
+                tree_update.nodes.len()
+            );
+            self.platform_window.a11y_tree_update(tree_update);
         }
     }
 
@@ -6823,6 +6856,46 @@ impl Window {
     /// Debug representation of the last frame's accessibility information.
     pub fn debug_a11y_tree_json(&self) -> Option<String> {
         self.a11y.debug_tree_json()
+    }
+
+    /// gpui-mcp patch (C15): build the accessibility tree every frame even
+    /// without assistive technology, for in-process observers. Turning it on
+    /// redraws the window so the next frame carries a tree.
+    pub fn set_a11y_observed(&mut self, observed: bool) {
+        if self.a11y.observed == observed {
+            return;
+        }
+        self.a11y.observed = observed;
+        if !observed {
+            return;
+        }
+        if self.invalidator.not_drawing() {
+            self.refresh();
+        } else {
+            self.a11y.redraw_after_draw = true;
+        }
+    }
+
+    /// gpui-mcp patch (C14): whether the window is invalidated and will draw again.
+    pub fn is_redraw_pending(&self) -> bool {
+        self.invalidator.is_dirty() || !self.next_frame_callbacks.borrow().is_empty()
+    }
+
+    /// gpui-mcp patch (C15): whether an in-process observer asked for the tree.
+    pub fn is_a11y_observed(&self) -> bool {
+        self.a11y.observed
+    }
+
+    /// gpui-mcp patch (C14): notify `observer` of every drawn frame. Adding an
+    /// observer that is already registered is a no-op.
+    pub fn add_a11y_frame_observer(&mut self, observer: Arc<dyn A11yFrameObserver>) {
+        if !self
+            .a11y_frame_observers
+            .iter()
+            .any(|existing| Arc::ptr_eq(existing, &observer))
+        {
+            self.a11y_frame_observers.push(observer);
+        }
     }
 
     /// gpui-mcp patch (C03): logical bounds of an accessibility node.

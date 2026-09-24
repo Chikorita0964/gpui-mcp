@@ -1,9 +1,9 @@
 # GPUI-pre patch inventory
 
 `vendor/gpui-pre` is `gpui-pre` 0.3.6 from crates.io: the crate GPUI Kit
-re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest. Ten
-focused patches open APIs the bridge needs but cannot reach through the stock
-surface. Each patch site is marked with a `gpui-mcp patch (C0x):` comment.
+re-exports as `gpui`, which `gpui-mcp` aliases in the workspace manifest.
+Focused patches open APIs the bridge needs but cannot reach through the stock
+surface. Each patch site is marked with a `gpui-mcp patch (Cxx):` comment.
 
 The set falls into two classes:
 
@@ -52,19 +52,11 @@ The set falls into two classes:
 
 `vendor/gpui-pre` is the 0.3.6 archive with only the files below modified.
 
-## C02 - Accessibility activation
+## C02 - Accessibility activation (superseded by C15)
 
-| | |
-|---|---|
-| File | `vendor/gpui-pre/src/window.rs` |
-| Item | `Window::new`, the `a11y_active_flag` initializer (stock `window.rs:1607`) |
-| Opened | `Window::debug_a11y_tree_json()` returns `Some` on a freshly opened window with no assistive technology attached, so `observer.rs` can observe every frame; a platform adapter can still deactivate the tree. |
-| Why | Stock GPUI builds the accessibility tree only while `A11y::is_active()` reads this flag. The flag starts `false` and only the platform adapter's activation callback flips it, so a bridge that is not a screen reader never sees a tree. |
-
-```rust
-// was: AtomicBool::new(false)
-let a11y_active_flag = Arc::new(AtomicBool::new(!accessibility_force_disabled));
-```
+C02 started `a11y_active_flag` as `true`, so every window built its tree every
+frame and sent it to the platform adapter. C15 replaces it: the flag is stock
+again and the bridge turns the tree on only while a client uses it.
 
 ## C03 - Per-node bounds
 
@@ -325,11 +317,28 @@ if let Some(leaf) = global_id.0.last() {
 }
 ```
 
+## C14 - Frame observer
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/window/a11y.rs`, `window/a11y/debug.rs`, `window.rs` |
+| Item | `A11yFrameObserver` and `A11yFrame`; `Window::add_a11y_frame_observer` and `Window::is_redraw_pending`; `draw_roots` times prepaint and paint, calls each observer's `paint_overlay` after the inspector hitbox, and `frame_finished` after `A11y::end_frame`; `end_frame` also returns whether the tree, GPUI focus, active descendant, or pointer interactions differ from the previous tree frame; `A11yDebug::capture` clones the tree only when it changed |
+| Opened | `observer.rs` sees every drawn frame as it completes, including frames the app draws on its own, reads AccessKit nodes directly instead of the JSON dump, skips unchanged frames, reports measured prepaint and paint times, and paints highlight overlays. |
+| Why | Stock GPUI exposes the tree only through `debug_a11y_tree_json`, which serializes every node, and only `on_next_frame`, which runs before the next draw. A pulled tree therefore lagged one frame, missed app-driven frames, cost a full serialize and parse per observation, and nothing could paint over the frame. |
+
+## C15 - Observation on request
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/window/a11y.rs`, `window.rs` |
+| Item | `A11y::observed`, read by `sync_active_flag`; `A11y::platform_active`; `Window::set_a11y_observed` and `Window::is_a11y_observed`; `draw_roots` sends tree updates to the platform only when the platform flag is set |
+| Opened | The bridge builds the tree only while a client uses it and stops after 30 seconds of silence; an app without a client pays nothing. Isolated automation (tests, previews) observes from attach. |
+| Why | Stock activation comes only from the platform adapter. C02 forced it on for every window forever, which also pushed every frame's tree to the OS adapter. |
+
 ## Fields read without a patch
 
 C03 and C04 read `A11y::node_bounds` and `A11y::focus_ids` from `window.rs`,
 which is in the same crate, so those `pub(crate)` fields stay as they are.
-`window/a11y.rs` itself is patched only by C12 and C13.
 
 ## Verification in this fork
 
@@ -337,6 +346,6 @@ which is in the same crate, so those `pub(crate)` fields stay as they are.
 |---|---|
 | `cargo check --workspace` | exits 0 |
 | `cargo tree -p gpui-pre` | resolves to `vendor/gpui-pre` at v0.3.6; no other crate resolves from `vendor/` |
-| `cargo test -p gpui-mcp --lib` | 23 tests pass; covers C02-C05 and C08 behavior through the bridge (`observer.rs` and `input.rs` tests) |
+| `cargo test -p gpui-mcp --lib` | 31 tests pass; covers C03-C05, C08, and C11-C15 behavior through the bridge (`observer.rs`, `registry.rs`, `service.rs`, and `input.rs` tests) |
 | `cargo test -p gpui-mcp-server --test disabled_state` | passes; C08 over the real MCP stdio surface against the demo |
 | `cargo check -p gpui-pre --tests` | fails on pristine `src/svg_renderer.rs` `include_bytes!` paths to Zed workspace assets (`assets/fonts/...`) that this fork does not carry; C06's unit test type-checks but cannot run in this tree |

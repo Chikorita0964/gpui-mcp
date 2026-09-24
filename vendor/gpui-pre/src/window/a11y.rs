@@ -130,6 +130,30 @@ pub struct A11yPointerInteractions {
     pub scroll: bool,
 }
 
+/// gpui-mcp patch (C14): what one drawn frame hands an [`A11yFrameObserver`].
+pub struct A11yFrame<'a> {
+    /// The frame's full tree, or `None` when accessibility was inactive for it.
+    pub tree: Option<&'a TreeUpdate>,
+    /// The node GPUI considers focused, before any active-descendant override.
+    pub gpui_focus: Option<NodeId>,
+    /// Whether the tree, focus, or pointer interactions differ from the
+    /// previous frame that built a tree.
+    pub changed: bool,
+    /// Time from the start of layout to the start of paint.
+    pub prepaint: std::time::Duration,
+    /// Time spent painting, overlay included.
+    pub paint: std::time::Duration,
+}
+
+/// gpui-mcp patch (C14): an in-process observer of every drawn frame.
+pub trait A11yFrameObserver: 'static {
+    /// Paint on top of the frame, after tooltips and before the frame ends.
+    fn paint_overlay(&self, _window: &mut Window, _cx: &mut App) {}
+
+    /// Called once per drawn frame, after the accessibility tree is finalized.
+    fn frame_finished(&self, window: &Window, frame: &A11yFrame<'_>);
+}
+
 /// Per-window accessibility state.
 ///
 /// Manages the AccessKit tree that is built each frame and the mappings
@@ -156,10 +180,16 @@ pub(crate) struct A11y {
     /// At the end of the frame, we re-call [`Self::sync_active_flag`] to
     /// determine whether we should actually send the finished [`TreeUpdate`].
     active_this_frame: bool,
+    // gpui-mcp patch (C15): an in-process observer asked for the tree.
+    pub(crate) observed: bool,
+    // gpui-mcp patch (C15): observation started during a draw.
+    pub(crate) redraw_after_draw: bool,
     pub(crate) nodes: A11yNodeBuilder,
     pub(crate) focus_ids: FxHashMap<NodeId, FocusId>,
     pub(crate) node_bounds: FxHashMap<NodeId, Bounds<Pixels>>,
     pub(crate) pointer_interactions: FxHashMap<NodeId, A11yPointerInteractions>,
+    // gpui-mcp patch (C14): the previous tree frame's map, for change detection.
+    previous_pointer_interactions: FxHashMap<NodeId, A11yPointerInteractions>,
     // gpui-mcp patch (C13): each node's leaf element id, in every build type.
     pub(crate) element_ids: FxHashMap<NodeId, ElementId>,
     pub(crate) action_listeners: FxHashMap<NodeId, Vec<(Action, A11yActionListener)>>,
@@ -187,10 +217,13 @@ impl A11y {
             force_disabled,
             active_flag,
             active_this_frame: false,
+            observed: false,
+            redraw_after_draw: false,
             nodes: A11yNodeBuilder::new(),
             focus_ids: FxHashMap::default(),
             node_bounds: FxHashMap::default(),
             pointer_interactions: FxHashMap::default(),
+            previous_pointer_interactions: FxHashMap::default(),
             element_ids: FxHashMap::default(),
             action_listeners: FxHashMap::default(),
             window_title,
@@ -226,11 +259,17 @@ impl A11y {
     /// See the docs for [`Self::active_flag`] and [`Self::active_this_frame`]
     /// for more commentary.
     pub(crate) fn sync_active_flag(&mut self) {
-        self.active_this_frame = !self.force_disabled && self.active_flag.load(Ordering::SeqCst);
+        self.active_this_frame = !self.force_disabled
+            && (self.observed || self.active_flag.load(Ordering::SeqCst));
     }
 
     pub(crate) fn is_active(&self) -> bool {
         self.active_this_frame
+    }
+
+    /// gpui-mcp patch (C15): whether assistive technology activated the tree.
+    pub(crate) fn platform_active(&self) -> bool {
+        self.active_flag.load(Ordering::SeqCst)
     }
 
     pub(crate) fn set_focusable(&mut self, node_id: NodeId, focus_id: FocusId) {
@@ -286,6 +325,10 @@ impl A11y {
     /// Clear per-frame state and push the root node to start a new frame.
     pub(crate) fn begin_frame(&mut self) {
         self.focus_ids.clear();
+        std::mem::swap(
+            &mut self.pointer_interactions,
+            &mut self.previous_pointer_interactions,
+        );
         self.pointer_interactions.clear();
         self.element_ids.clear();
         self.node_bounds.clear();
@@ -293,11 +336,18 @@ impl A11y {
         self.nodes.begin_frame(self.window_title.as_ref());
     }
 
-    /// Finalize the tree and produce a [`TreeUpdate`] for the platform adapter.
-    pub(crate) fn end_frame(&mut self, frame: debug::FrameDebugInfo) -> TreeUpdate {
+    /// Finalize the tree and produce a [`TreeUpdate`] for the platform adapter,
+    /// with whether it differs from the previous tree frame (C14).
+    pub(crate) fn end_frame(&mut self, frame: debug::FrameDebugInfo) -> (TreeUpdate, bool) {
         let update = self.nodes.finalize();
+        let changed = self.debug.differs(
+            &update,
+            self.nodes.focus,
+            self.nodes.active_descendant,
+        ) || self.pointer_interactions != self.previous_pointer_interactions;
         self.debug.capture(
             &update,
+            changed,
             self.nodes.focus,
             self.nodes.active_descendant,
             self.window_title.as_ref(),
@@ -305,7 +355,12 @@ impl A11y {
         );
         #[cfg(debug_assertions)]
         self.debug.capture_node_info(&self.nodes.node_info);
-        update
+        (update, changed)
+    }
+
+    /// gpui-mcp patch (C14): the node GPUI considers focused this frame.
+    pub(crate) fn gpui_focus(&self) -> Option<NodeId> {
+        self.nodes.focus
     }
 
     pub(crate) fn debug_tree_json(&self) -> Option<String> {
@@ -900,7 +955,7 @@ mod tests {
         a11y.nodes.pop(); // c
         a11y.nodes.pop(); // b
 
-        let update = a11y.end_frame(Default::default());
+        let (update, _) = a11y.end_frame(Default::default());
         assert_eq!(update.focus, a);
     }
 }
