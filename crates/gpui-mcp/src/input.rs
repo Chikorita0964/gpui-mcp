@@ -587,4 +587,57 @@ mod tests {
             "the synthetic pointer position survives a DPI change"
         );
     }
+
+    #[gpui::test]
+    fn synthetic_hover_survives_a_platform_move_that_did_not_move(cx: &mut TestAppContext) {
+        let visual = cx.add_empty_window();
+        visual.draw(
+            point(px(0.0), px(0.0)),
+            size(px(300.0), px(100.0)),
+            |_, _| div().id("hover-target").w(px(100.0)).h(px(100.0)),
+        );
+        let platform_move = |x: f32, y: f32| {
+            gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                position: point(px(x), px(y)),
+                pressed_button: None,
+                modifiers: gpui::Modifiers::default(),
+            })
+        };
+        visual.update(|window, cx| {
+            window.dispatch_platform_input(platform_move(250.0, 80.0), cx);
+        });
+        let synthetic = Point { x: 50.0, y: 50.0 };
+        visual.update(|window, cx| {
+            assert_eq!(
+                dispatch_pointer(
+                    &PointerCommand::MouseMove {
+                        point: synthetic,
+                        pressed_button: None,
+                    },
+                    window,
+                    cx,
+                ),
+                Ok(())
+            );
+        });
+
+        // Windows re-sends the resting cursor position when a capture session starts (C05).
+        visual.update(|window, cx| {
+            window.dispatch_platform_input(platform_move(250.0, 80.0), cx);
+        });
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(synthetic.x), px(synthetic.y)),
+            "a platform move to the unchanged physical position keeps the synthetic pointer"
+        );
+
+        visual.update(|window, cx| {
+            window.dispatch_platform_input(platform_move(260.0, 80.0), cx);
+        });
+        assert_eq!(
+            visual.update(|window, _| window.mouse_position()),
+            point(px(260.0), px(80.0)),
+            "a real physical move takes the pointer back"
+        );
+    }
 }

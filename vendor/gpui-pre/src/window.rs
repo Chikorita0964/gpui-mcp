@@ -1946,7 +1946,7 @@ impl Window {
             let mut cx = cx.to_async();
             Box::new(move |event| {
                 handle
-                    .update(&mut cx, |_, window, cx| window.dispatch_event(event, cx))
+                    .update(&mut cx, |_, window, cx| window.dispatch_platform_input(event, cx))
                     .log_err()
                     .unwrap_or(DispatchEventResult::default())
             })
@@ -5441,6 +5441,35 @@ impl Window {
                 .unwrap_or(CursorStyle::Arrow);
             cx.platform.set_cursor_style(style);
         }
+    }
+
+    /// gpui-mcp patch (C05): dispatch input the platform delivered.
+    ///
+    /// A platform mouse move at the position the platform last reported is not
+    /// a physical move (Windows sends one when a capture session starts, for
+    /// example), so it must not cancel a synthetic pointer position.
+    pub fn dispatch_platform_input(
+        &mut self,
+        event: PlatformInput,
+        cx: &mut App,
+    ) -> DispatchEventResult {
+        match &event {
+            PlatformInput::MouseMove(mouse_move) => {
+                let unchanged = mouse_move.position == self.platform_mouse_position;
+                if unchanged && self.mouse_position != self.platform_mouse_position {
+                    return DispatchEventResult::default();
+                }
+                self.platform_mouse_position = mouse_move.position;
+            }
+            PlatformInput::MouseDown(mouse_down) => {
+                self.platform_mouse_position = mouse_down.position;
+            }
+            PlatformInput::MouseUp(mouse_up) => {
+                self.platform_mouse_position = mouse_up.position;
+            }
+            _ => {}
+        }
+        self.dispatch_event(event, cx)
     }
 
     /// Dispatch a given keystroke as though the user had typed it.

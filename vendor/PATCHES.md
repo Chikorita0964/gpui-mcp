@@ -175,6 +175,16 @@ if platform_mouse_position != self.platform_mouse_position {
 }
 ```
 
+The same rule covers platform input. `on_input` routes through a new
+`Window::dispatch_platform_input`. It drops a platform `MouseMove` whose position
+equals `platform_mouse_position` while a synthetic position is active, and it
+records the platform position on every other move, down, and up. Windows sends
+such a move when a Graphics Capture session starts on the window. Before this,
+every screenshot put the pointer back at the physical cursor and cancelled a
+synthetic hover. `region_capture` failed whenever the physical cursor rested
+over the window. `synthetic_hover_survives_a_platform_move_that_did_not_move`
+covers it.
+
 ## C06 - Fallback font traits
 
 | | |
