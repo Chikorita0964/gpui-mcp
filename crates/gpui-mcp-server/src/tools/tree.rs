@@ -1,18 +1,26 @@
 use super::{
-    DiffCurrentArgs, DiffSnapshotsArgs, Duration, ElementArgs, FindArgs, GpuiMcp, Instant, Json,
-    MAX_TREE_SNAPSHOTS, Parameters, SnapshotArgs, ToolRouter, Value, WaitElementArgs,
-    WaitStateArgs, encode_error, find_nodes, get_node, json, map_wait_error, object_output,
-    require_bounds, state_matches, tool, tool_router, tree_diff, validate_name, validate_timeout,
+    CallToolResult, DiffCurrentArgs, DiffSnapshotsArgs, Duration, ElementArgs, FindArgs, GpuiMcp,
+    Instant, Json, MAX_TREE_SNAPSHOTS, Parameters, SnapshotArgs, ToolRouter, TreeArgs, UiTree,
+    Value, WaitElementArgs, WaitStateArgs, encode_error, find_nodes, get_node, json,
+    map_wait_error, object_output, require_bounds, select_tree, serialized_result, state_matches,
+    tool, tool_router, tree_diff, validate_name, validate_timeout,
 };
 
 #[tool_router(router = tree_router)]
 impl GpuiMcp {
-    #[tool(description = "Return the latest rendered GPUI semantic tree with real layout bounds")]
-    async fn get_ui_tree(&self) -> Result<Json<Value>, String> {
+    #[tool(
+        description = "Return the latest rendered GPUI semantic tree with real layout bounds. Optionally return only one node's subtree (`root`), limit its depth (`max_depth`), or omit invisible nodes (`visible_only`); a returned node still lists every child id. Absent fields and empty lists are omitted.",
+        output_schema = rmcp::handler::server::common::schema_for_output::<UiTree>()
+    )]
+    async fn get_ui_tree(
+        &self,
+        Parameters(args): Parameters<TreeArgs>,
+    ) -> Result<CallToolResult, String> {
         let tree = self.shared_tree().await?;
-        Ok(object_output(
-            serde_json::to_value(tree).map_err(encode_error)?,
-        ))
+        match select_tree(&tree, &args)? {
+            Some(selected) => serialized_result(&selected),
+            None => serialized_result(tree.as_ref()),
+        }
     }
 
     #[tool(
@@ -146,19 +154,20 @@ impl GpuiMcp {
         ))
     }
 
-    #[tool(description = "Load a saved in-memory semantic tree snapshot")]
+    #[tool(
+        description = "Load a saved in-memory semantic tree snapshot",
+        output_schema = rmcp::handler::server::common::schema_for_output::<UiTree>()
+    )]
     async fn load_ui_snapshot(
         &self,
         Parameters(args): Parameters<SnapshotArgs>,
-    ) -> Result<Json<Value>, String> {
+    ) -> Result<CallToolResult, String> {
         let snapshots = self.snapshots.read().await;
         let tree = snapshots
             .trees
             .get(&args.name)
             .ok_or_else(|| format!("tree snapshot {:?} was not found", args.name))?;
-        Ok(object_output(
-            serde_json::to_value(tree).map_err(encode_error)?,
-        ))
+        serialized_result(tree.as_ref())
     }
 
     #[tool(

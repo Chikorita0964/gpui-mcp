@@ -425,10 +425,13 @@ pub struct NodeState {
     /// Whether the node owns keyboard focus.
     pub focused: bool,
     /// Optional checked state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
     /// Optional selected state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected: Option<bool>,
     /// Optional expanded state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expanded: Option<bool>,
 }
 
@@ -446,29 +449,39 @@ impl Default for NodeState {
 }
 
 /// One semantic element in the latest rendered GPUI frame.
+///
+/// Absent optional fields and empty lists are omitted from JSON.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct UiNode {
     /// Stable application-provided identifier.
     pub id: String,
     /// Parent identifier, or `None` for a root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     /// Ordered direct child identifiers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<String>,
     /// Semantic role.
     pub role: Role,
     /// Human-readable accessible label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Additional accessible description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Bounds in logical pixels for the current frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bounds: Option<Rect>,
     /// Current state.
     pub state: NodeState,
     /// Actions accepted by the node.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<NodeAction>,
     /// Optional text metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<TextInfo>,
     /// Optional value metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ValueInfo>,
     /// Small, non-secret application-defined metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

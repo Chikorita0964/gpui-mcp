@@ -89,6 +89,19 @@ struct ElementArgs {
     id: String,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+struct TreeArgs {
+    /// Return only this node and its descendants.
+    #[serde(default)]
+    root: Option<String>,
+    /// Levels to include below the starting nodes; 0 returns the starting nodes only.
+    #[serde(default)]
+    max_depth: Option<u16>,
+    /// Omit nodes that are not visible.
+    #[serde(default)]
+    visible_only: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SelectAppArgs {
     /// Opaque target ID returned by `list_apps`.
@@ -1228,6 +1241,55 @@ fn object_output(value: JsonValue) -> Json<ObjectOutput> {
     Json(ObjectOutput { fields })
 }
 
+/// A structured tool result built from one `serde_json::Value`.
+///
+/// rmcp's `Json` output converts the value into a second `Value` before encoding
+/// its text, which doubles the cost of a large tree.
+fn serialized_result(value: &impl Serialize) -> Result<CallToolResult, String> {
+    let structured = serde_json::to_value(value).map_err(encode_error)?;
+    let mut result = CallToolResult::success(vec![ContentBlock::text(structured.to_string())]);
+    result.structured_content = Some(structured);
+    Ok(result)
+}
+
+/// The part of `tree` that `args` asks for, or `None` when it asks for all of it.
+///
+/// A returned node keeps its full `children` list, so a child left out by the
+/// depth limit or the visibility filter is named but absent from `nodes`.
+fn select_tree(tree: &UiTree, args: &TreeArgs) -> Result<Option<UiTree>, String> {
+    if args.root.is_none() && args.max_depth.is_none() && !args.visible_only {
+        return Ok(None);
+    }
+    let starts = match &args.root {
+        Some(root) => vec![get_node(tree, root)?.id.clone()],
+        None => tree.roots.clone(),
+    };
+    let mut nodes = BTreeMap::new();
+    let mut stack: Vec<(&str, u16)> = starts.iter().rev().map(|id| (id.as_str(), 0)).collect();
+    while let Some((id, depth)) = stack.pop() {
+        let Some(node) = tree.nodes.get(id) else {
+            continue;
+        };
+        if args.max_depth.is_none_or(|max| depth < max) {
+            stack.extend(
+                node.children
+                    .iter()
+                    .rev()
+                    .map(|child| (child.as_str(), depth + 1)),
+            );
+        }
+        if !args.visible_only || node.state.visible {
+            nodes.insert(node.id.clone(), node.clone());
+        }
+    }
+    Ok(Some(UiTree {
+        generation: tree.generation,
+        roots: starts,
+        nodes,
+        diagnostics: tree.diagnostics.clone(),
+    }))
+}
+
 fn encode_error(_error: serde_json::Error) -> String {
     "could not encode the tool result".to_owned()
 }
@@ -1256,6 +1318,223 @@ mod tests {
         FindArgs, Role, StartVideoRecordingArgs, UiTree, WaitStateArgs,
         default_result_limit_for_test, find_nodes, state_matches, tree_diff,
     };
+
+    fn stress_tree(rows: usize) -> UiTree {
+        let mut nodes = BTreeMap::new();
+        for row in 0..rows {
+            for (id, label) in [
+                (format!("stress-row-{row}"), format!("Row {row}")),
+                (format!("stress-row-{row}/label"), format!("Row {row}")),
+            ] {
+                nodes.insert(
+                    id.clone(),
+                    UiNode {
+                        id,
+                        parent: Some("stress-list".to_owned()),
+                        children: Vec::new(),
+                        role: Role::ListItem,
+                        label: Some(label),
+                        description: None,
+                        bounds: Some(super::Rect {
+                            x: 32.0,
+                            y: 313.333_34,
+                            width: 576.0,
+                            height: 2.0,
+                        }),
+                        state: NodeState::default(),
+                        actions: vec![super::NodeAction::Hover],
+                        text: None,
+                        value: None,
+                        metadata: BTreeMap::from([(
+                            "accesskit_id".to_owned(),
+                            "17437630179299350513".to_owned(),
+                        )]),
+                    },
+                );
+            }
+        }
+        UiTree {
+            generation: 1,
+            roots: vec!["stress-list".to_owned()],
+            nodes,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// Per-stage cost of one `get_ui_tree` reply for a ~5,000-node tree. Run with
+    /// `cargo test --release -p gpui-mcp-server --bin gpui-mcp tree_reply_stage_costs -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "benchmark; prints timings rather than asserting"]
+    fn tree_reply_stage_costs() {
+        use rmcp::handler::server::tool::IntoCallToolResult as _;
+        use std::time::Instant;
+        let tree = stress_tree(2_500);
+        let stages: [(&str, &dyn Fn() -> usize); 3] = [
+            ("serialized_result", &|| {
+                super::serialized_result(&tree)
+                    .ok()
+                    .and_then(|result| serde_json::to_string(&result).ok())
+                    .map_or(0, |line| line.len())
+            }),
+            ("rmcp Json (previous)", &|| {
+                let output = super::object_output(serde_json::to_value(&tree).unwrap_or_default());
+                match output.into_call_tool_result() {
+                    Ok(rmcp::model::CallToolResponse::Complete(result)) => {
+                        serde_json::to_string(&result).map_or(0, |line| line.len())
+                    }
+                    _ => 0,
+                }
+            }),
+            ("visible subtree", &|| {
+                let args = super::TreeArgs {
+                    root: Some("stress-row-3".to_owned()),
+                    max_depth: Some(1),
+                    visible_only: true,
+                };
+                super::select_tree(&tree, &args)
+                    .ok()
+                    .flatten()
+                    .and_then(|selected| super::serialized_result(&selected).ok())
+                    .and_then(|result| serde_json::to_string(&result).ok())
+                    .map_or(0, |line| line.len())
+            }),
+        ];
+        for (label, stage) in stages {
+            let started = Instant::now();
+            let mut bytes = 0;
+            for _ in 0..10 {
+                bytes = stage();
+            }
+            eprintln!(
+                "{label:<24} {:>8.2} ms  {bytes} bytes",
+                started.elapsed().as_secs_f64() * 100.0
+            );
+        }
+    }
+
+    fn plain_node(id: &str, parent: Option<&str>, children: &[&str], visible: bool) -> UiNode {
+        UiNode {
+            id: id.to_owned(),
+            parent: parent.map(str::to_owned),
+            children: children.iter().map(|child| (*child).to_owned()).collect(),
+            role: Role::Group,
+            label: None,
+            description: None,
+            bounds: None,
+            state: NodeState {
+                visible,
+                ..NodeState::default()
+            },
+            actions: Vec::new(),
+            text: None,
+            value: None,
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn tree_selection_limits_root_depth_and_visibility() -> Result<(), String> {
+        let nodes = [
+            plain_node("app", None, &["panel", "hidden"], true),
+            plain_node("panel", Some("app"), &["row"], true),
+            plain_node("row", Some("panel"), &[], true),
+            plain_node("hidden", Some("app"), &["inside"], false),
+            plain_node("inside", Some("hidden"), &[], true),
+        ];
+        let tree = UiTree {
+            generation: 3,
+            roots: vec!["app".to_owned()],
+            nodes: nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect(),
+            diagnostics: Vec::new(),
+        };
+        let ids = |args: super::TreeArgs| -> Result<Vec<String>, String> {
+            Ok(super::select_tree(&tree, &args)?
+                .map(|selected| selected.nodes.into_keys().collect())
+                .unwrap_or_default())
+        };
+
+        assert!(super::select_tree(&tree, &super::TreeArgs::default())?.is_none());
+        assert_eq!(
+            ids(super::TreeArgs {
+                root: Some("panel".to_owned()),
+                ..super::TreeArgs::default()
+            })?,
+            ["panel", "row"]
+        );
+        assert_eq!(
+            ids(super::TreeArgs {
+                max_depth: Some(1),
+                ..super::TreeArgs::default()
+            })?,
+            ["app", "hidden", "panel"]
+        );
+        assert_eq!(
+            ids(super::TreeArgs {
+                visible_only: true,
+                ..super::TreeArgs::default()
+            })?,
+            ["app", "inside", "panel", "row"],
+            "an invisible node is omitted while its descendants are judged on their own"
+        );
+        let selected = super::select_tree(
+            &tree,
+            &super::TreeArgs {
+                root: Some("panel".to_owned()),
+                ..super::TreeArgs::default()
+            },
+        )?
+        .ok_or("a filtered request returns a tree")?;
+        assert_eq!(selected.roots, ["panel"]);
+        assert_eq!(selected.generation, 3);
+        assert!(
+            super::select_tree(
+                &tree,
+                &super::TreeArgs {
+                    root: Some("missing".to_owned()),
+                    ..super::TreeArgs::default()
+                },
+            )
+            .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tree_replies_omit_absent_fields_and_round_trip() -> Result<(), String> {
+        let node = plain_node("row", None, &[], true);
+        let encoded = serde_json::to_value(&node).map_err(|error| error.to_string())?;
+        assert_eq!(
+            encoded,
+            json!({
+                "id": "row",
+                "role": "group",
+                "state": { "visible": true, "enabled": true, "focused": false },
+            })
+        );
+        let decoded: UiNode = serde_json::from_value(encoded).map_err(|error| error.to_string())?;
+        assert_eq!(decoded, node);
+
+        let tree = UiTree {
+            generation: 1,
+            roots: vec!["row".to_owned()],
+            nodes: BTreeMap::from([("row".to_owned(), node)]),
+            diagnostics: Vec::new(),
+        };
+        let result = super::serialized_result(&tree)?;
+        let text = result
+            .content
+            .first()
+            .and_then(|block| block.as_text())
+            .map(|text| text.text.clone())
+            .ok_or("the result carries a text block")?;
+        let from_text: serde_json::Value =
+            serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        assert_eq!(Some(from_text), result.structured_content);
+        Ok(())
+    }
 
     #[test]
     fn find_is_case_insensitive_by_default() {
