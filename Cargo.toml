@@ -58,9 +58,10 @@ xcap = { version = "0.9.8", features = ["wgc"] }
 widestring = "1.2.1"
 windows-sys = { version = "0.61.2", features = ["Win32_UI_HiDpi"] }
 
-# The vendored gpui-pre carries the minimal visibility fixes recorded in
+# The vendored gpui-pre and gpui-base carry the patch series recorded in
 # vendor/PATCHES.md; every other crate resolves from crates.io.
 [patch.crates-io]
+gpui-base = { path = "vendor/gpui-base" }
 gpui-pre = { path = "vendor/gpui-pre" }
 
 [workspace.lints.rust]

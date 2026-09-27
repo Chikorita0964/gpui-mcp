@@ -1,7 +1,9 @@
 # Vendored dependencies
 
 Each vendored crate is its crates.io release plus a patch series. The workspace
-`[patch.crates-io]` table points the crate at `vendor/<crate>`.
+`[patch.crates-io]` table points the crate at `vendor/<crate>`. Two crates are
+vendored: `gpui-pre` (GPUI itself) and `gpui-base` (the foundation of
+gpui-component).
 
 | Path | Contents |
 |---|---|
@@ -20,4 +22,5 @@ Each vendored crate is its crates.io release plus a patch series. The workspace
 `.gitattributes` marks `vendor/**` as `-text`, so each file keeps the release's
 exact bytes.
 
-Each crate keeps its own license file (`gpui-pre/LICENSE-APACHE`).
+Each crate keeps its own license file (`gpui-pre/LICENSE-APACHE`,
+`gpui-base/LICENSE-APACHE`).

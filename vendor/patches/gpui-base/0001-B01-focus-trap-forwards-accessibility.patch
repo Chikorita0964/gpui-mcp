@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Chico <jjjm6000@gmail.com>
+Date: Thu, 24 Sep 2026 20:10:48 +0900
+Subject: [PATCH] B01 focus trap forwards accessibility
+
+
+diff --git a/src/focus_trap.rs b/src/focus_trap.rs
+index 48b3bf1..b1fdf62 100644
+--- a/src/focus_trap.rs
++++ b/src/focus_trap.rs
+@@ -173,6 +173,27 @@ impl<E: InteractiveElement + ParentElement + Styled + Element + 'static> Element
+         None
+     }
+ 
++    // gpui-mcp patch (B01): the trap is transparent, so the wrapped element keeps its semantics.
++    fn a11y_role(&self) -> Option<gpui::accesskit::Role> {
++        self.base.a11y_role()
++    }
++
++    fn write_a11y_info(&self, node: &mut gpui::accesskit::Node) {
++        self.base.write_a11y_info(node);
++    }
++
++    fn a11y_pointer_interactions(&self) -> gpui::A11yPointerInteractions {
++        self.base.a11y_pointer_interactions()
++    }
++
++    fn a11y_synthetic_children(
++        &mut self,
++        prepaint: &mut Self::PrepaintState,
++        builder: &mut gpui::A11ySubtreeBuilder,
++    ) {
++        self.base.a11y_synthetic_children(prepaint, builder);
++    }
++
+     fn request_layout(
+         &mut self,
+         global_id: Option<&gpui::GlobalElementId>,

@@ -1,0 +1,162 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Chico <jjjm6000@gmail.com>
+Date: Thu, 24 Sep 2026 20:15:13 +0900
+Subject: [PATCH] B02 report disabled state to accessibility
+
+
+diff --git a/src/accordion.rs b/src/accordion.rs
+index 8652276..06e7a29 100644
+--- a/src/accordion.rs
++++ b/src/accordion.rs
+@@ -347,6 +347,7 @@ impl RenderOnce for AccordionTrigger {
+ 
+         self.base
+             .role(Role::Button)
++            .aria_disabled(self.disabled)
+             .aria_expanded(self.open)
+             .when_some(
+                 (!self.disabled).then_some(self.on_change).flatten(),
+diff --git a/src/button.rs b/src/button.rs
+index 84a870c..a7104f7 100644
+--- a/src/button.rs
++++ b/src/button.rs
+@@ -229,6 +229,7 @@ impl RenderOnce for Button {
+             .when_some(self.role.resolve(|| Role::Button), |this, role| {
+                 this.role(role)
+             })
++            .aria_disabled(disabled)
+             .when_some(self.accessibility_label, |this, label| {
+                 this.aria_label(label)
+             })
+diff --git a/src/checkbox.rs b/src/checkbox.rs
+index 670f225..ed7f4aa 100644
+--- a/src/checkbox.rs
++++ b/src/checkbox.rs
+@@ -374,6 +374,7 @@ impl RenderOnce for Checkbox {
+             .when_some(self.role.resolve(|| Role::CheckBox), |this, role| {
+                 this.role(role)
+             })
++            .aria_disabled(disabled)
+             .aria_toggled(self.state.toggled())
+             .when_some(self.accessibility_label, |this, label| {
+                 this.aria_label(label)
+diff --git a/src/date_picker.rs b/src/date_picker.rs
+index e671bac..577d9b8 100644
+--- a/src/date_picker.rs
++++ b/src/date_picker.rs
+@@ -83,6 +83,7 @@ impl RenderOnce for DatePicker {
+         let handler = self.on_open_change;
+         self.base
+             .role(Role::ComboBox)
++            .aria_disabled(disabled)
+             .aria_expanded(open)
+             .track_focus(&self.focus_handle.tab_stop(!disabled))
+             .on_action({
+diff --git a/src/input/base/mod.rs b/src/input/base/mod.rs
+index 6055011..2b91ced 100644
+--- a/src/input/base/mod.rs
++++ b/src/input/base/mod.rs
+@@ -236,6 +236,7 @@ impl RenderOnce for InputBase {
+             .when_some(self.role.resolve(|| Role::TextInput), |this, role| {
+                 this.role(role)
+             })
++            .aria_disabled(self.disabled)
+             .children(self.children)
+             .refine_style(&style)
+     }
+diff --git a/src/link.rs b/src/link.rs
+index bbcfe13..eb5c0aa 100644
+--- a/src/link.rs
++++ b/src/link.rs
+@@ -172,6 +172,7 @@ impl RenderOnce for Link {
+ 
+         self.base
+             .role(Role::Link)
++            .aria_disabled(disabled)
+             .when_some(self.accessibility_label, |this, label| {
+                 this.aria_label(label)
+             })
+diff --git a/src/radio.rs b/src/radio.rs
+index 1940f65..48a86b8 100644
+--- a/src/radio.rs
++++ b/src/radio.rs
+@@ -201,6 +201,7 @@ impl RenderOnce for Radio {
+         self.base
+             .test_support()
+             .role(Role::RadioButton)
++            .aria_disabled(disabled)
+             .aria_toggled(if checked {
+                 Toggled::True
+             } else {
+diff --git a/src/select.rs b/src/select.rs
+index 71f9b88..b9aa127 100644
+--- a/src/select.rs
++++ b/src/select.rs
+@@ -194,6 +194,7 @@ impl RenderOnce for Select {
+ 
+         self.base
+             .role(Role::ComboBox)
++            .aria_disabled(disabled)
+             .aria_expanded(open)
+             .when_some(self.accessibility_label, |this, label| {
+                 this.aria_label(label)
+diff --git a/src/slider.rs b/src/slider.rs
+index d6db0eb..cc448fe 100644
+--- a/src/slider.rs
++++ b/src/slider.rs
+@@ -477,6 +477,7 @@ impl RenderOnce for Slider {
+             .id(("slider", entity_id))
+             .test_support()
+             .role(Role::Slider)
++            .aria_disabled(self.disabled)
+             .aria_numeric_value(state.value().end() as f64)
+             .aria_min_numeric_value(state.min_value() as f64)
+             .aria_max_numeric_value(state.max_value() as f64)
+diff --git a/src/switch.rs b/src/switch.rs
+index cb78c10..f5b0a94 100644
+--- a/src/switch.rs
++++ b/src/switch.rs
+@@ -352,6 +352,7 @@ impl RenderOnce for Switch {
+         self.base
+             .test_support()
+             .role(Role::Switch)
++            .aria_disabled(disabled)
+             .aria_toggled(if checked {
+                 Toggled::True
+             } else {
+diff --git a/src/tabs.rs b/src/tabs.rs
+index 782438c..73bed36 100644
+--- a/src/tabs.rs
++++ b/src/tabs.rs
+@@ -155,6 +155,7 @@ impl RenderOnce for Tab {
+             .id(self.id)
+             .test_support()
+             .role(Role::Tab)
++            .aria_disabled(disabled)
+             // Match Button's neutral control geometry: a fixed-size tab
+             // centers ordinary content, while callers still own its size,
+             // spacing and visual treatment.
+diff --git a/src/toggle.rs b/src/toggle.rs
+index 15f0c77..12a326a 100644
+--- a/src/toggle.rs
++++ b/src/toggle.rs
+@@ -171,6 +171,7 @@ impl RenderOnce for Toggle {
+         self.base
+             .test_support()
+             .role(Role::Button)
++            .aria_disabled(disabled)
+             // Match Button's neutral control geometry: a fixed-size toggle
+             // centers ordinary content, while callers still own its size,
+             // spacing and visual treatment.
+diff --git a/src/tree.rs b/src/tree.rs
+index c737731..33edb0d 100644
+--- a/src/tree.rs
++++ b/src/tree.rs
+@@ -433,6 +433,7 @@ impl Render for TreeState {
+                             .id(ix)
+                             .test_support()
+                             .role(gpui::Role::TreeItem)
++                            .aria_disabled(entry.is_disabled())
+                             .aria_label(entry.item().label.clone())
+                             .aria_selected(entry_state.selected)
+                             .when(entry.is_folder(), |this| {
