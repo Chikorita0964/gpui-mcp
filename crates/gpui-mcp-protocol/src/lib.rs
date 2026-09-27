@@ -1248,8 +1248,9 @@ impl WireResponse {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppId, Capabilities, EndpointDescriptor, InstanceId, LocalEndpoint, NativeWindowId,
-        PROTOCOL_VERSION, Point, ProcessId, Rect, RequestId, WireResponse,
+        AppId, Capabilities, EndpointDescriptor, InputCommand, InstanceId, LocalEndpoint,
+        MouseButton, NativeWindowId, PROTOCOL_VERSION, Point, PointerCommand, PointerScrollDelta,
+        ProcessId, Rect, RequestId, Role, ScreenshotTarget, WireResponse,
     };
 
     #[test]
@@ -1343,5 +1344,315 @@ mod tests {
             "capabilities": { "available": [] }
         });
         assert!(serde_json::from_value::<EndpointDescriptor>(value).is_err());
+    }
+
+    #[test]
+    fn application_id_accepts_valid_identifiers() -> Result<(), Box<dyn std::error::Error>> {
+        for value in ["a", "my.app_name-1"] {
+            assert_eq!(AppId::new(value)?.as_str(), value);
+        }
+        let longest = "a".repeat(64);
+        assert_eq!(AppId::new(longest.as_str())?.as_str(), longest.as_str());
+        Ok(())
+    }
+
+    #[test]
+    fn application_id_rejects_invalid_identifiers() {
+        let too_long = "a".repeat(65);
+        for value in ["", "app id", "app/id", "appé", too_long.as_str()] {
+            assert!(AppId::new(value).is_err(), "{value:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn application_id_parsing_paths_agree_with_constructor()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let expected = AppId::new("my.app_name-1")?;
+        let parsed: AppId = "my.app_name-1".parse()?;
+        let converted = AppId::try_from("my.app_name-1")?;
+        assert_eq!(parsed, expected);
+        assert_eq!(converted, expected);
+        assert!("app id".parse::<AppId>().is_err());
+        assert!(AppId::try_from("app id").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn application_id_deserialization_validates() -> Result<(), Box<dyn std::error::Error>> {
+        let parsed: AppId = serde_json::from_str("\"my.app_name-1\"")?;
+        assert_eq!(parsed.as_str(), "my.app_name-1");
+        assert!(serde_json::from_str::<AppId>("\"bad id\"").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rectangle_contains_is_inclusive_on_edges_and_corners() {
+        let rect = Rect {
+            x: 10.0,
+            y: 20.0,
+            width: 4.0,
+            height: 6.0,
+        };
+        let inside = [
+            Point { x: 10.0, y: 20.0 },
+            Point { x: 14.0, y: 20.0 },
+            Point { x: 10.0, y: 26.0 },
+            Point { x: 14.0, y: 26.0 },
+            Point { x: 10.0, y: 23.0 },
+            Point { x: 14.0, y: 23.0 },
+            Point { x: 12.0, y: 20.0 },
+            Point { x: 12.0, y: 26.0 },
+        ];
+        for point in inside {
+            assert!(rect.contains(point), "{point:?} should be contained");
+        }
+        let outside = [
+            Point { x: 9.99, y: 23.0 },
+            Point { x: 14.01, y: 23.0 },
+            Point { x: 12.0, y: 19.99 },
+            Point { x: 12.0, y: 26.01 },
+        ];
+        for point in outside {
+            assert!(!rect.contains(point), "{point:?} should be excluded");
+        }
+    }
+
+    #[test]
+    fn zero_size_rectangle_contains_only_its_origin() {
+        let rect = Rect {
+            x: 10.0,
+            y: 20.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        assert!(rect.contains(Point { x: 10.0, y: 20.0 }));
+        assert!(!rect.contains(Point { x: 10.01, y: 20.0 }));
+        assert!(!rect.contains(Point { x: 10.0, y: 20.01 }));
+    }
+
+    #[test]
+    fn rectangle_center_is_the_midpoint() {
+        let center = Rect {
+            x: 10.0,
+            y: 20.0,
+            width: 4.0,
+            height: 6.0,
+        }
+        .center();
+        assert!((center.x - 12.0).abs() < 1e-6);
+        assert!((center.y - 23.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mouse_button_wire_shape_is_pinned() -> Result<(), Box<dyn std::error::Error>> {
+        let cases = [
+            (MouseButton::Left, serde_json::json!("left")),
+            (MouseButton::Right, serde_json::json!("right")),
+            (MouseButton::Middle, serde_json::json!("middle")),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(serde_json::to_value(value)?, expected);
+            assert_eq!(serde_json::from_value::<MouseButton>(expected)?, value);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn screenshot_target_wire_shape_is_pinned() -> Result<(), Box<dyn std::error::Error>> {
+        let cases = [
+            (
+                ScreenshotTarget::Window,
+                serde_json::json!({"kind": "window"}),
+            ),
+            (
+                ScreenshotTarget::Region {
+                    rect: Rect {
+                        x: 1.0,
+                        y: 2.0,
+                        width: 3.0,
+                        height: 4.0,
+                    },
+                },
+                serde_json::json!({
+                    "kind": "region",
+                    "rect": {"x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0}
+                }),
+            ),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(serde_json::to_value(value)?, expected);
+            assert_eq!(serde_json::from_value::<ScreenshotTarget>(expected)?, value);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn input_command_wire_shape_is_pinned() -> Result<(), Box<dyn std::error::Error>> {
+        let cases = [
+            (
+                InputCommand::Key {
+                    keystroke: "ctrl-a".to_owned(),
+                },
+                serde_json::json!({"kind": "key", "keystroke": "ctrl-a"}),
+            ),
+            (
+                InputCommand::KeySequence {
+                    keystrokes: vec!["a".to_owned(), "b".to_owned()],
+                },
+                serde_json::json!({"kind": "key_sequence", "keystrokes": ["a", "b"]}),
+            ),
+            (
+                InputCommand::TypeText {
+                    text: "hi".to_owned(),
+                },
+                serde_json::json!({"kind": "type_text", "text": "hi"}),
+            ),
+            (
+                InputCommand::ReplaceText {
+                    text: "hi".to_owned(),
+                },
+                serde_json::json!({"kind": "replace_text", "text": "hi"}),
+            ),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(serde_json::to_value(&value)?, expected);
+            assert_eq!(serde_json::from_value::<InputCommand>(expected)?, value);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn pointer_command_wire_shape_is_pinned() -> Result<(), Box<dyn std::error::Error>> {
+        let cases = [
+            (
+                PointerCommand::MouseMove {
+                    point: Point { x: 1.0, y: 2.0 },
+                    pressed_button: None,
+                },
+                serde_json::json!({
+                    "kind": "mouse_move",
+                    "point": {"x": 1.0, "y": 2.0},
+                    "pressed_button": null
+                }),
+            ),
+            (
+                PointerCommand::MouseMove {
+                    point: Point { x: 1.0, y: 2.0 },
+                    pressed_button: Some(MouseButton::Left),
+                },
+                serde_json::json!({
+                    "kind": "mouse_move",
+                    "point": {"x": 1.0, "y": 2.0},
+                    "pressed_button": "left"
+                }),
+            ),
+            (
+                PointerCommand::MouseDown {
+                    point: Point { x: 1.0, y: 2.0 },
+                    button: MouseButton::Left,
+                    click_count: 1,
+                },
+                serde_json::json!({
+                    "kind": "mouse_down",
+                    "point": {"x": 1.0, "y": 2.0},
+                    "button": "left",
+                    "click_count": 1
+                }),
+            ),
+            (
+                PointerCommand::MouseUp {
+                    point: Point { x: 1.0, y: 2.0 },
+                    button: MouseButton::Right,
+                    click_count: 2,
+                },
+                serde_json::json!({
+                    "kind": "mouse_up",
+                    "point": {"x": 1.0, "y": 2.0},
+                    "button": "right",
+                    "click_count": 2
+                }),
+            ),
+            (
+                PointerCommand::ScrollWheel {
+                    point: Point { x: 1.0, y: 2.0 },
+                    delta: PointerScrollDelta::Pixels {
+                        delta_x: 1.0,
+                        delta_y: -2.0,
+                    },
+                },
+                serde_json::json!({
+                    "kind": "scroll_wheel",
+                    "point": {"x": 1.0, "y": 2.0},
+                    "delta": {"unit": "pixels", "delta_x": 1.0, "delta_y": -2.0}
+                }),
+            ),
+            (
+                PointerCommand::ScrollWheel {
+                    point: Point { x: 1.0, y: 2.0 },
+                    delta: PointerScrollDelta::Lines {
+                        delta_x: 0.0,
+                        delta_y: 3.0,
+                    },
+                },
+                serde_json::json!({
+                    "kind": "scroll_wheel",
+                    "point": {"x": 1.0, "y": 2.0},
+                    "delta": {"unit": "lines", "delta_x": 0.0, "delta_y": 3.0}
+                }),
+            ),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(serde_json::to_value(&value)?, expected);
+            assert_eq!(serde_json::from_value::<PointerCommand>(expected)?, value);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn role_wire_shape_is_pinned() -> Result<(), Box<dyn std::error::Error>> {
+        let cases = [
+            (Role::Generic, "generic"),
+            (Role::Application, "application"),
+            (Role::Window, "window"),
+            (Role::Group, "group"),
+            (Role::Button, "button"),
+            (Role::Checkbox, "checkbox"),
+            (Role::Radio, "radio"),
+            (Role::Switch, "switch"),
+            (Role::Link, "link"),
+            (Role::Text, "text"),
+            (Role::TextInput, "text_input"),
+            (Role::SearchInput, "search_input"),
+            (Role::Slider, "slider"),
+            (Role::Progress, "progress"),
+            (Role::Image, "image"),
+            (Role::List, "list"),
+            (Role::ListItem, "list_item"),
+            (Role::Tree, "tree"),
+            (Role::TreeItem, "tree_item"),
+            (Role::Table, "table"),
+            (Role::Row, "row"),
+            (Role::Cell, "cell"),
+            (Role::Menu, "menu"),
+            (Role::MenuItem, "menu_item"),
+            (Role::Combobox, "combobox"),
+            (Role::Option, "option"),
+            (Role::Separator, "separator"),
+            (Role::Tooltip, "tooltip"),
+            (Role::TabList, "tab_list"),
+            (Role::Tab, "tab"),
+            (Role::Toolbar, "toolbar"),
+            (Role::Dialog, "dialog"),
+            (Role::Alert, "alert"),
+            (Role::ScrollArea, "scroll_area"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(serde_json::to_value(value)?, serde_json::json!(expected));
+            assert_eq!(
+                serde_json::from_value::<Role>(serde_json::json!(expected))?,
+                value
+            );
+        }
+        Ok(())
     }
 }
