@@ -593,10 +593,17 @@ fn node_actions(node: &accesskit::Node) -> Vec<NodeAction> {
             || (is_editable_text_role(node.role()) && supports(Action::SetValue)),
         NodeAction::SetText,
     );
+    let steps = supports(Action::Increment) || supports(Action::Decrement);
     push_action(
         &mut actions,
-        supports(Action::SetValue),
+        supports(Action::SetValue) || steps,
         NodeAction::SetValue,
+    );
+    push_action(&mut actions, steps, NodeAction::Step);
+    push_action(
+        &mut actions,
+        supports(Action::Expand) || supports(Action::Collapse),
+        NodeAction::Expand,
     );
     push_action(
         &mut actions,
@@ -1053,6 +1060,307 @@ mod tests {
         );
     }
 
+    type SelectItems = gpui::component::select::SearchableVec<&'static str>;
+
+    struct Widgets {
+        slider: Entity<gpui::component::slider::SliderState>,
+        input: Entity<gpui::component::input::InputState>,
+        select: Entity<gpui::component::select::SelectState<SelectItems>>,
+        tree: Entity<gpui::base::TreeState>,
+    }
+
+    impl Render for Widgets {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            use gpui::component::{
+                Disableable as _, Root,
+                accordion::Accordion,
+                button::Button,
+                checkbox::Checkbox,
+                input::Input,
+                list::ListItem,
+                progress::Progress,
+                radio::Radio,
+                select::Select,
+                slider::Slider,
+                switch::Switch,
+                tab::{Tab, TabBar},
+                table::{Table, TableBody, TableCell, TableHead, TableHeader, TableRow},
+                tree::Tree,
+            };
+            div()
+                .id("root")
+                .role(Role::Application)
+                .size_full()
+                .child(Button::new("save").label("Save"))
+                .child(Button::new("locked").label("Locked").disabled(true))
+                .child(Switch::new("wifi").label("Wi-Fi").checked(true))
+                .child(Switch::new("airplane").label("Airplane").disabled(true))
+                .child(Checkbox::new("agree").label("Agree").checked(true))
+                .child(Radio::new("dark").label("Dark").checked(true))
+                .child(Slider::new(&self.slider))
+                .child(Input::new(&self.input))
+                .child(Select::new(&self.select).placeholder("Language"))
+                .child(Progress::new("upload").value(40.))
+                .child(
+                    TabBar::new("tabs")
+                        .selected_index(1)
+                        .child(Tab::new().label("General"))
+                        .child(Tab::new().label("Advanced")),
+                )
+                .child(
+                    Accordion::new("faq")
+                        .item(|item| item.title("First").open(true).child("Body one"))
+                        .item(|item| item.title("Second").child("Body two")),
+                )
+                .child(div().h(px(60.)).child(Tree::new(
+                    &self.tree,
+                    |ix, entry, selected, _, _| {
+                        ListItem::new(ix)
+                            .selected(selected)
+                            .child(entry.item().label.clone())
+                    },
+                )))
+                .child(
+                    Table::new()
+                        .child(
+                            TableHeader::new()
+                                .child(TableRow::new().child(TableHead::new().child("Name"))),
+                        )
+                        .child(
+                            TableBody::new()
+                                .child(TableRow::new().child(TableCell::new().child("Alice"))),
+                        ),
+                )
+                .children(Root::render_dialog_layer(window, cx))
+        }
+    }
+
+    /// Render the GPUI Kit widget set, with a dialog open, and return the published tree.
+    fn render_component_widgets(cx: &mut TestAppContext) -> gpui_mcp_protocol::UiTree {
+        use gpui::component::{Root, WindowExt as _};
+        cx.update(|cx| {
+            gpui::component::init(cx);
+            cx.set_reduce_motion(true);
+        });
+        let automation = Automation::isolated();
+        let for_window = automation.clone();
+        let (_root, visual) = cx.add_window_view(move |window, cx| {
+            for_window.attach(window);
+            let tree = cx.new(|cx| {
+                gpui::base::TreeState::new(cx).items(vec![
+                    gpui::base::TreeItem::new("src", "src")
+                        .expanded(true)
+                        .child(gpui::base::TreeItem::new("main", "main.rs")),
+                ])
+            });
+            let view = cx.new(|cx| Widgets {
+                slider: cx.new(|_| gpui::component::slider::SliderState::new()),
+                input: cx.new(|cx| {
+                    gpui::component::input::InputState::new(window, cx).default_value("hello")
+                }),
+                select: cx.new(|cx| {
+                    gpui::component::select::SelectState::new(
+                        SelectItems::new(vec!["Rust", "Go"]),
+                        None,
+                        window,
+                        cx,
+                    )
+                }),
+                tree,
+            });
+            Root::new(view, window, cx)
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.open_dialog(cx, |dialog, _, _| dialog.title("Confirm").child("Proceed?"));
+        });
+        visual.run_until_parked();
+        automation.snapshot()
+    }
+
+    fn with_role(tree: &gpui_mcp_protocol::UiTree, role: McpRole) -> Vec<&UiNode> {
+        tree.nodes
+            .values()
+            .filter(|node| node.role == role)
+            .collect()
+    }
+
+    #[gpui::test]
+    fn component_widgets_publish_their_roles_and_state(cx: &mut TestAppContext) {
+        let tree = render_component_widgets(cx);
+        let node = |id: &str| {
+            tree.nodes
+                .get(id)
+                .unwrap_or_else(|| unreachable!("the widget set publishes {id}"))
+        };
+
+        assert_eq!(node("save").role, McpRole::Button);
+        assert_eq!(node("save").label.as_deref(), Some("Save"));
+        assert_eq!(node("wifi").role, McpRole::Switch);
+        assert_eq!(node("wifi").state.checked, Some(true));
+        assert_eq!(node("wifi").label.as_deref(), Some("Wi-Fi"));
+        assert_eq!(node("airplane").state.checked, Some(false));
+        assert_eq!(node("agree").role, McpRole::Checkbox);
+        assert_eq!(node("agree").state.checked, Some(true));
+        assert_eq!(node("dark").role, McpRole::Radio);
+        assert_eq!(node("dark").state.checked, Some(true));
+        assert_eq!(node("upload").role, McpRole::Progress);
+        assert_eq!(node("tabs").role, McpRole::TabList);
+
+        let tabs = with_role(&tree, McpRole::Tab);
+        assert_eq!(tabs.len(), 2);
+        assert!(tabs.iter().any(
+            |tab| tab.label.as_deref() == Some("Advanced") && tab.state.selected == Some(true)
+        ));
+
+        let slider = with_role(&tree, McpRole::Slider);
+        assert_eq!(slider.len(), 1);
+        let range = slider[0].value.clone().unwrap_or_default();
+        assert_eq!((range.min, range.max), (Some(0.0), Some(100.0)));
+
+        let input = with_role(&tree, McpRole::TextInput);
+        assert_eq!(input.len(), 1);
+        assert_eq!(
+            input[0].text.as_ref().map(|text| text.text.as_str()),
+            Some("hello")
+        );
+        assert!(input[0].actions.contains(&NodeAction::SetText));
+
+        let combobox = with_role(&tree, McpRole::Combobox);
+        assert_eq!(combobox.len(), 1);
+        assert_eq!(combobox[0].state.expanded, Some(false));
+        assert!(combobox[0].actions.contains(&NodeAction::Click));
+
+        let tree_items = with_role(&tree, McpRole::TreeItem);
+        assert_eq!(tree_items.len(), 2);
+        assert!(
+            tree_items
+                .iter()
+                .any(|item| item.label.as_deref() == Some("src")
+                    && item.state.expanded == Some(true))
+        );
+
+        assert_eq!(with_role(&tree, McpRole::Table).len(), 1);
+        assert_eq!(with_role(&tree, McpRole::Row).len(), 2);
+        assert_eq!(with_role(&tree, McpRole::Cell).len(), 2);
+
+        let triggers: Vec<_> = with_role(&tree, McpRole::Button)
+            .into_iter()
+            .filter(|button| button.state.expanded.is_some())
+            .collect();
+        assert_eq!(
+            triggers.len(),
+            2,
+            "each accordion trigger reports expansion"
+        );
+    }
+
+    struct SliderOnly {
+        slider: Entity<gpui::component::slider::SliderState>,
+    }
+
+    impl Render for SliderOnly {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("root")
+                .role(Role::Application)
+                .size_full()
+                .child(gpui::component::slider::Slider::new(&self.slider))
+        }
+    }
+
+    #[gpui::test]
+    fn semantic_actions_step_a_slider_without_a_keyboard(cx: &mut TestAppContext) {
+        cx.update(gpui::component::init);
+        let automation = Automation::isolated();
+        let for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, cx| {
+            for_window.attach(window);
+            SliderOnly {
+                slider: cx.new(|_| gpui::component::slider::SliderState::new()),
+            }
+        });
+        visual.run_until_parked();
+        let slider = || {
+            automation
+                .snapshot()
+                .nodes
+                .into_values()
+                .find(|node| node.role == McpRole::Slider)
+                .unwrap_or_else(|| unreachable!("the fixture publishes a slider"))
+        };
+        let before = slider();
+        assert!(before.actions.contains(&NodeAction::Step));
+        let target = before
+            .metadata
+            .get("accesskit_id")
+            .and_then(|id| id.parse::<u64>().ok())
+            .map_or_else(
+                || unreachable!("the slider carries its accesskit id"),
+                NodeId,
+            );
+
+        visual.update(|window, cx| {
+            let (action, data) =
+                crate::input::accesskit_action(gpui_mcp_protocol::SemanticAction::Increment);
+            assert!(window.a11y_action_is_handled(target, action));
+            window.perform_a11y_action(target, action, data, cx);
+        });
+        visual.run_until_parked();
+
+        let value = |node: &UiNode| node.value.as_ref().map(|value| value.value.clone());
+        assert_eq!(value(&before), Some("0".to_owned()));
+        assert_eq!(
+            value(&slider()),
+            Some("1".to_owned()),
+            "Increment steps the slider (C17)"
+        );
+    }
+
+    /// Semantics the vendored patches add: dialog containers (B01), disabled
+    /// state (B02), content-derived names (C16), and value actions.
+    #[gpui::test]
+    fn component_widgets_publish_patched_semantics(cx: &mut TestAppContext) {
+        let tree = render_component_widgets(cx);
+
+        let dialogs = with_role(&tree, McpRole::Dialog);
+        assert_eq!(dialogs.len(), 1, "an open dialog is a container");
+        let close = tree
+            .nodes
+            .values()
+            .find(|node| node.label.as_deref() == Some("Close"));
+        assert_eq!(
+            close.and_then(|node| node.parent.as_deref()),
+            Some(dialogs[0].id.as_str()),
+            "the dialog's close button sits inside it"
+        );
+
+        assert!(!tree.nodes["locked"].state.enabled, "a disabled button");
+        assert!(!tree.nodes["airplane"].state.enabled, "a disabled switch");
+
+        let triggers: Vec<_> = with_role(&tree, McpRole::Button)
+            .into_iter()
+            .filter(|button| button.state.expanded.is_some())
+            .collect();
+        assert!(
+            triggers.iter().all(|trigger| trigger
+                .label
+                .as_deref()
+                .is_some_and(|label| !label.is_empty())),
+            "an accordion trigger is named by its title: {:?}",
+            triggers
+                .iter()
+                .map(|trigger| (&trigger.id, &trigger.label))
+                .collect::<Vec<_>>()
+        );
+
+        let slider = with_role(&tree, McpRole::Slider);
+        assert!(
+            slider[0].actions.contains(&NodeAction::SetValue),
+            "a slider can be set without a keyboard"
+        );
+    }
+
     struct Heavy {
         rows: usize,
     }
@@ -1319,6 +1627,65 @@ mod tests {
         assert!(
             stats.root_paint_max_ms > 0.0,
             "paint is measured: {stats:?}"
+        );
+    }
+
+    struct ContentNamed;
+
+    impl Render for ContentNamed {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("root")
+                .role(Role::Group)
+                .size_full()
+                .child(
+                    div()
+                        .id("plain")
+                        .role(Role::Button)
+                        .w(px(80.0))
+                        .h(px(24.0))
+                        .child(div().child("Open").child(" file")),
+                )
+                .child(
+                    div()
+                        .id("named")
+                        .role(Role::Button)
+                        .aria_label("Explicit")
+                        .w(px(80.0))
+                        .h(px(24.0))
+                        .child("Ignored"),
+                )
+                .child(
+                    div()
+                        .id("region")
+                        .role(Role::Group)
+                        .w(px(80.0))
+                        .h(px(24.0))
+                        .child("Not a name"),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn content_names_controls_without_an_author_label(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            for_window.attach(window);
+            ContentNamed
+        });
+        visual.run_until_parked();
+        let tree = automation.snapshot();
+
+        assert_eq!(
+            tree.nodes["plain"].label.as_deref(),
+            Some("Open file"),
+            "a button takes the plain text drawn inside it (C16)"
+        );
+        assert_eq!(tree.nodes["named"].label.as_deref(), Some("Explicit"));
+        assert_eq!(
+            tree.nodes["region"].label, None,
+            "a group is not named from its content"
         );
     }
 

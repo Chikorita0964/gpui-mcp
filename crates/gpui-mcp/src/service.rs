@@ -639,24 +639,24 @@ fn handle_ui_operation(
             window.refresh();
             Ok(BridgeResult::Ack)
         }
+        Operation::PerformAction { node_id, action } => {
+            let target = accesskit_node(state, &node_id)?;
+            let (action, data) = input::accesskit_action(action);
+            if !window.a11y_action_is_handled(target, action)
+                && !matches!(action, gpui::accesskit::Action::Click)
+            {
+                return Err(BridgeError::new(
+                    ErrorCode::Unsupported,
+                    "the semantic node does not handle this action",
+                ));
+            }
+            window.perform_a11y_action(target, action, data, cx);
+            window.refresh();
+            Ok(BridgeResult::Ack)
+        }
         Operation::Focus { node_id } => {
-            let accesskit_id = state
-                .with_node(&node_id, |node| {
-                    node.metadata
-                        .get("accesskit_id")
-                        .and_then(|id| id.parse::<u64>().ok())
-                })
-                .ok_or_else(|| {
-                    BridgeError::new(ErrorCode::NotFound, "semantic node was not found")
-                })?
-                .ok_or_else(|| {
-                    BridgeError::new(
-                        ErrorCode::Unsupported,
-                        "the semantic node carries no accessibility identity to focus",
-                    )
-                })?;
-            let Some(handle) = window.a11y_focus_handle(gpui::accesskit::NodeId(accesskit_id), cx)
-            else {
+            let target = accesskit_node(state, &node_id)?;
+            let Some(handle) = window.a11y_focus_handle(target, cx) else {
                 return Err(BridgeError::new(
                     ErrorCode::NotFound,
                     "semantic node is not focusable in the current frame",
@@ -953,6 +953,27 @@ async fn ensure_observing(context: &ConnectionContext) {
     }
 }
 
+/// The AccessKit node a published semantic node was built from.
+fn accesskit_node(
+    state: &SharedState,
+    node_id: &str,
+) -> Result<gpui::accesskit::NodeId, BridgeError> {
+    state
+        .with_node(node_id, |node| {
+            node.metadata
+                .get("accesskit_id")
+                .and_then(|id| id.parse::<u64>().ok())
+        })
+        .ok_or_else(|| BridgeError::new(ErrorCode::NotFound, "semantic node was not found"))?
+        .map(gpui::accesskit::NodeId)
+        .ok_or_else(|| {
+            BridgeError::new(
+                ErrorCode::Unsupported,
+                "the semantic node carries no accessibility identity",
+            )
+        })
+}
+
 fn tree_result(update: TreeUpdate) -> BridgeResult {
     match update {
         TreeUpdate::Unchanged => BridgeResult::TreeUnchanged,
@@ -1036,14 +1057,6 @@ async fn run_operation(
         .await
         .map(BridgeResult::FrameStats),
         Operation::GetFrameStats => Ok(BridgeResult::FrameStats(context.state.frame_stats())),
-        Operation::GetPointerLocation => {
-            dispatch_to_ui(
-                Operation::GetPointerLocation,
-                &context.command_tx,
-                context.operation_timeout,
-            )
-            .await
-        }
         Operation::GetLogs { limit, min_level } => Ok(BridgeResult::Logs(
             context.state.logs(limit, min_level.as_deref()),
         )),
@@ -1052,8 +1065,10 @@ async fn run_operation(
             Ok(BridgeResult::Ack)
         }
         operation @ (Operation::Input { .. }
+        | Operation::GetPointerLocation
         | Operation::PointerInput { .. }
         | Operation::Focus { .. }
+        | Operation::PerformAction { .. }
         | Operation::Refresh
         | Operation::GetLiveDocument
         | Operation::PreviewLiveDocument { .. }
@@ -1145,7 +1160,7 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
     match operation {
         Operation::Input { command } => input::validate(command),
         Operation::PointerInput { command } => input::validate_pointer(command),
-        Operation::Focus { node_id } => {
+        Operation::Focus { node_id } | Operation::PerformAction { node_id, .. } => {
             if node_id.is_empty()
                 || node_id.len() > MAX_ID_BYTES
                 || node_id.chars().any(char::is_control)

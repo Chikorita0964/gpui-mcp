@@ -5,7 +5,7 @@ use gpui::{
 };
 use gpui_mcp_protocol::{
     BridgeError, ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
-    PointerCommand, PointerScrollDelta,
+    PointerCommand, PointerScrollDelta, SemanticAction,
 };
 
 pub(crate) fn validate(command: &InputCommand) -> Result<(), BridgeError> {
@@ -186,6 +186,27 @@ pub(crate) fn dispatch_keyboard(
 /// `Focus` operation resolves before calling this function.
 pub(crate) fn dispatch_focus(handle: &FocusHandle, window: &mut Window, cx: &mut App) {
     window.focus(handle, cx);
+}
+
+/// The AccessKit action and payload that assistive technology sends for `action`.
+pub(crate) fn accesskit_action(
+    action: SemanticAction,
+) -> (gpui::accesskit::Action, Option<gpui::accesskit::ActionData>) {
+    use gpui::accesskit::{Action, ActionData};
+    match action {
+        SemanticAction::Click => (Action::Click, None),
+        SemanticAction::Increment => (Action::Increment, None),
+        SemanticAction::Decrement => (Action::Decrement, None),
+        SemanticAction::Expand => (Action::Expand, None),
+        SemanticAction::Collapse => (Action::Collapse, None),
+        SemanticAction::SetValue { value } => (
+            Action::SetValue,
+            Some(match value.parse::<f64>() {
+                Ok(number) if number.is_finite() => ActionData::NumericValue(number),
+                _ => ActionData::Value(value.into_boxed_str()),
+            }),
+        ),
+    }
 }
 
 fn unsupported(message: &'static str) -> BridgeError {

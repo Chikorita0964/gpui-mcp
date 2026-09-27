@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Current wire protocol version.
-pub const PROTOCOL_VERSION: u16 = 14;
+pub const PROTOCOL_VERSION: u16 = 15;
 /// Maximum accepted request frame, including its four-byte length prefix.
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 /// Maximum accepted response frame. Screenshots are base64 encoded inside it.
@@ -378,6 +378,32 @@ pub enum NodeAction {
     SetValue,
     /// Scroll at the node's center.
     Scroll,
+    /// Step a numeric value up or down by one step.
+    Step,
+    /// Expand or collapse the node.
+    Expand,
+}
+
+/// Accessibility action the bridge performs on a node the way assistive
+/// technology requests it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum SemanticAction {
+    /// Activate the node.
+    Click,
+    /// Increase a numeric value by one step.
+    Increment,
+    /// Decrease a numeric value by one step.
+    Decrement,
+    /// Expand the node.
+    Expand,
+    /// Collapse the node.
+    Collapse,
+    /// Replace the node's value.
+    SetValue {
+        /// New value.
+        value: String,
+    },
 }
 
 /// Optional editable text metadata supplied by the application.
@@ -1011,6 +1037,13 @@ pub enum Operation {
     Focus {
         /// Stable semantic node identifier.
         node_id: String,
+    },
+    /// Perform an accessibility action on one node from the current frame.
+    PerformAction {
+        /// Stable semantic node identifier.
+        node_id: String,
+        /// Action to perform.
+        action: SemanticAction,
     },
     /// Wait without polling until a newer semantic tree is published. The tree
     /// arrives as a [`BridgeResult::TreeDelta`] from `after_generation` when

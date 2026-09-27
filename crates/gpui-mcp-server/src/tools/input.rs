@@ -353,7 +353,11 @@ impl GpuiMcp {
                     .as_ref()
                     .ok_or_else(|| format!("element {:?} has no value", args.id))?;
                 validate_value(&args.value, value)?;
-                self.set_slider_value(&args.id, value, &args.value).await?;
+                if node.actions.contains(&NodeAction::Step) {
+                    self.step_slider_value(&args.id, value, &args.value).await?;
+                } else {
+                    self.set_slider_value(&args.id, value, &args.value).await?;
+                }
             }
             _ => {
                 return Err(format!(
@@ -404,6 +408,48 @@ impl GpuiMcp {
         };
         self.scroll_at(point, args.delta_x, args.delta_y).await?;
         Ok(ack_json("scrolled"))
+    }
+
+    /// Move a slider to `requested` with its own Increment and Decrement actions.
+    async fn step_slider_value(
+        &self,
+        id: &str,
+        current: &super::ValueInfo,
+        requested: &str,
+    ) -> Result<(), String> {
+        let target = requested
+            .parse::<f64>()
+            .map_err(|_| "slider value must be numeric".to_owned())?;
+        let now = current
+            .value
+            .parse::<f64>()
+            .map_err(|_| "slider did not expose a numeric value".to_owned())?;
+        let step = current
+            .step
+            .filter(|step| *step > 0.0)
+            .ok_or_else(|| "slider must expose a positive step".to_owned())?;
+        let steps = ((target - now) / step).round();
+        if steps.abs() > 1_000.0 {
+            return Err("slider target requires more than 1000 steps".to_owned());
+        }
+        let action = if steps >= 0.0 {
+            gpui_mcp_protocol::SemanticAction::Increment
+        } else {
+            gpui_mcp_protocol::SemanticAction::Decrement
+        };
+        let count = (0..=1_000_u16)
+            .find(|count| (f64::from(*count) - steps.abs()).abs() < f64::EPSILON)
+            .ok_or_else(|| "slider target does not align to its step".to_owned())?;
+        for _ in 0..count {
+            self.ack(Operation::PerformAction {
+                node_id: id.to_owned(),
+                action: action.clone(),
+            })
+            .await?;
+        }
+        self.settle_after_refresh(std::time::Duration::from_secs(2))
+            .await
+            .map(|_| ())
     }
 
     async fn set_slider_value(
