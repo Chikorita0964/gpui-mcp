@@ -82,3 +82,9 @@ strip = "symbols"
 
 [profile.dev.package.image]
 opt-level = 2
+
+# GPUI's layout and paint dominate a debug frame; optimizing dependencies keeps
+# debug-build UI (and anything driven through the bridge) interactive while
+# workspace crates stay unoptimized for debugging.
+[profile.dev.package."*"]
+opt-level = 2

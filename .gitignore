@@ -17,3 +17,6 @@ AGENTS.md
 .orchestrator/
 .vscode/
 .tmp/
+.ccb/
+CLAUDE.md
+.claude/
