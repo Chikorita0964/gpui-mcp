@@ -368,6 +368,46 @@ impl A11y {
     }
 }
 
+/// gpui-mcp patch (C16): roles whose accessible name comes from their content
+/// when the author gives none, as ARIA's name-from-content rule lists them.
+fn is_named_from_content(role: accesskit::Role) -> bool {
+    use accesskit::Role as R;
+    matches!(
+        role,
+        R::Button
+            | R::DefaultButton
+            | R::CheckBox
+            | R::RadioButton
+            | R::Switch
+            | R::Link
+            | R::Tab
+            | R::MenuItem
+            | R::MenuItemCheckBox
+            | R::MenuItemRadio
+            | R::ListBoxOption
+            | R::MenuListOption
+            | R::TreeItem
+            | R::ListItem
+            | R::Row
+            | R::Cell
+            | R::GridCell
+            | R::ColumnHeader
+            | R::RowHeader
+            | R::Heading
+            | R::Tooltip
+            | R::DisclosureTriangle
+    )
+}
+
+fn push_words(buffer: &mut String, text: &str) {
+    for word in text.split_whitespace() {
+        if !buffer.is_empty() {
+            buffer.push(' ');
+        }
+        buffer.push_str(word);
+    }
+}
+
 /// Builder API for synthetic children. See the docs for
 /// [`Element::a11y_synthetic_children`].
 pub struct A11ySubtreeBuilder<'a> {
@@ -440,6 +480,8 @@ impl<'a> A11ySubtreeBuilder<'a> {
 pub(crate) struct A11yNodeBuilder {
     ids_stack: SmallVec<[NodeId; 16]>,
     nodes_stack: SmallVec<[accesskit::Node; 16]>,
+    // gpui-mcp patch (C16): text drawn inside each open node, for content-derived names.
+    text_stack: SmallVec<[String; 16]>,
     /// This is the exact type required by accesskit, so we can't just make it a
     /// `HashMap<NodeId, Node>` to remove the need for `seen_ids`
     all_nodes: Vec<(NodeId, accesskit::Node)>,
@@ -461,6 +503,7 @@ impl A11yNodeBuilder {
         Self {
             ids_stack: SmallVec::new(),
             nodes_stack: SmallVec::new(),
+            text_stack: SmallVec::new(),
             all_nodes: Vec::new(),
             seen_ids: FxHashSet::default(),
             focus: None,
@@ -505,7 +548,15 @@ impl A11yNodeBuilder {
         }
         self.ids_stack.push(id);
         self.nodes_stack.push(node);
+        self.text_stack.push(String::new());
         true
+    }
+
+    /// gpui-mcp patch (C16): record text drawn inside the innermost open node.
+    pub(crate) fn push_text(&mut self, text: &str) {
+        if let Some(buffer) = self.text_stack.last_mut() {
+            push_words(buffer, text);
+        }
     }
 
     /// Add a leaf node as a child of the current top-of-stack node, without
@@ -534,7 +585,14 @@ impl A11yNodeBuilder {
     pub(crate) fn pop(&mut self) {
         debug_assert!(self.ids_stack.len() > 1, "pop would remove the root node");
 
-        if let (Some(id), Some(node)) = (self.ids_stack.pop(), self.nodes_stack.pop()) {
+        if let (Some(id), Some(mut node)) = (self.ids_stack.pop(), self.nodes_stack.pop()) {
+            let text = self.text_stack.pop().unwrap_or_default();
+            if !text.is_empty() {
+                if node.label().is_none() && is_named_from_content(node.role()) {
+                    node.set_label(text.clone());
+                }
+                self.push_text(&text);
+            }
             self.all_nodes.push((id, node));
         }
     }
@@ -544,6 +602,8 @@ impl A11yNodeBuilder {
         self.all_nodes.clear();
         self.ids_stack.clear();
         self.nodes_stack.clear();
+        self.text_stack.clear();
+        self.text_stack.push(String::new());
         self.seen_ids.clear();
         #[cfg(debug_assertions)]
         self.node_info.clear();
@@ -629,6 +689,7 @@ impl A11yNodeBuilder {
                 self.all_nodes.push((id, node));
             }
         }
+        self.text_stack.clear();
 
         let focus = match self.active_descendant {
             Some(id) if self.has_node(id) => id,

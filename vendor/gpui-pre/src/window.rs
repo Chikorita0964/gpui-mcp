@@ -6905,6 +6905,15 @@ impl Window {
         }
     }
 
+    /// gpui-mcp patch (C16): record visible text for the innermost open
+    /// accessibility node, which takes it as its name when its role is named
+    /// from content and the author gave none.
+    pub(crate) fn a11y_push_text(&mut self, text: &str) {
+        if self.a11y.is_active() {
+            self.a11y.nodes.push_text(text);
+        }
+    }
+
     /// gpui-mcp patch (C14): whether the window is invalidated and will draw again.
     pub fn is_redraw_pending(&self) -> bool {
         self.invalidator.is_dirty() || !self.next_frame_callbacks.borrow().is_empty()
@@ -6973,6 +6982,36 @@ impl Window {
             .entry(node_id)
             .or_default()
             .push((action, Box::new(listener)));
+    }
+
+    /// gpui-mcp patch (C17): perform an accessibility action on a node the way
+    /// assistive technology requests it, through the node's action listeners
+    /// and GPUI's built-in handling.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn perform_a11y_action(
+        &mut self,
+        node_id: accesskit::NodeId,
+        action: accesskit::Action,
+        data: Option<accesskit::ActionData>,
+        cx: &mut App,
+    ) {
+        self.handle_a11y_action(
+            accesskit::ActionRequest {
+                action,
+                target_tree: accesskit::TreeId::ROOT,
+                target_node: node_id,
+                data,
+            },
+            cx,
+        );
+    }
+
+    /// gpui-mcp patch (C17): whether a node has a listener for `action` this frame.
+    pub fn a11y_action_is_handled(&self, node_id: accesskit::NodeId, action: accesskit::Action) -> bool {
+        self.a11y
+            .action_listeners
+            .get(&node_id)
+            .is_some_and(|listeners| listeners.iter().any(|(candidate, _)| *candidate == action))
     }
 
     #[cfg(not(target_family = "wasm"))]

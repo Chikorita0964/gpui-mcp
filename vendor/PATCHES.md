@@ -46,6 +46,11 @@ commands. To move to a newer `gpui-pre`:
 | `0007` | C13 |
 | `0008` | C14, C15 |
 | `0009` | C05 (stationary platform mouse moves) |
+| `0010` | C16 |
+| `0011` | C17 |
+
+`vendor/gpui-base` carries its own series; see [gpui-base](#gpui-base-patches)
+at the end.
 
 ## C01 - Vendored crate and workspace patch
 
@@ -351,6 +356,24 @@ if let Some(leaf) = global_id.0.last() {
 | Opened | The bridge builds the tree only while a client uses it and stops after 30 seconds of silence; an app without a client pays nothing. Isolated automation (tests, previews) observes from attach. |
 | Why | Stock activation comes only from the platform adapter. C02 forced it on for every window forever, which also pushed every frame's tree to the OS adapter. |
 
+## C16 - Names from text content
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/window/a11y.rs`, `elements/text.rs`, `window.rs` |
+| Item | `A11yNodeBuilder` keeps a text stack; `Window::a11y_push_text` records the text of `&str`, `SharedString`, and `StyledText` elements during prepaint; on `pop`, a node whose role is named from content and has no label takes the collected text, which also flows to the parent |
+| Opened | Buttons, tabs, links, menu items, and accordion triggers that render a text child report it as their name, as the ARIA name-from-content rule does. |
+| Why | Stock GPUI labels a node only from `aria_label`, so most gpui-component controls published an unnamed node. |
+
+## C17 - Perform accessibility actions
+
+| | |
+|---|---|
+| File | `vendor/gpui-pre/src/window.rs` |
+| Item | `Window::perform_a11y_action(node_id, action, data, cx)` wraps the private `handle_a11y_action`; `Window::a11y_action_is_handled(node_id, action)` reports whether a listener exists |
+| Opened | The bridge's `PerformAction` operation runs a node's own AccessKit action (Increment, Decrement, Expand, Collapse, SetValue, Click) on the UI thread, the path a screen reader takes. |
+| Why | Stock GPUI reaches `handle_a11y_action` only from the platform adapter, so the bridge had to emulate value changes with keystrokes. |
+
 ## Fields read without a patch
 
 C03 and C04 read `A11y::node_bounds` and `A11y::focus_ids` from `window.rs`,
@@ -361,7 +384,36 @@ which is in the same crate, so those `pub(crate)` fields stay as they are.
 | Command | Result |
 |---|---|
 | `cargo check --workspace` | exits 0 |
-| `cargo tree -p gpui-pre` | resolves to `vendor/gpui-pre` at v0.3.6; no other crate resolves from `vendor/` |
-| `cargo test -p gpui-mcp --lib` | 31 tests pass; covers C03-C05, C08, and C11-C15 behavior through the bridge (`observer.rs`, `registry.rs`, `service.rs`, and `input.rs` tests) |
+| `cargo tree -p gpui-pre` | resolves to `vendor/gpui-pre` at v0.3.6; `gpui-base` resolves to `vendor/gpui-base` at v0.6.6; no other crate resolves from `vendor/` |
+| `cargo test -p gpui-mcp --lib` | 36 tests pass; covers C03-C05, C08, C11-C17, B01, and B02 behavior through the bridge (`observer.rs`, `registry.rs`, `service.rs`, and `input.rs` tests) |
 | `cargo test -p gpui-mcp-server --test disabled_state` | passes; C08 over the real MCP stdio surface against the demo |
 | `cargo check -p gpui-pre --tests` | fails on pristine `src/svg_renderer.rs` `include_bytes!` paths to Zed workspace assets (`assets/fonts/...`) that this fork does not carry; C06's unit test type-checks but cannot run in this tree |
+
+## gpui-base patches
+
+`vendor/gpui-base` is `gpui-base` 0.6.6, the foundation `gpui-kit` re-exports
+as `gpui::base` and on which every gpui-component widget builds. The series
+lives in `vendor/patches/gpui-base`.
+
+| Patch file | Section |
+|---|---|
+| `0001` | B01 |
+| `0002` | B02 |
+
+### B01 - Focus traps forward accessibility
+
+| | |
+|---|---|
+| File | `vendor/gpui-base/src/focus_trap.rs` |
+| Item | `FocusTrapContainer` forwards `a11y_role`, `write_a11y_info`, `a11y_pointer_interactions`, and `a11y_synthetic_children` to the element it wraps |
+| Opened | An open `Dialog` (and any other focus-trapped container) publishes its dialog node and its children stay under it. |
+| Why | The stock wrapper answered every accessibility query with the default, so the dialog container disappeared from the tree. |
+
+### B02 - Disabled state reaches accessibility
+
+| | |
+|---|---|
+| File | `vendor/gpui-base/src/` button, checkbox, switch, radio, link, toggle, select, slider, tabs, tree, accordion trigger, date picker, and input base |
+| Item | Each disabled-capable primitive calls `.aria_disabled(disabled)` on its root element |
+| Opened | Disabled controls report `disabled` through C08, so automation sees them as disabled instead of inert-but-enabled. |
+| Why | The primitives blocked interaction when disabled but never told the accessibility tree. |
