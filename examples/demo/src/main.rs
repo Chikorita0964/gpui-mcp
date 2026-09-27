@@ -23,6 +23,13 @@ fn stress_rows() -> usize {
         .unwrap_or(0)
 }
 
+/// `--animate` redraws a ticker every ~16 ms, so the semantic tree changes each frame.
+fn animate() -> bool {
+    std::env::args()
+        .skip(1)
+        .any(|argument| argument == "--animate")
+}
+
 fn argument_after(flag: &str) -> Option<String> {
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -35,6 +42,7 @@ fn argument_after(flag: &str) -> Option<String> {
 
 struct Demo {
     stress_rows: usize,
+    tick: Option<u64>,
     count: usize,
     locked: bool,
     search: FocusHandle,
@@ -221,6 +229,19 @@ impl Render for Demo {
                     ),
             )
             .child(self.lock_row(cx))
+            .when_some(self.tick, |this, tick| {
+                let phase = f32::from(u16::try_from(tick % 120).unwrap_or_default());
+                this.child(
+                    div()
+                        .id("ticker")
+                        .role(Role::ProgressIndicator)
+                        .aria_label(format!("Tick {tick}"))
+                        .h(px(6.0))
+                        .w(px(4.0 + phase * 4.0))
+                        .rounded_sm()
+                        .bg(rgb(0x16_77_ff)),
+                )
+            })
             .when(self.stress_rows > 0, |this| {
                 this.child(
                     div()
@@ -282,15 +303,37 @@ fn main() {
                     }
                 };
                 let automation = bridge.automation();
-                cx.new(|cx| Demo {
+                let animated = animate();
+                let view = cx.new(|cx| Demo {
                     stress_rows: stress_rows(),
+                    tick: animated.then_some(0),
                     count: 0,
                     locked: true,
                     search: cx.focus_handle(),
                     filter: cx.focus_handle(),
                     automation,
                     _bridge: bridge,
-                })
+                });
+                if animated {
+                    let weak_view = view.downgrade();
+                    window
+                        .spawn(cx, async move |cx| {
+                            loop {
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(16))
+                                    .await;
+                                let ticked = weak_view.update(cx, |view, cx| {
+                                    view.tick = view.tick.map(|tick| tick.wrapping_add(1));
+                                    cx.notify();
+                                });
+                                if ticked.is_err() {
+                                    break;
+                                }
+                            }
+                        })
+                        .detach();
+                }
+                view
             },
         );
         if let Err(error) = opened {
