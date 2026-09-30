@@ -8,7 +8,7 @@ members = [
     "examples/demo",
     "examples/runtime-showcase",
 ]
-exclude = ["vendor/gpui"]
+exclude = ["vendor/gpui", "vendor/gpui-pre", "examples/gpui-kit"]
 default-members = ["crates/gpui-mcp-server"]
 resolver = "3"
 
@@ -33,6 +33,7 @@ directories = "6.0.0"
 # rev names the commit `vendor/gpui` was cut from; this workspace's own patch
 # below resolves it to that vendored tree, so the rev is never fetched here.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", version = "=0.2.2" }
+gpui_pre = { package = "gpui-pre", version = "=0.3.7" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", features = ["font-kit", "wayland", "x11"] }
 htmlswap = { git = "https://github.com/themixednuts/htmlswap", rev = "7b6bd0f0c73cef241819c707615684fd2c066341" }
 image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
@@ -79,6 +80,7 @@ opt-level = 2
 
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
+gpui-pre = { path = "vendor/gpui-pre" }
 
 [patch."https://github.com/zed-industries/zed"]
 gpui = { path = "vendor/gpui" }

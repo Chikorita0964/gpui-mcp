@@ -2432,6 +2432,31 @@ impl Window {
         let Some(node_id) = self.rendered_frame.observed.accessibility_id(id) else {
             return false;
         };
+        // Composite controls may redirect semantic focus to an inner editor.
+        // Honor their standard AccessKit Focus handler before using the frame's
+        // own focus handle, just as a screen reader does.
+        #[cfg(not(target_family = "wasm"))]
+        if self
+            .a11y
+            .action_listeners
+            .get(&node_id)
+            .is_some_and(|listeners| {
+                listeners
+                    .iter()
+                    .any(|(action, _)| *action == accesskit::Action::Focus)
+            })
+        {
+            self.handle_a11y_action(
+                accesskit::ActionRequest {
+                    action: accesskit::Action::Focus,
+                    target_tree: accesskit::TreeId::ROOT,
+                    target_node: node_id,
+                    data: None,
+                },
+                cx,
+            );
+            return true;
+        }
         let Some(focus_id) = self.a11y.focus_ids.get(&node_id).copied() else {
             return false;
         };

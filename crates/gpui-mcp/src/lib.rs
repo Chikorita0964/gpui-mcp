@@ -6,6 +6,16 @@
 //! Control stays on owner-restricted native local IPC and authenticated
 //! requests are dispatched through GPUI's foreground executor.
 
+#[cfg(all(feature = "zed", feature = "gpui-pre"))]
+compile_error!(
+    "select one GPUI backend: use default-features = false with features = [\"gpui-pre\"] for gpui-kit"
+);
+#[cfg(not(any(feature = "zed", feature = "gpui-pre")))]
+compile_error!("select a GPUI backend: enable either `zed` (the default) or `gpui-pre`");
+
+#[cfg(feature = "gpui-pre")]
+extern crate gpui_pre as gpui;
+
 mod input;
 mod native_window;
 mod observer;

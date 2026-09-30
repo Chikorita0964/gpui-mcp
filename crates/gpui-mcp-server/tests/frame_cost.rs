@@ -31,6 +31,7 @@ use tokio::time::timeout;
 const REPLY_TIMEOUT: Duration = Duration::from_mins(1);
 const DISCOVERY_DEADLINE: Duration = Duration::from_secs(45);
 /// How long an operating-system cursor move is given to reach a drawn frame.
+#[cfg(windows)]
 const OS_INPUT_DEADLINE: Duration = Duration::from_secs(5);
 
 const LEFT: &str = "probe-left-target";

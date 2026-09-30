@@ -391,7 +391,7 @@ fn parse_color(color: &str) -> Option<u32> {
         .flatten()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-support"))]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
