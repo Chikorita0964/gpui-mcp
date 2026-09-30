@@ -9,8 +9,8 @@ use base64::Engine as _;
 use gpui_mcp_protocol::{
     BridgeResult, Capability, ContextResourceDescriptor, FrameReport, FrameStats, Highlight,
     InputCommand, LiveDocumentSource, MouseButton, NodeAction, NodeState, Operation, Point,
-    PointerCommand, PointerScrollDelta, Rect, Role, Screenshot, ScreenshotTarget, UiNode, UiTree,
-    ValueInfo,
+    PointerCommand, PointerScrollDelta, Rect, Role, Screenshot, ScreenshotTarget, SemanticAction,
+    UiNode, UiTree, ValueInfo,
 };
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use rmcp::{
@@ -212,6 +212,19 @@ struct SetValueArgs {
     id: String,
     /// Replacement value, validated against exposed numeric bounds when present.
     value: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PerformActionArgs {
+    /// Semantic node identifier from the latest tree.
+    id: String,
+    /// Accessibility action to perform, the way assistive technology requests it:
+    /// `click`, `increment`, `decrement`, `expand`, `collapse`, or `set_value`
+    /// with the new `value`. Unlike `click_element`, this needs no coordinates
+    /// and no keyboard: the element's own AccessKit handler runs on the UI
+    /// thread. Use it for controls whose value cannot be typed, such as a
+    /// slider or a disclosure trigger.
+    action: SemanticAction,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -609,7 +622,10 @@ impl GpuiMcp {
             return Err(format!("element {id:?} is not visible and enabled"));
         }
         if !node.actions.contains(&action) {
-            return Err(format!("element {id:?} does not support {action:?}"));
+            return Err(format!(
+                "element {id:?} does not support {action:?} (it advertises {:?})",
+                node.actions
+            ));
         }
         Ok(node.clone())
     }
@@ -1614,6 +1630,7 @@ mod tests {
                 "set_text",
                 "get_value",
                 "set_value",
+                "perform_action",
                 "get_selection_count",
                 "get_element_state",
                 "scroll",

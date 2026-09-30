@@ -1,9 +1,10 @@
 use super::{
     ClickElementArgs, ClickPointArgs, DragElementArgs, DragPointArgs, ElementArgs, GpuiMcp,
-    InputCommand, Json, KeyArgs, MouseButton, NodeAction, Operation, Parameters, Point,
-    PointerButtonArgs, PointerCommand, PointerMoveArgs, Role, ScrollArgs, ScrollPointArgs,
-    SetTextArgs, SetValueArgs, ToolRouter, TypeTextArgs, Value, ack_json, encode_error, get_node,
-    json, object_output, require_bounds, tool, tool_router, validate_pointer_point, validate_value,
+    InputCommand, Json, KeyArgs, MouseButton, NodeAction, Operation, Parameters, PerformActionArgs,
+    Point, PointerButtonArgs, PointerCommand, PointerMoveArgs, Role, ScrollArgs, ScrollPointArgs,
+    SemanticAction, SetTextArgs, SetValueArgs, ToolRouter, TypeTextArgs, Value, ack_json,
+    encode_error, get_node, json, object_output, require_bounds, tool, tool_router,
+    validate_pointer_point, validate_value,
 };
 
 #[tool_router(router = input_router)]
@@ -297,6 +298,28 @@ impl GpuiMcp {
         Ok(ack_json("text_replaced"))
     }
 
+    #[tool(
+        description = "Perform an accessibility action on an element the way assistive technology does, without coordinates or keystrokes. Actions: click, increment, decrement, expand, collapse, and set_value. Use increment/decrement for sliders and spinners, expand/collapse for disclosure widgets, and set_value to replace a value. An element that does not register the action is reported rather than silently ignored."
+    )]
+    async fn perform_action(
+        &self,
+        Parameters(args): Parameters<PerformActionArgs>,
+    ) -> Result<Json<Value>, String> {
+        // The same gate every sibling input tool applies: the node must be visible and
+        // enabled, and must advertise the action. An invisible node's recorded bounds
+        // belong to whatever is painted there now, so GPUI's own click fallback would
+        // activate a different control, and a disabled slider still registers its
+        // Increment and Decrement listeners outside its `when(!disabled)` block.
+        self.element_with_action(&args.id, required_node_action(&args.action))
+            .await?;
+        self.ack_after_frame(Operation::PerformAction {
+            node_id: args.id,
+            action: args.action,
+        })
+        .await?;
+        Ok(ack_json("action_performed"))
+    }
+
     #[tool(description = "Return value metadata including numeric minimum, maximum, and step.")]
     async fn get_value(
         &self,
@@ -353,7 +376,11 @@ impl GpuiMcp {
                     .as_ref()
                     .ok_or_else(|| format!("element {:?} has no value", args.id))?;
                 validate_value(&args.value, value)?;
-                self.set_slider_value(&args.id, value, &args.value).await?;
+                if node.actions.contains(&NodeAction::Step) {
+                    self.step_slider_value(&args.id, value, &args.value).await?;
+                } else {
+                    self.set_slider_value(&args.id, value, &args.value).await?;
+                }
             }
             _ => {
                 return Err(format!(
@@ -406,6 +433,48 @@ impl GpuiMcp {
         Ok(ack_json("scrolled"))
     }
 
+    /// Move a slider to `requested` with its own Increment and Decrement
+    /// actions, the way assistive technology steps it. Needs no focus and no
+    /// keyboard, so it works on a slider no keystroke can reach.
+    async fn step_slider_value(
+        &self,
+        id: &str,
+        current: &super::ValueInfo,
+        requested: &str,
+    ) -> Result<(), String> {
+        let target = requested
+            .parse::<f64>()
+            .map_err(|_| "slider value must be numeric".to_owned())?;
+        let now = current
+            .value
+            .parse::<f64>()
+            .map_err(|_| "slider did not expose a numeric value".to_owned())?;
+        let step = current
+            .step
+            .filter(|step| *step > 0.0)
+            .ok_or_else(|| "slider must expose a positive step".to_owned())?;
+        let steps = ((target - now) / step).round();
+        if steps.abs() > 1_000.0 {
+            return Err("slider target requires more than 1000 steps".to_owned());
+        }
+        let action = if steps >= 0.0 {
+            SemanticAction::Increment
+        } else {
+            SemanticAction::Decrement
+        };
+        let count = (0..=1_000_u16)
+            .find(|count| (f64::from(*count) - steps.abs()).abs() < f64::EPSILON)
+            .ok_or_else(|| "slider target does not align to its step".to_owned())?;
+        for _ in 0..count {
+            self.ack_after_frame(Operation::PerformAction {
+                node_id: id.to_owned(),
+                action: action.clone(),
+            })
+            .await?;
+        }
+        Ok(())
+    }
+
     async fn set_slider_value(
         &self,
         id: &str,
@@ -444,6 +513,17 @@ impl GpuiMcp {
 
 pub(super) fn router() -> ToolRouter<GpuiMcp> {
     GpuiMcp::input_router()
+}
+
+/// The node action a caller must see advertised before the bridge is asked for
+/// the accessibility action. A click is never gated: GPUI dispatches it itself.
+fn required_node_action(action: &SemanticAction) -> NodeAction {
+    match action {
+        SemanticAction::Click => NodeAction::Click,
+        SemanticAction::Increment | SemanticAction::Decrement => NodeAction::Step,
+        SemanticAction::Expand | SemanticAction::Collapse => NodeAction::Expand,
+        SemanticAction::SetValue { .. } => NodeAction::SetValue,
+    }
 }
 
 fn validate_pointer_click_count(count: u8) -> Result<(), String> {
