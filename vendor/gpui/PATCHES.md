@@ -26,12 +26,20 @@ the same commit on 2026-09-23:
   `frame_action`, and `frame_redacted` builders, hover/drag/scroll interaction
   inference from an element's listeners, and a `Div` with click listeners
   reporting `Role::Button`. Redacted frame text and values are withheld from
-  the bridge, including labels derived from content;
+  the bridge, including labels derived from content. Text inside a redacted
+  element cannot contribute to ancestor labels, including during cached replay.
+  Elements that implement
+  the standard accessibility hooks are observed even without overriding
+  `frame_node`. A wrapped Div contributes its interaction provenance during
+  prepaint, preserving actions, metadata and redaction through external
+  wrappers such as GPUI Kit's test-support elements;
 - `aria_disabled`, `aria_hidden`, and `aria_read_only` builders that forward to
   the corresponding AccessKit node states. An ID-bearing, hidden `Div` with no
   other role reports `Role::Group` so the hidden state covers its descendants;
 - programmatic focus and text replacement through GPUI's active input handler
-  (`Window::insert_input_text`, `Window::replace_input_text`);
+  (`Window::insert_input_text`, `Window::replace_input_text`). Observed focus
+  honors a control's AccessKit Focus handler, which lets composite controls
+  redirect focus to their actual editor before text is dispatched;
 - pointer ownership that prevents a stale native mouse position from cancelling
   a synthetic hover before the physical mouse actually moves;
 - font-family fallback that preserves the requested weight, style, and OpenType

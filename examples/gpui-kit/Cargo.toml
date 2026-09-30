@@ -1,0 +1,23 @@
+[package]
+name = "gpui-mcp-kit-demo"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+publish = false
+
+# Separate workspace: Cargo features are additive, and the Zed demos must not
+# enable their backend on the bridge used by this gpui-pre application.
+[workspace]
+resolver = "3"
+
+[dependencies]
+gpui-kit = "=0.7.0"
+gpui-mcp = { path = "../../crates/gpui-mcp", default-features = false, features = ["gpui-pre"] }
+
+[dev-dependencies]
+gpui-kit = { version = "=0.7.0", features = ["test-support"] }
+gpui-mcp = { path = "../../crates/gpui-mcp", default-features = false, features = ["gpui-pre", "test-support"] }
+
+[patch.crates-io]
+gpui-pre = { path = "../../vendor/gpui-pre" }

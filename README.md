@@ -68,6 +68,49 @@ let bridge = BridgeHandle::install(
 That is the whole integration. The MCP client discovers running apps
 automatically.
 
+### GPUI Kit
+
+For [GPUI Kit](https://github.com/longbridge/gpui-kit) 0.7.0, select the
+`gpui-pre` backend and patch its exact GPUI snapshot in your application's
+workspace root:
+
+```toml
+[dependencies]
+gpui-kit = "=0.7.0"
+gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-pre"] }
+
+[patch.crates-io]
+gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+```
+
+Call `gpui_kit::init(cx)`, open the window with `gpui_kit::open_window`, and
+install and retain `BridgeHandle` as above. The bridge accepts GPUI Kit's
+re-exported `Window` and `App` directly. Kit's components and platform backend
+resolve to the same patched `gpui-pre`; no patch to the Zed Git source is needed.
+The MCP server and client configuration are the same for both backends.
+
+Run the [Kit demo](examples/gpui-kit) with:
+
+```console
+cargo run --manifest-path examples/gpui-kit/Cargo.toml
+```
+
+The default bridge backend is `zed`. Select exactly one backend per application;
+Cargo features are additive, so every dependency on `gpui-mcp` in a Kit app
+must disable defaults. `gpui-mcp-html` currently uses the Zed backend. GPUI
+Kit 0.7.0 pins `gpui-pre = 0.3.7`; newer snapshot pins require a matching
+vendor update, described in [vendor/README.md](vendor/README.md).
+Existing Zed integrations that disable default features must explicitly add
+`features = ["zed"]`.
+
+Kit supplies accessibility roles, labels, control states and standard input
+handlers, so the ordinary MCP tools can inspect and drive its annotated
+components. Kit's disabled controls currently omit the click handler without
+setting AccessKit's disabled state, so their `enabled` field still reports
+`true`. The bridge does not infer disabled state from a missing handler. Custom
+drawn components expose only the semantics they annotate; pointer tools and
+capture remain available.
+
 ## Building your UI
 
 Write ordinary GPUI elements with stable IDs and normal event handlers:
@@ -91,9 +134,18 @@ reports `enabled: true` — the field then asserts a falsehood rather than
 admitting it does not know, and a consumer cannot tell a disabled control from
 one that is wrongly unreachable.
 
+For read-only inputs, use `.aria_read_only(true)` separately from disabled
+state. The tree and `get_element_state` expose `read_only`, and
+`wait_for_state` accepts an optional `read_only` predicate. A missing
+accessibility node leaves the state unknown; a present node reports AccessKit's
+flag, which cannot recover a read-only state that the control omits. Kit 0.7.0
+does not currently publish that flag for its read-only inputs.
+
 The two Cargo patches keep your app, `gpui_platform`, and the bridge on one GPUI
 type universe. They can go away once the small additions in the
 [vendor patch inventory](vendor/gpui/PATCHES.md) land upstream.
+
+For GPUI Kit, its single `gpui-pre` patch serves the same purpose.
 
 See the [demo](examples/demo/src/main.rs) for a complete window. For live
 HTML/CSS interfaces, see the [visual builder guide](docs/visual-builder.md).

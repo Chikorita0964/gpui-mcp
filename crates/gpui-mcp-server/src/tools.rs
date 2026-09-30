@@ -279,6 +279,8 @@ struct WaitStateArgs {
     enabled: Option<bool>,
     /// Expected focus state, if specified.
     focused: Option<bool>,
+    /// Expected read-only state reported by AccessKit, if specified.
+    read_only: Option<bool>,
     /// Expected checked state, if specified.
     checked: Option<bool>,
     /// Expected selected state, if specified.
@@ -1094,6 +1096,9 @@ fn state_matches(state: &NodeState, args: &WaitStateArgs) -> bool {
             .focused
             .is_none_or(|expected| state.focused == expected)
         && args
+            .read_only
+            .is_none_or(|expected| state.read_only == Some(expected))
+        && args
             .checked
             .is_none_or(|expected| state.checked == Some(expected))
         && args
@@ -1506,6 +1511,7 @@ mod tests {
             visible: None,
             enabled: None,
             focused: None,
+            read_only: None,
             checked: None,
             selected: None,
             expanded: Some(true),
@@ -1518,6 +1524,24 @@ mod tests {
             ..expanded
         };
         assert!(!state_matches(&state, &collapsed));
+    }
+
+    #[test]
+    fn read_only_waits_require_a_known_matching_state() -> Result<(), String> {
+        for expected in [true, false] {
+            let args = serde_json::from_value::<WaitStateArgs>(
+                json!({ "id": "input", "read_only": expected }),
+            )
+            .map_err(|error| error.to_string())?;
+            for reported in [None, Some(true), Some(false)] {
+                let state = NodeState {
+                    read_only: reported,
+                    ..NodeState::default()
+                };
+                assert_eq!(state_matches(&state, &args), reported == Some(expected));
+            }
+        }
+        Ok(())
     }
 
     #[test]
