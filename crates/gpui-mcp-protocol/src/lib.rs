@@ -428,6 +428,10 @@ pub struct NodeState {
     pub enabled: bool,
     /// Whether the node owns keyboard focus.
     pub focused: bool,
+    /// Read-only state reported by AccessKit; absent without an accessibility node.
+    /// This does not infer state that the control has not published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
     /// Optional checked state.
     pub checked: Option<bool>,
     /// Optional selected state.
@@ -442,6 +446,7 @@ impl Default for NodeState {
             visible: true,
             enabled: true,
             focused: false,
+            read_only: None,
             checked: None,
             selected: None,
             expanded: None,
@@ -1380,6 +1385,28 @@ mod tests {
             }
             .is_valid()
         );
+    }
+
+    #[test]
+    fn read_only_state_accepts_legacy_payloads_and_preserves_known_false()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let legacy = serde_json::json!({
+            "visible": true, "enabled": true, "focused": false,
+            "checked": null, "selected": null, "expanded": null
+        });
+        let mut state: super::NodeState = serde_json::from_value(legacy.clone())?;
+        assert_eq!(state.read_only, None);
+        assert_eq!(serde_json::to_value(&state)?, legacy);
+        for expected in [true, false] {
+            state.read_only = Some(expected);
+            let json = serde_json::to_value(&state)?;
+            assert_eq!(json["read_only"], expected);
+            assert_eq!(
+                serde_json::from_value::<super::NodeState>(json)?.read_only,
+                Some(expected)
+            );
+        }
+        Ok(())
     }
 
     #[test]

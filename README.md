@@ -134,6 +134,13 @@ reports `enabled: true` — the field then asserts a falsehood rather than
 admitting it does not know, and a consumer cannot tell a disabled control from
 one that is wrongly unreachable.
 
+For read-only inputs, use `.aria_read_only(true)` separately from disabled
+state. The tree and `get_element_state` expose `read_only`, and
+`wait_for_state` accepts an optional `read_only` predicate. A missing
+accessibility node leaves the state unknown; a present node reports AccessKit's
+flag, which cannot recover a read-only state that the control omits. Kit 0.7.0
+does not currently publish that flag for its read-only inputs.
+
 The two Cargo patches keep your app, `gpui_platform`, and the bridge on one GPUI
 type universe. They can go away once the small additions in the
 [vendor patch inventory](vendor/gpui/PATCHES.md) land upstream.
