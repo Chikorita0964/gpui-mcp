@@ -158,3 +158,11 @@ jobs:
         env:
           INSTALL_ROOT: ${{ runner.temp }}/gpui-mcp-install
         run: '"$INSTALL_ROOT/bin/gpui-mcp" --version'
+
+      - name: Check external GPUI Kit consumer
+        env:
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: >-
+          python3 script/check-gpui-kit-consumer.py
+          --repository "$REPOSITORY_URL" --rev "$GITHUB_SHA"
+          --target-dir "$GITHUB_WORKSPACE/target"

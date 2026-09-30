@@ -53,6 +53,19 @@ The Kit demo is an independent workspace so Cargo cannot unify its
 backends separately; `--all-features` on the main workspace would select both
 and is intentionally rejected.
 
+CI also checks a standalone consumer against the public Git commit, with no
+local path dependencies. To check an already pushed revision manually:
+
+```console
+python3 script/check-gpui-kit-consumer.py --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
+```
+
+The fixture type-checks `BridgeHandle::install` using Kit's `Window` and `App`
+and verifies that Kit, Base, Component, Platform and the bridge all resolve to
+one patched `gpui-pre` package. This check resolves a fresh application lockfile
+to exercise the documented installation recipe, while the repository's own
+builds use their committed lockfiles.
+
 Remove the patch in the workspace `Cargo.toml` and this directory once an
 upstream GPUI release includes these behaviors. Each change can be dropped
 independently after its upstream equivalent ships.
