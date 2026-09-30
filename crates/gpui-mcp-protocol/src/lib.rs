@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Current wire protocol version.
-pub const PROTOCOL_VERSION: u16 = 13;
+pub const PROTOCOL_VERSION: u16 = 14;
 /// Maximum accepted request frame, including its four-byte length prefix.
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 /// Maximum accepted response frame. Screenshots are base64 encoded inside it.
@@ -382,6 +382,32 @@ pub enum NodeAction {
     SetValue,
     /// Scroll at the node's center.
     Scroll,
+    /// Step a numeric value up or down by one step.
+    Step,
+    /// Expand or collapse the node.
+    Expand,
+}
+
+/// Accessibility action the bridge performs on a node the way assistive
+/// technology requests it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum SemanticAction {
+    /// Activate the node.
+    Click,
+    /// Increase a numeric value by one step.
+    Increment,
+    /// Decrease a numeric value by one step.
+    Decrement,
+    /// Expand the node.
+    Expand,
+    /// Collapse the node.
+    Collapse,
+    /// Replace the node's value.
+    SetValue {
+        /// New value.
+        value: String,
+    },
 }
 
 /// Optional editable text metadata supplied by the application.
@@ -1139,6 +1165,14 @@ pub enum Operation {
         /// Stable semantic node identifier.
         node_id: String,
     },
+    /// Perform an accessibility action on one element from the current
+    /// semantic frame, the way assistive technology requests it.
+    PerformAction {
+        /// Stable semantic node identifier.
+        node_id: String,
+        /// Action to perform.
+        action: SemanticAction,
+    },
     /// Wait without polling until a newer semantic tree is published.
     WaitForTree {
         /// Return immediately when the current generation is newer than this value.
@@ -1355,7 +1389,8 @@ impl WireResponse {
 mod tests {
     use super::{
         AppId, Capabilities, EndpointDescriptor, InstanceId, LocalEndpoint, NativeWindowId,
-        PROTOCOL_VERSION, Point, ProcessId, Rect, RequestId, WireResponse,
+        NodeAction, Operation, PROTOCOL_VERSION, Point, ProcessId, Rect, RequestId, SemanticAction,
+        WireResponse,
     };
 
     #[test]
@@ -1471,5 +1506,79 @@ mod tests {
             "capabilities": { "available": [] }
         });
         assert!(serde_json::from_value::<EndpointDescriptor>(value).is_err());
+    }
+
+    #[test]
+    fn semantic_action_round_trips_every_variant() -> Result<(), Box<dyn std::error::Error>> {
+        for action in [
+            SemanticAction::Click,
+            SemanticAction::Increment,
+            SemanticAction::Decrement,
+            SemanticAction::Expand,
+            SemanticAction::Collapse,
+        ] {
+            let value = serde_json::to_value(&action)?;
+            assert_eq!(serde_json::from_value::<SemanticAction>(value)?, action);
+        }
+        let set_value = SemanticAction::SetValue {
+            value: "42".to_owned(),
+        };
+        let value = serde_json::to_value(&set_value)?;
+        assert_eq!(serde_json::from_value::<SemanticAction>(value)?, set_value);
+        Ok(())
+    }
+
+    #[test]
+    fn semantic_action_wire_shape_is_tagged_and_snake_case()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            serde_json::to_value(SemanticAction::Increment)?,
+            serde_json::json!({ "action": "increment" })
+        );
+        assert_eq!(
+            serde_json::to_value(SemanticAction::SetValue {
+                value: "42".to_owned()
+            })?,
+            serde_json::json!({ "action": "set_value", "value": "42" })
+        );
+        assert!(serde_json::from_value::<SemanticAction>(serde_json::json!({})).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn perform_action_operation_carries_its_node_and_action()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let operation = Operation::PerformAction {
+            node_id: "slider".to_owned(),
+            action: SemanticAction::Increment,
+        };
+        let value = serde_json::to_value(&operation)?;
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "kind": "perform_action",
+                "node_id": "slider",
+                "action": { "action": "increment" },
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<Operation>(value)?,
+            operation,
+            "the operation round trips"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn node_action_wire_names_are_snake_case() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            serde_json::to_value(NodeAction::Step)?,
+            serde_json::json!("step")
+        );
+        assert_eq!(
+            serde_json::to_value(NodeAction::Expand)?,
+            serde_json::json!("expand")
+        );
+        Ok(())
     }
 }

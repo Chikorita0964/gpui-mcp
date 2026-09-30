@@ -18,7 +18,7 @@ use gpui_mcp_protocol::{
     MAX_CONTEXT_RESOURCES, MAX_FRAME_SAMPLES, MAX_ID_BYTES, MAX_LABEL_BYTES,
     MAX_LIVE_DOCUMENT_DIAGNOSTICS, MAX_LIVE_DOCUMENT_SOURCE_BYTES, MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES, MAX_WAIT_MS, NativeWindowId, Operation, PROTOCOL_VERSION, PendingFrame,
-    ProcessId, WireRequest, WireResponse,
+    ProcessId, SemanticAction, WireRequest, WireResponse,
 };
 use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName as _, ToNsName as _,
@@ -606,6 +606,25 @@ fn handle_ui_operation(
             }
             Ok(BridgeResult::Ack)
         }
+        Operation::PerformAction { node_id, action } => {
+            let target = window.a11y_node_id(&node_id).ok_or_else(|| {
+                BridgeError::new(ErrorCode::NotFound, "semantic node was not found")
+            })?;
+            let (action, data) = input::accesskit_action(action);
+            // GPUI handles click, focus, and blur itself, so a node without a
+            // listener for them is still actionable; anything else needs one.
+            if !window.a11y_action_is_handled(target, action)
+                && !matches!(action, gpui::accesskit::Action::Click)
+            {
+                return Err(BridgeError::new(
+                    ErrorCode::Unsupported,
+                    "the semantic node does not handle this action",
+                ));
+            }
+            window.perform_a11y_action(target, action, data, cx);
+            window.refresh();
+            Ok(BridgeResult::Ack)
+        }
         Operation::Refresh => {
             let completed = state.frame_stats();
             window.refresh();
@@ -942,6 +961,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         operation @ (Operation::Input { .. }
         | Operation::PointerInput { .. }
         | Operation::Focus { .. }
+        | Operation::PerformAction { .. }
         | Operation::Refresh
         | Operation::RequestFrame
         | Operation::GetPendingFrame
@@ -996,16 +1016,25 @@ async fn dispatch_to_ui(
         .map_err(|_| BridgeError::new(ErrorCode::Internal, "UI command pump stopped"))?
 }
 
+fn validate_node_id(node_id: &str) -> Result<(), BridgeError> {
+    if node_id.is_empty() || node_id.len() > MAX_ID_BYTES || node_id.chars().any(char::is_control) {
+        return Err(invalid("semantic node identifier is invalid"));
+    }
+    Ok(())
+}
+
 fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
     match operation {
         Operation::Input { command } => input::validate(command),
         Operation::PointerInput { command } => input::validate_pointer(command),
-        Operation::Focus { node_id } => {
-            if node_id.is_empty()
-                || node_id.len() > MAX_ID_BYTES
-                || node_id.chars().any(char::is_control)
-            {
-                return Err(invalid("semantic node identifier is invalid"));
+        Operation::Focus { node_id } => validate_node_id(node_id),
+        Operation::PerformAction { node_id, action } => {
+            validate_node_id(node_id)?;
+            // A value is the one action payload that carries caller-owned text, so it gets
+            // the bound every other path into app-visible text has: otherwise a control
+            // handler is handed a request-sized string to insert and lay out.
+            if let SemanticAction::SetValue { value } = action {
+                input::validate_text(value)?;
             }
             Ok(())
         }
@@ -1457,11 +1486,42 @@ fn invalid(message: &'static str) -> BridgeError {
 
 #[cfg(test)]
 mod tests {
-    use gpui_mcp_protocol::{AppId, ContextResource, ContextResourceDescriptor};
+    use gpui_mcp_protocol::{
+        AppId, ContextResource, ContextResourceDescriptor, ErrorCode, MAX_TEXT_BYTES, Operation,
+        SemanticAction,
+    };
 
     use super::{
         BridgeConfig, encode_hex, validate_context_resource, validate_context_resource_list,
+        validate_operation,
     };
+
+    #[test]
+    fn a_performed_action_bounds_its_value_like_injected_text() {
+        let perform = |value: String| {
+            validate_operation(&Operation::PerformAction {
+                node_id: "volume".to_owned(),
+                action: SemanticAction::SetValue { value },
+            })
+            .err()
+            .map(|error| error.code)
+        };
+        assert_eq!(
+            perform("x".repeat(MAX_TEXT_BYTES + 1)),
+            Some(ErrorCode::InvalidRequest),
+            "an unbounded value is the one action payload that can exhaust the app with text"
+        );
+        assert_eq!(perform("x".repeat(MAX_TEXT_BYTES)), None);
+        assert_eq!(perform(String::new()), None);
+        assert!(
+            validate_operation(&Operation::PerformAction {
+                node_id: "volume".to_owned(),
+                action: SemanticAction::Increment,
+            })
+            .is_ok(),
+            "an action with no payload needs no text bound"
+        );
+    }
 
     #[test]
     fn application_identifier_blocks_path_traversal() {
