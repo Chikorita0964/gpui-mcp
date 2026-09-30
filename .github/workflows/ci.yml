@@ -55,16 +55,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check workspace
-        run: cargo check --workspace --all-targets --all-features --locked
+        run: cargo check --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
       - name: Check screenshot-free integration
-        run: cargo check -p gpui-mcp --no-default-features --locked
+        run: cargo check -p gpui-mcp --no-default-features --features zed --locked
 
       - name: Build integration test fixture
         run: cargo build -p gpui-mcp-demo --locked
 
       - name: Test workspace
-        run: cargo test --workspace --all-features --locked
+        run: cargo test --workspace --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
       - name: Test Chromium/GPUI visual parity
         if: runner.os != 'Linux'
@@ -77,7 +77,25 @@ jobs:
           WAYLAND_DISPLAY: ""
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked -- -D warnings
+
+      - name: Check gpui-pre integration
+        run: cargo check -p gpui-mcp --no-default-features --features gpui-pre --locked
+
+      - name: Test bridge with gpui-pre
+        run: cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support --locked
+
+      - name: Check GPUI Kit example formatting
+        run: cargo fmt --manifest-path examples/gpui-kit/Cargo.toml -- --check
+
+      - name: Check GPUI Kit integration
+        run: cargo check --manifest-path examples/gpui-kit/Cargo.toml --all-targets --locked
+
+      - name: Test GPUI Kit controls and input
+        run: cargo test --manifest-path examples/gpui-kit/Cargo.toml --locked
+
+      - name: Clippy GPUI Kit bridge
+        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support --locked -- -D warnings
 
       - name: Upload visual parity failure artifacts
         if: failure()
@@ -96,6 +114,13 @@ jobs:
         with:
           tool: cargo-audit
       - run: cargo audit
+
+  vendor:
+    name: Reproduce gpui-pre snapshot
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 script/vendor-gpui-pre.py --check
 
   external-consumer:
     name: Public Git installation
