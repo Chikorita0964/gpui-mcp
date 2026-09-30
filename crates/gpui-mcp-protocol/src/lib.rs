@@ -723,6 +723,8 @@ pub enum ViewRenderCause {
     AncestorRendered,
     /// The view's bounds, content mask, or text style changed.
     LayoutChanged,
+    /// The containing element's observation redaction boundary changed.
+    ObservationChanged,
 }
 
 /// Whether a view rendered or replayed its previous output from cache.
