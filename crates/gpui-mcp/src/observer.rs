@@ -191,6 +191,7 @@ fn to_node(frame: &AccessibilityFrame, rendered: &FrameNode) -> UiNode {
                 && !accessible.is_some_and(accesskit::Node::is_hidden),
             enabled: !accessible.is_some_and(accesskit::Node::is_disabled),
             focused,
+            read_only: accessible.map(accesskit::Node::is_read_only),
             checked: accessible.and_then(|node| match node.toggled() {
                 Some(Toggled::True) => Some(true),
                 Some(Toggled::False) => Some(false),
@@ -505,6 +506,52 @@ mod tests {
             );
         });
         assert!(clicked.get());
+    }
+
+    struct ReadOnlyFixture;
+
+    impl Render for ReadOnlyFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("root")
+                .role(Role::Application)
+                .child(
+                    div()
+                        .id("editable")
+                        .role(Role::TextInput)
+                        .aria_read_only(false),
+                )
+                .child(
+                    div()
+                        .id("read-only")
+                        .role(Role::TextInput)
+                        .aria_read_only(true),
+                )
+                .child(
+                    div()
+                        .id("disabled")
+                        .role(Role::TextInput)
+                        .aria_disabled(true),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn read_only_and_disabled_are_distinct_reported_states(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let observed = automation.clone();
+        let (_, visual) = cx.add_window_view(move |window, _| {
+            observed.attach(window);
+            ReadOnlyFixture
+        });
+        visual.run_until_parked();
+        let tree = automation.snapshot();
+        assert_eq!(tree.nodes["editable"].state.read_only, Some(false));
+        assert!(tree.nodes["editable"].state.enabled);
+        assert_eq!(tree.nodes["read-only"].state.read_only, Some(true));
+        assert!(tree.nodes["read-only"].state.enabled);
+        assert_eq!(tree.nodes["disabled"].state.read_only, Some(false));
+        assert!(!tree.nodes["disabled"].state.enabled);
     }
 
     struct HiddenAndRedactedFixture;
