@@ -26,7 +26,9 @@ the same commit on 2026-09-23:
   `frame_action`, and `frame_redacted` builders, hover/drag/scroll interaction
   inference from an element's listeners, and a `Div` with click listeners
   reporting `Role::Button`. Redacted frame text and values are withheld from
-  the bridge, including labels derived from content. Elements that implement
+  the bridge, including labels derived from content. Text inside a redacted
+  element cannot contribute to ancestor labels, including during cached replay.
+  Elements that implement
   the standard accessibility hooks are observed even without overriding
   `frame_node`. A wrapped Div contributes its interaction provenance during
   prepaint, preserving actions, metadata and redaction through external

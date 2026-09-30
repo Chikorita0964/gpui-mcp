@@ -103,6 +103,7 @@ const fn render_cause(cause: gpui::ViewRenderCause) -> ViewRenderCause {
         gpui::ViewRenderCause::Notified => ViewRenderCause::Notified,
         gpui::ViewRenderCause::AncestorRendered => ViewRenderCause::AncestorRendered,
         gpui::ViewRenderCause::LayoutChanged => ViewRenderCause::LayoutChanged,
+        gpui::ViewRenderCause::ObservationChanged => ViewRenderCause::ObservationChanged,
     }
 }
 
@@ -572,6 +573,126 @@ mod tests {
                 .as_ref()
                 .is_some_and(|value| value.value.is_empty())
         );
+    }
+
+    struct RedactedChildFixture;
+
+    impl Render for RedactedChildFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("container")
+                .role(Role::Button)
+                .child("Public")
+                .child(
+                    div()
+                        .id("secret")
+                        .role(Role::TextInput)
+                        .aria_value("private value")
+                        .frame_redacted(true)
+                        .child("private value"),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn redacted_child_text_does_not_become_an_ancestor_label(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let observed = automation.clone();
+        let (_, visual) = cx.add_window_view(move |window, _| {
+            observed.attach(window);
+            RedactedChildFixture
+        });
+        visual.run_until_parked();
+        let tree = automation.snapshot();
+        assert_eq!(tree.nodes["container"].label.as_deref(), Some("Public"));
+        assert!(
+            tree.nodes["secret"]
+                .text
+                .as_ref()
+                .is_some_and(|text| text.redacted && text.text.is_empty())
+        );
+        assert!(
+            tree.nodes["secret"]
+                .value
+                .as_ref()
+                .is_some_and(|value| value.value.is_empty())
+        );
+    }
+
+    struct CachedPrivateText;
+
+    impl Render for CachedPrivateText {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().id("cached-content").child("Cached content")
+        }
+    }
+
+    struct RedactedCacheFixture {
+        content: Entity<CachedPrivateText>,
+        redacted: bool,
+    }
+
+    impl Render for RedactedCacheFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("container")
+                .role(Role::Button)
+                .child("Public")
+                .child(
+                    div().id("boundary").frame_redacted(self.redacted).child(
+                        self.content
+                            .clone()
+                            .cached(StyleRefinement::default().w(px(160.)).h(px(40.))),
+                    ),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn cached_text_respects_changed_redaction_boundaries(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let observed = automation.clone();
+        let (root, visual) = cx.add_window_view(move |window, cx| {
+            observed.attach(window);
+            RedactedCacheFixture {
+                content: cx.new(|_| CachedPrivateText),
+                redacted: false,
+            }
+        });
+        visual.run_until_parked();
+        let cached = root.read_with(visual, |root, _| root.content.entity_id());
+        assert_eq!(
+            automation.snapshot().nodes["container"].label.as_deref(),
+            Some("Public Cached content")
+        );
+
+        for redacted in [true, false] {
+            root.update(visual, |root, cx| {
+                root.redacted = redacted;
+                cx.notify();
+            });
+            visual.run_until_parked();
+            let expected = if redacted {
+                "Public"
+            } else {
+                "Public Cached content"
+            };
+            assert_eq!(
+                automation.snapshot().nodes["container"].label.as_deref(),
+                Some(expected)
+            );
+            automation.mark_frames();
+            visual.update(|window, _| window.request_frame());
+            visual.run_until_parked();
+            assert_eq!(
+                outcome(&automation.frame_report(None, 16), cached),
+                Some((ViewOutcome::Reused, None))
+            );
+            assert_eq!(
+                automation.snapshot().nodes["container"].label.as_deref(),
+                Some(expected)
+            );
+        }
     }
 
     /// One dock panel, rendered as its own view exactly as

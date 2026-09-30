@@ -1467,6 +1467,7 @@ pub trait StatefulInteractiveElement: InteractiveElement {
     }
 
     /// Mark this element's value for redaction by rendered-frame observers.
+    /// Text inside it is also withheld from ancestors' inferred labels and text.
     /// The canonical AccessKit tree still exposes values to assistive technology.
     fn frame_redacted(mut self, redacted: bool) -> Self {
         self.interactivity().frame_redacted = redacted;

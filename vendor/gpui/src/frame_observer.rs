@@ -198,6 +198,8 @@ pub enum ViewRenderCause {
     AncestorRendered,
     /// The view's bounds, content mask, or text style changed.
     LayoutChanged,
+    /// The containing element's observation redaction boundary changed.
+    ObservationChanged,
 }
 
 /// How a view produced its output for one frame.
@@ -549,8 +551,16 @@ impl FrameBuilder {
         }
     }
 
+    /// Text inside a redacted element must not contribute to any ancestor.
+    pub(crate) fn text_is_redacted(&self) -> bool {
+        self.parents.iter().any(|parent| {
+            Self::parent_index(&self.nodes, parent)
+                .is_some_and(|index| self.nodes[index].redacted)
+        })
+    }
+
     pub(crate) fn add_text(&mut self, text: &str) {
-        if !self.enabled {
+        if !self.enabled || self.text_is_redacted() {
             return;
         }
         let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -623,8 +633,10 @@ impl FrameBuilder {
     ) {
         // The replayed range added text to the nodes open around it. Those
         // nodes are open around the replay too, found by the same path.
+        let text_is_redacted = self.text_is_redacted();
         for (_, path, before) in &start.open {
-            if let Some((_, _, after)) = end.open.iter().find(|(_, candidate, _)| candidate == path)
+            if !text_is_redacted
+                && let Some((_, _, after)) = end.open.iter().find(|(_, candidate, _)| candidate == path)
                 && let Some(delta) = after.strip_prefix(before.as_str())
                 && !delta.is_empty()
                 && let Some(index) = self

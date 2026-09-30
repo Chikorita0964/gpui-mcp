@@ -112,14 +112,20 @@ fn wrapped_controls_keep_provenance_and_redaction(cx: &mut TestAppContext) {
     impl Render for WrappedControl {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             div()
-                .id("wrapped-input")
-                .role(gpui_kit::Role::TextInput)
-                .aria_value("secret")
-                .frame_redacted(true)
-                .frame_metadata("wrapped", "true")
-                .hover(|style| style.bg(rgb(0x112233)))
-                .child("secret")
-                .test_support()
+                .id("public-parent")
+                .role(gpui_kit::Role::Button)
+                .child("Public")
+                .child(
+                    div()
+                        .id("wrapped-input")
+                        .role(gpui_kit::Role::TextInput)
+                        .aria_value("secret")
+                        .frame_redacted(true)
+                        .frame_metadata("wrapped", "true")
+                        .hover(|style| style.bg(rgb(0x112233)))
+                        .child("secret")
+                        .test_support(),
+                )
         }
     }
 
@@ -148,4 +154,5 @@ fn wrapped_controls_keep_provenance_and_redaction(cx: &mut TestAppContext) {
             .is_empty()
     );
     assert_eq!(node.label, None);
+    assert_eq!(tree.nodes["public-parent"].label.as_deref(), Some("Public"));
 }

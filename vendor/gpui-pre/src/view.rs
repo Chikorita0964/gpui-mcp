@@ -311,6 +311,7 @@ struct ViewElementCacheKey {
     bounds: Bounds<Pixels>,
     content_mask: ContentMask<Pixels>,
     text_style: TextStyle,
+    text_redacted: bool,
 }
 
 impl<V: View> Element for ViewElement<V> {
@@ -484,6 +485,11 @@ fn view_cache_miss(
     if window.refreshing {
         return Some(ViewRenderCause::AncestorRendered);
     }
+    // Rebuild observation checkpoints when the surrounding redaction boundary
+    // changes: replaying withheld text cannot restore it after unredaction.
+    if element_state.cache_key.text_redacted != window.next_frame.observed.text_is_redacted() {
+        return Some(ViewRenderCause::ObservationChanged);
+    }
     if element_state.cache_key.bounds != bounds
         || element_state.cache_key.content_mask != *content_mask
         || element_state.cache_key.text_style != *text_style
@@ -581,6 +587,7 @@ fn prepaint_view(
                             bounds,
                             content_mask,
                             text_style,
+                            text_redacted: window.next_frame.observed.text_is_redacted(),
                         },
                     },
                 )

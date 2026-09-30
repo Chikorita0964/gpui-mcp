@@ -106,7 +106,7 @@
      fmt::Debug,
      marker::PhantomData,
      mem,
-@@ -1429,6 +1431,48 @@
+@@ -1429,6 +1431,49 @@
          self
      }
  
@@ -146,6 +146,7 @@
 +    }
 +
 +    /// Mark this element's value for redaction by rendered-frame observers.
++    /// Text inside it is also withheld from ancestors' inferred labels and text.
 +    /// The canonical AccessKit tree still exposes values to assistive technology.
 +    fn frame_redacted(mut self, redacted: bool) -> Self {
 +        self.interactivity().frame_redacted = redacted;
@@ -155,7 +156,7 @@
      /// Set the minimum numeric value for this element.
      fn aria_min_numeric_value(mut self, value: f64) -> Self {
          self.interactivity().aria.min_numeric_value = Some(value);
-@@ -1902,10 +1946,23 @@
+@@ -1902,10 +1947,23 @@
          self.interactivity
              .override_role
              .filter(|role| *role != accesskit::Role::GenericContainer)
@@ -179,7 +180,7 @@
      }
  
      fn a11y_synthetic_children(
-@@ -2119,6 +2176,9 @@
+@@ -2119,6 +2177,9 @@
      pub(crate) column_index: Option<usize>,
      pub(crate) row_count: Option<usize>,
      pub(crate) column_count: Option<usize>,
@@ -189,7 +190,7 @@
  }
  
  /// The interactivity struct. Powers all of the general-purpose
-@@ -2190,6 +2250,9 @@
+@@ -2190,6 +2251,9 @@
      pub(crate) report_active_descendant_focus: bool,
      pub(crate) override_role: Option<accesskit::Role>,
      pub(crate) aria: AriaProperties,
@@ -199,7 +200,7 @@
  
      #[cfg(any(feature = "inspector", debug_assertions))]
      pub(crate) source_location: Option<&'static core::panic::Location<'static>>,
-@@ -2304,6 +2367,12 @@
+@@ -2304,6 +2368,12 @@
          f: impl FnOnce(&Style, Point<Pixels>, Option<Hitbox>, &mut Window, &mut App) -> R,
      ) -> R {
          self.content_size = content_size;
@@ -212,7 +213,7 @@
  
          #[cfg(any(feature = "inspector", debug_assertions))]
          window.with_inspector_state(
-@@ -2756,6 +2825,7 @@
+@@ -2756,6 +2826,7 @@
          window: &mut Window,
          cx: &mut App,
      ) {
@@ -220,7 +221,7 @@
          let is_focused = self
              .tracked_focus_handle
              .as_ref()
-@@ -2951,13 +3021,13 @@
+@@ -2951,13 +3022,13 @@
                      let pending_mouse_down = pending_mouse_down.clone();
                      let hitbox = hitbox.clone();
                      let has_aux_click_listeners = !aux_click_listeners.is_empty();
@@ -236,7 +237,7 @@
                          }
                      }
                  });
-@@ -3085,7 +3155,7 @@
+@@ -3085,7 +3156,7 @@
                              let mut pending_mouse_down = pending_mouse_down.borrow_mut();
                              if pending_mouse_down.is_some() && hitbox.is_hovered(window) {
                                  captured_mouse_down = pending_mouse_down.take();
@@ -245,7 +246,7 @@
                              } else if pending_mouse_down.is_some() {
                                  // Clear the pending mouse down event (without firing click handlers)
                                  // if the hitbox is not being hovered.
-@@ -3093,7 +3163,7 @@
+@@ -3093,7 +3164,7 @@
                                  // immediately after being clicked.
                                  // See https://github.com/zed-industries/zed/issues/24600 for more details
                                  pending_mouse_down.take();
@@ -254,7 +255,7 @@
                              }
                          }
                          // Fire click handlers during the bubble phase.
-@@ -3233,10 +3303,10 @@
+@@ -3233,10 +3304,10 @@
  
              {
                  let active_state = active_state.clone();
@@ -267,7 +268,7 @@
                      }
                  });
              }
-@@ -3247,7 +3317,7 @@
+@@ -3247,7 +3318,7 @@
                      .as_ref()
                      .and_then(|group_active| GroupHitboxes::get(&group_active.group, cx));
                  let hitbox = hitbox.clone();
@@ -276,7 +277,7 @@
                      if phase == DispatchPhase::Bubble && !window.default_prevented() {
                          let group_hovered = active_group_hitbox
                              .is_some_and(|group_hitbox_id| group_hitbox_id.is_hovered(window));
-@@ -3257,7 +3327,7 @@
+@@ -3257,7 +3328,7 @@
                                  group: group_hovered,
                                  element: element_hovered,
                              };
@@ -285,7 +286,7 @@
                          }
                      }
                  });
-@@ -3585,6 +3655,15 @@
+@@ -3585,6 +3656,15 @@
          if let Some(count) = self.aria.column_count {
              node.set_column_count(count);
          }
@@ -301,7 +302,7 @@
          if !self.click_listeners.is_empty() {
              node.add_action(accesskit::Action::Click);
          }
-@@ -3593,6 +3672,43 @@
+@@ -3593,6 +3673,43 @@
          }
          for (action, _) in &self.a11y_action_listeners {
              node.add_action(*action);
@@ -345,7 +346,7 @@
          }
      }
  }
-@@ -3662,6 +3778,22 @@
+@@ -3662,6 +3779,22 @@
      },
  }
  
@@ -368,7 +369,7 @@
  pub(crate) fn clear_active_tooltip(
      active_tooltip: &Rc<RefCell<Option<ActiveTooltip>>>,
      window: &mut Window,
-@@ -3669,8 +3801,8 @@
+@@ -3669,8 +3802,8 @@
      match active_tooltip.borrow_mut().take() {
          None => {}
          Some(ActiveTooltip::WaitingForShow { .. }) => {}
@@ -379,7 +380,7 @@
      }
  }
  
-@@ -3686,7 +3818,7 @@
+@@ -3686,7 +3819,7 @@
      };
      if should_clear {
          active_tooltip.borrow_mut().take();
@@ -388,7 +389,7 @@
      }
  }
  
-@@ -3762,6 +3894,7 @@
+@@ -3762,6 +3895,7 @@
                          &build_tooltip,
                          &check_is_hovered_during_prepaint,
                          Some(long_press_tooltip_active.clone()),
@@ -396,7 +397,7 @@
                          window,
                          cx,
                      ) {
-@@ -3888,6 +4021,7 @@
+@@ -3888,6 +4022,7 @@
                              &build_tooltip,
                              &check_is_hovered_during_prepaint,
                              None,
@@ -404,7 +405,7 @@
                              window,
                              cx,
                          );
-@@ -3905,11 +4039,14 @@
+@@ -3905,11 +4040,14 @@
      }
  }
  
@@ -419,7 +420,7 @@
      window: &mut Window,
      cx: &mut App,
  ) -> bool {
-@@ -3945,7 +4082,7 @@
+@@ -3945,7 +4083,7 @@
      });
      let did_show = new_tooltip.is_some();
      *active_tooltip.borrow_mut() = new_tooltip;
@@ -428,7 +429,7 @@
      did_show
  }
  
-@@ -4007,7 +4144,7 @@
+@@ -4007,7 +4145,7 @@
                          return;
                      };
                      if active_tooltip.borrow_mut().take().is_some() {
@@ -437,7 +438,7 @@
                      }
                  }
              });
-@@ -4108,6 +4245,14 @@
+@@ -4108,6 +4246,14 @@
  
      fn write_a11y_info(&self, node: &mut accesskit::Node) {
          self.element.write_a11y_info(node);
@@ -523,9 +524,9 @@
      fn request_layout(
          &mut self,
          _id: Option<&GlobalElementId>,
---- a/src/frame_observer.rs
+--- /dev/null
 +++ b/src/frame_observer.rs
-@@ -0,0 +1,741 @@
+@@ -0,0 +1,753 @@
 +//! Read-only rendered-frame observation for developer tooling and automation.
 +//!
 +//! GPUI's accessibility tree is the canonical description of a rendered UI.
@@ -726,6 +727,8 @@
 +    AncestorRendered,
 +    /// The view's bounds, content mask, or text style changed.
 +    LayoutChanged,
++    /// The containing element's observation redaction boundary changed.
++    ObservationChanged,
 +}
 +
 +/// How a view produced its output for one frame.
@@ -1077,8 +1080,16 @@
 +        }
 +    }
 +
++    /// Text inside a redacted element must not contribute to any ancestor.
++    pub(crate) fn text_is_redacted(&self) -> bool {
++        self.parents.iter().any(|parent| {
++            Self::parent_index(&self.nodes, parent)
++                .is_some_and(|index| self.nodes[index].redacted)
++        })
++    }
++
 +    pub(crate) fn add_text(&mut self, text: &str) {
-+        if !self.enabled {
++        if !self.enabled || self.text_is_redacted() {
 +            return;
 +        }
 +        let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -1151,8 +1162,10 @@
 +    ) {
 +        // The replayed range added text to the nodes open around it. Those
 +        // nodes are open around the replay too, found by the same path.
++        let text_is_redacted = self.text_is_redacted();
 +        for (_, path, before) in &start.open {
-+            if let Some((_, _, after)) = end.open.iter().find(|(_, candidate, _)| candidate == path)
++            if !text_is_redacted
++                && let Some((_, _, after)) = end.open.iter().find(|(_, candidate, _)| candidate == path)
 +                && let Some(delta) = after.strip_prefix(before.as_str())
 +                && !delta.is_empty()
 +                && let Some(index) = self
@@ -1396,7 +1409,15 @@
          self.update(cx, |this, cx| {
              Render::render(this, window, cx).into_any_element()
          })
-@@ -436,12 +444,53 @@
+@@ -303,6 +311,7 @@
+     bounds: Bounds<Pixels>,
+     content_mask: ContentMask<Pixels>,
+     text_style: TextStyle,
++    text_redacted: bool,
+ }
+ 
+ impl<V: View> Element for ViewElement<V> {
+@@ -436,12 +445,58 @@
                  (layout_id, None)
              }
              _ => {
@@ -1440,6 +1461,11 @@
 +    if window.refreshing {
 +        return Some(ViewRenderCause::AncestorRendered);
 +    }
++    // Rebuild observation checkpoints when the surrounding redaction boundary
++    // changes: replaying withheld text cannot restore it after unredaction.
++    if element_state.cache_key.text_redacted != window.next_frame.observed.text_is_redacted() {
++        return Some(ViewRenderCause::ObservationChanged);
++    }
 +    if element_state.cache_key.bounds != bounds
 +        || element_state.cache_key.content_mask != *content_mask
 +        || element_state.cache_key.text_style != *text_style
@@ -1450,7 +1476,7 @@
  }
  
  #[inline(never)]
-@@ -481,13 +530,20 @@
+@@ -481,13 +536,20 @@
                  let content_mask = window.content_mask();
                  let text_style = window.text_style();
  
@@ -1478,7 +1504,7 @@
                      let prepaint_start = window.prepaint_index();
                      window.reuse_prepaint(element_state.prepaint_range.clone());
                      cx.entities
-@@ -498,6 +554,11 @@
+@@ -498,6 +560,11 @@
                      return (None, element_state);
                  }
  
@@ -1490,6 +1516,14 @@
                  let refreshing = mem::replace(&mut window.refreshing, true);
                  let prepaint_start = window.prepaint_index();
                  let (element, accessed_entities) = cx.detect_accessed_entities(|cx| {
+@@ -520,6 +587,7 @@
+                             bounds,
+                             content_mask,
+                             text_style,
++                            text_redacted: window.next_frame.observed.text_is_redacted(),
+                         },
+                     },
+                 )
 --- a/src/window/a11y.rs
 +++ b/src/window/a11y.rs
 @@ -209,8 +209,13 @@
