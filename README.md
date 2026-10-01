@@ -107,10 +107,15 @@ For HTML-authored interfaces that agents can also edit live, see the
 Prefer the element tools over coordinates. All coordinates are logical pixels
 relative to the window.
 
-## GPUI Kit
+## GPUI Kit and `gpui-pre`
 
-For [GPUI Kit](https://github.com/longbridge/gpui-kit) 0.7.0, select the
-`gpui-pre` backend and patch its GPUI snapshot in your workspace root:
+GPUI Kit and `gpui-component` use `gpui-pre`, a crates.io release of GPUI. The
+bridge supports `gpui-pre` **0.3.5, 0.3.6 and 0.3.7**. Each needs a small set of
+GPUI patches, which this repository provides.
+
+### GPUI Kit 0.7.0 (`gpui-pre` 0.3.7)
+
+Add this to your workspace's `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -122,19 +127,53 @@ gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 ```
 
 Call `gpui_kit::init(cx)`, open the window with `gpui_kit::open_window`, and
-install the bridge as above. The bridge accepts Kit's `Window` and `App`
-directly. Run the [Kit demo](examples/gpui-kit) with
-`cargo run --manifest-path examples/gpui-kit/Cargo.toml`.
+install the bridge as usual. The bridge accepts Kit's `Window` and `App`
+directly. To see it working, run the [Kit demo](examples/gpui-kit):
 
-- Choose exactly one backend per app. Cargo features are additive, so every
-  dependency on `gpui-mcp` in a Kit app must disable default features. Zed
-  integrations that disable defaults must add `features = ["zed"]`.
-- Kit's annotated components work with the standard tools. Custom-drawn
-  components expose only the semantics they annotate.
-- Kit 0.7.0's disabled controls don't set the disabled flag, so they report
-  `enabled: true`. Its read-only inputs don't publish `read_only`.
-- `gpui-mcp-html` currently uses the Zed backend. Newer `gpui-pre` pins need a
-  vendor update; see [vendor/README.md](vendor/README.md).
+```console
+cargo run --manifest-path examples/gpui-kit/Cargo.toml
+```
+
+### Another `gpui-pre` version, or your own GPUI patches
+
+The `[patch]` above always gives you the patched 0.3.7 from this repository.
+If your app is on 0.3.5 or 0.3.6, or you carry GPUI patches of your own, keep
+your own copy of `gpui-pre` instead:
+
+1. From a checkout of this repository, write a patched copy into your app:
+
+   ```console
+   python3 script/vendor-gpui-pre.py --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
+   ```
+
+2. Apply your own patches to that copy, if you have any.
+3. Point your workspace at it:
+
+   ```toml
+   [patch.crates-io]
+   gpui-pre = { path = "vendor/gpui-pre" }
+   ```
+
+The patches for each version are in
+[`vendor/patches/gpui-pre/`](vendor/patches/gpui-pre). Each version has two:
+
+- `automation.patch` has everything the bridge needs.
+- `font-fallback.patch` is an unrelated font fix. Add `--without font-fallback`
+  to skip it.
+
+CI builds and tests the bridge against every supported version, so these
+patches are kept working.
+
+### Things to know
+
+- Use one backend per app. Every `gpui-mcp` dependency in a Kit app needs
+  `default-features = false`. Zed apps that turn off default features must add
+  `features = ["zed"]`.
+- Kit components that publish accessibility info work with all the tools.
+  Custom-drawn components only show what they annotate.
+- In Kit 0.7.0, disabled controls report `enabled: true` and read-only inputs
+  don't report `read_only`. Kit doesn't publish these states yet.
+- `gpui-mcp-html` only supports the Zed backend for now.
 
 ## Measuring frame cost
 

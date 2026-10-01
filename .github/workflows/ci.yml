@@ -129,6 +129,73 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 script/vendor-gpui-pre.py --check
 
+  gpui-pre-range:
+    # The main matrix builds the bridge against the vendored release. This job
+    # applies each other supported release's patch series to its crates.io
+    # archive and builds and tests the bridge against the result, so a patch
+    # that stops applying or compiling fails here rather than downstream.
+    name: gpui-pre ${{ matrix.version }}${{ matrix.without && format(' without {0}', matrix.without) || '' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: 0.3.5
+          - version: 0.3.6
+          # The optional patches must stay independent of the automation patch.
+          - version: 0.3.7
+            without: font-fallback
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            clang libclang-dev pkg-config cmake \
+            libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libxrandr-dev libegl-dev libgbm-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinput-dev \
+            libxcb-composite0-dev libpipewire-0.3-dev libdbus-1-dev libegl1-mesa-dev \
+            mesa-vulkan-drivers
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal --component clippy && rustup default 1.96.0
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: gpui-pre-${{ matrix.version }}-${{ matrix.without }}
+
+      - name: Apply the patch series
+        env:
+          VERSION: ${{ matrix.version }}
+          WITHOUT: ${{ matrix.without }}
+        run: >-
+          python3 script/vendor-gpui-pre.py --version "$VERSION"
+          --output "$RUNNER_TEMP/gpui-pre"
+          ${WITHOUT:+--without "$WITHOUT"}
+
+      # The committed lockfile names the vendored release, so these steps
+      # resolve the patched release instead of using --locked.
+      - name: Test bridge
+        run: >-
+          cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support
+          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'"
+
+      - name: Check that the bridge resolved the patched release
+        env:
+          VERSION: ${{ matrix.version }}
+        run: >-
+          cargo tree -p gpui-mcp --no-default-features --features gpui-pre
+          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'"
+          --depth 1 --prefix none | grep -Fx "gpui-pre v$VERSION ($RUNNER_TEMP/gpui-pre)"
+
+      - name: Clippy
+        run: >-
+          cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support
+          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'" -- -D warnings
+
   external-consumer:
     name: Public Git installation
     runs-on: ubuntu-24.04
