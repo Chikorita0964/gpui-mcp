@@ -76,6 +76,8 @@ fails to apply. It refuses to run if the version range in the workspace
 - The bridge builds, passes its tests and passes Clippy against `gpui-pre/`,
   against patched 0.3.5 and 0.3.6, and against 0.3.7 without the font patch.
 - The Kit demo builds and passes its tests.
+- The bridge builds and passes its tests on Rust 1.95, the oldest version it
+  supports.
 - A fresh app that installs the bridge from the pushed Git commit builds. Kit
   and the bridge must share a single patched `gpui-pre`.
 

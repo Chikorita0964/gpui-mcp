@@ -3,7 +3,9 @@ name = "gpui-mcp"
 description = "A hardened, cross-platform MCP automation bridge for GPUI applications"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# Apps link this crate, so it builds on an older Rust than the rest of the
+# workspace. The `msrv` CI job keeps it that way.
+rust-version = "1.95"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true

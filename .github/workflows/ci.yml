@@ -196,6 +196,42 @@ jobs:
           cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support
           --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'" -- -D warnings
 
+  msrv:
+    # gpui-mcp and gpui-mcp-protocol declare an older rust-version than the
+    # workspace toolchain, because apps link them.
+    name: Bridge on Rust 1.95
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            clang libclang-dev pkg-config cmake \
+            libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libxrandr-dev libegl-dev libgbm-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinput-dev \
+            libxcb-composite0-dev libpipewire-0.3-dev libdbus-1-dev libegl1-mesa-dev \
+            mesa-vulkan-drivers
+
+      # rust-toolchain.toml pins the workspace toolchain; `+1.95.0` overrides it.
+      - name: Install Rust 1.95
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: msrv
+
+      - name: Check the Zed backend
+        run: cargo +1.95.0 check -p gpui-mcp --locked
+
+      - name: Test the gpui-pre backend
+        run: >-
+          cargo +1.95.0 test -p gpui-mcp -p gpui-mcp-protocol --no-default-features
+          --features gpui-mcp/gpui-pre,gpui-mcp/test-support --locked
+
   external-consumer:
     name: Public Git installation
     runs-on: ubuntu-24.04
