@@ -1,18 +1,23 @@
 use super::{
-    DiffCurrentArgs, DiffSnapshotsArgs, Duration, ElementArgs, FindArgs, GpuiMcp, Instant, Json,
-    MAX_TREE_SNAPSHOTS, Parameters, SnapshotArgs, ToolRouter, Value, WaitElementArgs,
-    WaitStateArgs, encode_error, find_nodes, get_node, json, map_wait_error, object_output,
-    require_bounds, state_matches, tool, tool_router, tree_diff, validate_name, validate_timeout,
+    CallToolResult, DiffCurrentArgs, DiffSnapshotsArgs, Duration, ElementArgs, FindArgs, GpuiMcp,
+    Instant, Json, MAX_TREE_SNAPSHOTS, Parameters, SnapshotArgs, ToolRouter, TreeArgs, UiTree,
+    Value, WaitElementArgs, WaitStateArgs, encode_error, find_nodes, get_node, json,
+    map_wait_error, object_output, require_bounds, state_matches, tool, tool_router, tree_diff,
+    tree_result, validate_name, validate_timeout,
 };
 
 #[tool_router(router = tree_router)]
 impl GpuiMcp {
-    #[tool(description = "Return the latest rendered GPUI semantic tree with real layout bounds")]
-    async fn get_ui_tree(&self) -> Result<Json<Value>, String> {
+    #[tool(
+        description = "Return the latest rendered GPUI semantic tree with real layout bounds. Optionally return only one node's subtree (`root`), limit how many levels below the starting nodes are included (`max_depth`; 0 returns the starting nodes only), or omit nodes whose state is not visible (`visible_only`). The cut applies to `nodes` only: a returned node still lists every child id, and a node's `parent` and the reply's `roots` are returned as they are, so the reply can name an id that `nodes` does not contain.",
+        output_schema = rmcp::handler::server::tool::schema_for_output::<UiTree>()
+    )]
+    async fn get_ui_tree(
+        &self,
+        Parameters(args): Parameters<TreeArgs>,
+    ) -> Result<CallToolResult, String> {
         let tree = self.tree().await?;
-        Ok(object_output(
-            serde_json::to_value(tree).map_err(encode_error)?,
-        ))
+        tree_result(&tree, &args)
     }
 
     #[tool(
