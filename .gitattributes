@@ -10,6 +10,7 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.lock text eol=lf
+*.patch text eol=lf
 *.png binary
 *.gif binary
 *.mp4 binary

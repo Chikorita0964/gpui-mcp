@@ -1,5 +1,17 @@
 {
-  "version": "0.3.7",
-  "sha256": "0e87a42bb37c7cb4e76dd1ac0ce88851e46e976e0373a47ab3e0757abffee54d",
-  "zed_rev": "1a28cff4b409169bac058bca40dfbfeb7621d19b"
+  "vendored": "0.3.7",
+  "versions": {
+    "0.3.5": {
+      "sha256": "2a9ca98fdcad06276de623c2f48ebd710f1e7724eebef2f2673c583e85dc8335",
+      "zed_rev": "d89e9c2124b2786a390c7a451c7488601b4da2e1"
+    },
+    "0.3.6": {
+      "sha256": "a0437c0b83e636a92bd1a39fa1d05fb632ae671289537497b35871ffbe231b84",
+      "zed_rev": "bcf6582ce3500df93a8a39366640173e6786cea6"
+    },
+    "0.3.7": {
+      "sha256": "0e87a42bb37c7cb4e76dd1ac0ce88851e46e976e0373a47ab3e0757abffee54d",
+      "zed_rev": "1a28cff4b409169bac058bca40dfbfeb7621d19b"
+    }
+  }
 }
