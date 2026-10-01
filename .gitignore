@@ -9,3 +9,12 @@ target/
 Thumbs.db
 *.log
 *.tmp
+# Written by the vendored check in vendor/README.md: the crate is its own workspace root, so
+# `cargo check --manifest-path vendor/gpui-pre/Cargo.toml` leaves a lock beside it. Clear that
+# file before script/vendor-gpui-pre.py --check, which compares every file.
+/vendor/gpui-pre/Cargo.lock
+# Stubs for the two fonts the crate's svg_renderer test module includes by relative path
+# (vendor/gpui-pre/src/svg_renderer.rs:361-363). The repository carries no assets/ tree of its
+# own; these two names are the only paths the runbook's workflow creates.
+/assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf
+/assets/fonts/lilex/Lilex-Regular.ttf

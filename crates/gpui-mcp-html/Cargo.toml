@@ -29,7 +29,7 @@ anyhow = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 gpui = { workspace = true, optional = true }
 gpui_platform = { workspace = true, optional = true }
-gpui-mcp = { path = "../gpui-mcp", default-features = false, features = ["zed"], optional = true }
+gpui-mcp = { path = "../gpui-mcp", optional = true }
 gpui-mcp-capture = { path = "../gpui-mcp-capture", optional = true }
 htmlswap = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
@@ -46,8 +46,8 @@ required-features = ["visual-parity"]
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
-gpui-mcp = { path = "../gpui-mcp", default-features = false, features = ["zed", "test-support"] }
-tempfile = "3.23.0"
+gpui-mcp = { path = "../gpui-mcp", features = ["test-support"] }
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

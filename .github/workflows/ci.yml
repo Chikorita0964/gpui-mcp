@@ -57,12 +57,14 @@ jobs:
       - name: Check workspace
         run: cargo check --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
-      - name: Check screenshot-free integration
-        run: cargo check -p gpui-mcp --no-default-features --features zed --locked
-
       - name: Build integration test fixture
         run: cargo build -p gpui-mcp-demo --locked
 
+      # The windowed e2e targets (perform_action, tree_selection, region_capture, frame_cost,
+      # disabled_state) self-skip on Linux: this runner has no DISPLAY or WAYLAND_DISPLAY, so their
+      # has_a_desktop_session() guard returns false. cache_hints is server-only and does run here.
+      # An Xvfb step mirroring the visual-parity one below is owed so those targets get real Linux
+      # coverage; the vendored gpui-pre test target needs its own step (vendor/README.md).
       - name: Test workspace
         run: cargo test --workspace --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
@@ -79,12 +81,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked -- -D warnings
 
-      - name: Check gpui-pre integration
-        run: cargo check -p gpui-mcp --no-default-features --features gpui-pre --locked
-
-      - name: Test bridge with gpui-pre
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support --locked
-
       - name: Check GPUI Kit example formatting
         run: cargo fmt --manifest-path examples/gpui-kit/Cargo.toml -- --check
 
@@ -93,9 +89,6 @@ jobs:
 
       - name: Test GPUI Kit controls and input
         run: cargo test --manifest-path examples/gpui-kit/Cargo.toml --locked
-
-      - name: Clippy GPUI Kit bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support --locked -- -D warnings
 
       - name: Upload visual parity failure artifacts
         if: failure()

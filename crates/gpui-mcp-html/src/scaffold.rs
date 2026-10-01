@@ -8,8 +8,11 @@ use crate::{
 };
 
 const GPUI_MCP_REPOSITORY: &str = "https://github.com/themixednuts/gpui-mcp";
-const ZED_REPOSITORY: &str = "https://github.com/zed-industries/zed";
-const ZED_REVISION: &str = "82878540b5410b288a2c92cb9ee5675533e4d807";
+/// The GPUI Kit snapshot family both a generated project and this repository build on.
+/// Kept in step with `vendor/gpui-pre.json` and the workspace manifest.
+const GPUI_PRE_VERSION: &str = "=0.3.7";
+/// The windowing features every gpui-mcp application asks `gpui-pre-platform` for.
+const GPUI_PLATFORM_FEATURES: &str = r#""font-kit", "wayland", "x11""#;
 
 /// Inputs for a new standalone GPUI HTML project.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -262,29 +265,23 @@ fn cargo_manifest(name: &str, dependencies: &ManifestDependencies<'_>) -> String
                 |revision| format!("rev = \"{revision}\""),
             );
             format!(
-                r#"gpui = "=0.2.2"
-gpui_platform = {{ git = "{ZED_REPOSITORY}", rev = "{ZED_REVISION}", features = ["font-kit", "wayland", "x11"] }}
+                r#"gpui = {{ package = "gpui-pre", version = "{GPUI_PRE_VERSION}" }}
+gpui_platform = {{ package = "gpui-pre-platform", version = "{GPUI_PRE_VERSION}", features = [{GPUI_PLATFORM_FEATURES}] }}
 gpui-mcp = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}
 gpui-mcp-html = {{ git = "{GPUI_MCP_REPOSITORY}", {selector}, features = ["dev-watch"] }}
 
 [patch.crates-io]
-gpui = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}
-
-[patch."{ZED_REPOSITORY}"]
-gpui = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}"#
+gpui-pre = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}"#
             )
         }
         ManifestDependencies::LocalWorkspace(root) => format!(
-            r#"gpui = "=0.2.2"
-gpui_platform = {{ git = "{ZED_REPOSITORY}", rev = "{ZED_REVISION}", features = ["font-kit", "wayland", "x11"] }}
+            r#"gpui = {{ package = "gpui-pre", version = "{GPUI_PRE_VERSION}" }}
+gpui_platform = {{ package = "gpui-pre-platform", version = "{GPUI_PRE_VERSION}", features = [{GPUI_PLATFORM_FEATURES}] }}
 gpui-mcp = {{ path = "{root}/crates/gpui-mcp" }}
 gpui-mcp-html = {{ path = "{root}/crates/gpui-mcp-html", features = ["dev-watch"] }}
 
 [patch.crates-io]
-gpui = {{ path = "{root}/vendor/gpui" }}
-
-[patch."{ZED_REPOSITORY}"]
-gpui = {{ path = "{root}/vendor/gpui" }}"#
+gpui-pre = {{ path = "{root}/vendor/gpui-pre" }}"#
         ),
     };
     format!(
@@ -509,7 +506,7 @@ fn validate_workspace(workspace: &Path) -> Result<(), ScaffoldError> {
     for manifest in [
         workspace.join("crates/gpui-mcp/Cargo.toml"),
         workspace.join("crates/gpui-mcp-html/Cargo.toml"),
-        workspace.join("vendor/gpui/Cargo.toml"),
+        workspace.join("vendor/gpui-pre/Cargo.toml"),
     ] {
         if !manifest.is_file() {
             return Err(ScaffoldError::MissingWorkspaceCrate { manifest });
@@ -632,7 +629,31 @@ pub enum ScaffoldError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Decorations, ProjectSpec, generate};
+    use super::{Decorations, GPUI_PRE_VERSION, ProjectSpec, generate};
+
+    /// The pin here is the third copy of the snapshot version, after `vendor/gpui-pre.json` and
+    /// the workspace manifest. A vendor bump that forgets this one would scaffold projects whose
+    /// `[patch.crates-io]` no longer serves them, so the guard reads the vendored metadata instead
+    /// of asserting the literal against itself.
+    #[test]
+    fn scaffold_pin_matches_the_vendored_snapshot_version() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let snapshot =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/gpui-pre.json");
+        let metadata = std::fs::read_to_string(&snapshot)?;
+        let version = metadata
+            .split("\"version\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').nth(1))
+            .ok_or("vendor/gpui-pre.json carries no version field")?;
+        assert_eq!(
+            GPUI_PRE_VERSION,
+            format!("={version}"),
+            "the scaffold pin must match {}",
+            snapshot.display()
+        );
+        Ok(())
+    }
 
     #[test]
     fn scaffold_writes_pure_html_ron_and_rust_project() -> Result<(), Box<dyn std::error::Error>> {
@@ -649,11 +670,17 @@ mod tests {
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
         assert!(manifest.contains("[workspace]"));
         assert!(manifest.contains("features = [\"dev-watch\"]"));
-        assert!(manifest.contains("gpui = \"=0.2.2\""));
+        assert!(manifest.contains("gpui = { package = \"gpui-pre\", version = \"=0.3.7\" }"));
+        assert!(manifest.contains(
+            "gpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.7\", \
+             features = [\"font-kit\", \"wayland\", \"x11\"] }"
+        ));
         assert!(manifest.contains("https://github.com/themixednuts/gpui-mcp"));
-        assert!(manifest.contains("https://github.com/zed-industries/zed"));
         assert!(manifest.contains("[patch.crates-io]"));
-        assert!(manifest.contains("[patch.\"https://github.com/zed-industries/zed\"]"));
+        assert!(
+            manifest.contains("gpui-pre = { git = \"https://github.com/themixednuts/gpui-mcp\"")
+        );
+        assert!(!manifest.contains("zed-industries"));
         assert!(!manifest.contains("path ="));
         let main = std::fs::read_to_string(destination.join("src/main.rs"))?;
         assert!(main.contains("ProjectWatcher"));
@@ -694,9 +721,11 @@ mod tests {
         generate(&ProjectSpec::new("offline-app", &destination).workspace(workspace))?;
 
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
-        assert!(manifest.contains("gpui = \"=0.2.2\""));
+        assert!(manifest.contains("gpui = { package = \"gpui-pre\", version = \"=0.3.7\" }"));
         assert!(manifest.contains("path ="));
-        assert!(manifest.contains("vendor/gpui"));
+        assert!(manifest.contains("gpui-pre = { path = "));
+        assert!(manifest.contains("vendor/gpui-pre"));
+        assert!(!manifest.contains("zed-industries"));
         assert!(!manifest.contains("git = \"https://github.com/themixednuts/gpui-mcp\""));
         Ok(())
     }

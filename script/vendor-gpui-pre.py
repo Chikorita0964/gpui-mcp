@@ -38,9 +38,11 @@ def main():
     metadata = json.loads((ROOT / "vendor" / "gpui-pre.json").read_text())
     version = metadata["version"]
     workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())
-    dependency = workspace["workspace"]["dependencies"]["gpui_pre"]
-    if dependency["version"] != f"={version}":
-        raise SystemExit("workspace gpui_pre pin does not match vendor/gpui-pre.json")
+    # The workspace depends on the snapshot through its `gpui` name (the library the crate
+    # publishes under); the manifest's `package` key names the crates.io package.
+    dependency = workspace["workspace"]["dependencies"]["gpui"]
+    if dependency.get("package") != "gpui-pre" or dependency["version"] != f"={version}":
+        raise SystemExit("workspace gpui pin does not match vendor/gpui-pre.json")
     url = f"https://static.crates.io/crates/gpui-pre/gpui-pre-{version}.crate"
     with urllib.request.urlopen(url, timeout=60) as response:
         data = response.read()

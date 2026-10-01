@@ -8,7 +8,7 @@ members = [
     "examples/demo",
     "examples/runtime-showcase",
 ]
-exclude = ["vendor/gpui", "vendor/gpui-pre", "examples/gpui-kit"]
+exclude = ["vendor/gpui-pre", "examples/gpui-kit"]
 default-members = ["crates/gpui-mcp-server"]
 resolver = "3"
 
@@ -21,39 +21,39 @@ repository = "https://github.com/themixednuts/gpui-mcp"
 homepage = "https://github.com/themixednuts/gpui-mcp"
 
 [workspace.dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.104"
 async-channel = "2.5.0"
-base64 = "0.22.1"
+base64 = "0.23.1"
 bytes = "1.11.1"
-clap = { version = "4.6.1", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 directories = "6.0.0"
-# Declared from the Zed git source rather than by path so a consuming workspace
-# can redirect it with `[patch."https://github.com/zed-industries/zed"]` to the
-# GPUI tree its own application links (a path dependency is not patchable). The
-# rev names the commit `vendor/gpui` was cut from; this workspace's own patch
-# below resolves it to that vendored tree, so the rev is never fetched here.
-gpui = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", version = "=0.2.2" }
-gpui_pre = { package = "gpui-pre", version = "=0.3.7" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", features = ["font-kit", "wayland", "x11"] }
+# The crates.io `gpui-pre` snapshot repository: Zed's GPUI published under another
+# name (its library is still `gpui`), the GPUI that GPUI Kit 0.7.0 pins. Declared
+# from crates.io rather than by path so a consuming workspace can redirect it with
+# `[patch.crates-io] gpui-pre = { ... }` to the tree its own application links (a
+# path dependency is not patchable). This workspace's own patch below resolves it
+# to the vendored tree.
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", features = ["font-kit", "wayland", "x11"] }
 htmlswap = { git = "https://github.com/themixednuts/htmlswap", rev = "7b6bd0f0c73cef241819c707615684fd2c066341" }
 image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
-interprocess = { version = "2.4.2", features = ["tokio"] }
+interprocess = { version = "2.4.4", features = ["tokio"] }
 notify = "8.2.0"
 mp4 = "0.14.0"
-openh264 = "0.9.7"
-rand = "0.9.2"
+openh264 = "0.9.8"
+rand = "0.10.3"
 raw-window-handle = "0.6.2"
 ron = "0.12.2"
-rmcp = { version = "3.2.0", features = ["server", "transport-io"] }
-schemars = "1.2.1"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+rmcp = { version = "3.5.0", features = ["server", "transport-io"] }
+schemars = "1.2.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 subtle = "2.6.1"
-sysinfo = { version = "0.37", default-features = false, features = ["system"] }
-tempfile = "3.23.0"
-thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-util = { version = "0.7.18", features = ["rt"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { version = "0.7.19", features = ["rt"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 xcap = { version = "0.9.8", features = ["wgc"] }
@@ -79,8 +79,4 @@ strip = "symbols"
 opt-level = 2
 
 [patch.crates-io]
-gpui = { path = "vendor/gpui" }
 gpui-pre = { path = "vendor/gpui-pre" }
-
-[patch."https://github.com/zed-industries/zed"]
-gpui = { path = "vendor/gpui" }

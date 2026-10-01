@@ -31,7 +31,6 @@ keywords = [
 ]
 categories = ["gui"]
 license = "Apache-2.0"
-repository = "https://github.com/zed-industries/zed"
 resolver = "2"
 
 [package.metadata.cargo-shear]
@@ -673,3 +672,5 @@ priority = -1
 [lints.rust.unexpected_cfgs]
 level = "allow"
 priority = 0
+
+[workspace]

@@ -9,15 +9,11 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-default = ["zed"]
-zed = ["dep:gpui"]
-gpui-pre = ["dep:gpui_pre"]
-test-support = ["gpui?/test-support", "gpui_pre?/test-support"]
+test-support = ["gpui/test-support"]
 
 [dependencies]
 async-channel.workspace = true
-gpui = { workspace = true, optional = true }
-gpui_pre = { workspace = true, optional = true }
+gpui.workspace = true
 gpui-mcp-protocol = { path = "../gpui-mcp-protocol" }
 interprocess.workspace = true
 rand.workspace = true
@@ -36,7 +32,7 @@ widestring.workspace = true
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow"] }
 
 [dev-dependencies]
-tempfile = "3.23.0"
+tempfile = "3.27.0"
 tokio.workspace = true
 
 [lints]

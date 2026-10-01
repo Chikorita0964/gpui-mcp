@@ -36,7 +36,7 @@ rust-version = "1.96"
 
 [dependencies]
 gpui-kit = "=0.7.0"
-gpui-mcp = {{ git = {repository}, rev = {revision}, default-features = false, features = ["gpui-pre"] }}
+gpui-mcp = {{ git = {repository}, rev = {revision} }}
 
 [patch.crates-io]
 gpui-pre = {{ git = {repository}, rev = {revision} }}

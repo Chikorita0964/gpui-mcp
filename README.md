@@ -40,16 +40,17 @@ Add the bridge and its GPUI build to your app:
 
 ```toml
 [dependencies]
-gpui = "=0.2.2"
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", features = ["font-kit", "wayland", "x11"] }
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", features = ["font-kit", "wayland", "x11"] }
 gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 
 [patch.crates-io]
-gpui = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
-
-[patch."https://github.com/zed-industries/zed"]
-gpui = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 ```
+
+`gpui-pre` is Zed's GPUI published under another name — the library is still
+`gpui` — and the single `[patch.crates-io]` line points it at this repository's
+vendored, patched copy. Everything in this repository builds on that one GPUI.
 
 Install the bridge when you create a window and keep the returned handle in
 your root view:
@@ -70,14 +71,13 @@ automatically.
 
 ### GPUI Kit
 
-For [GPUI Kit](https://github.com/longbridge/gpui-kit) 0.7.0, select the
-`gpui-pre` backend and patch its exact GPUI snapshot in your application's
-workspace root:
+[GPUI Kit](https://github.com/longbridge/gpui-kit) 0.7.0 pins the same
+`gpui-pre` family, so its recipe is the one above with `gpui-kit` added:
 
 ```toml
 [dependencies]
 gpui-kit = "=0.7.0"
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-pre"] }
+gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 
 [patch.crates-io]
 gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
@@ -86,8 +86,9 @@ gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 Call `gpui_kit::init(cx)`, open the window with `gpui_kit::open_window`, and
 install and retain `BridgeHandle` as above. The bridge accepts GPUI Kit's
 re-exported `Window` and `App` directly. Kit's components and platform backend
-resolve to the same patched `gpui-pre`; no patch to the Zed Git source is needed.
-The MCP server and client configuration are the same for both backends.
+resolve to the same patched `gpui-pre`, which is the GPUI the bridge builds
+against. The MCP server and client configuration need no per-framework
+selection.
 
 Run the [Kit demo](examples/gpui-kit) with:
 
@@ -95,13 +96,11 @@ Run the [Kit demo](examples/gpui-kit) with:
 cargo run --manifest-path examples/gpui-kit/Cargo.toml
 ```
 
-The default bridge backend is `zed`. Select exactly one backend per application;
-Cargo features are additive, so every dependency on `gpui-mcp` in a Kit app
-must disable defaults. `gpui-mcp-html` currently uses the Zed backend. GPUI
-Kit 0.7.0 pins `gpui-pre = 0.3.7`; newer snapshot pins require a matching
-vendor update, described in [vendor/README.md](vendor/README.md).
-Existing Zed integrations that disable default features must explicitly add
-`features = ["zed"]`.
+The bridge has no backends to select: it builds against the patched `gpui-pre`
+everywhere, so an application and the bridge always share one GPUI type
+universe without feature flags. GPUI Kit 0.7.0 pins `gpui-pre = 0.3.7`; a newer
+snapshot pin requires a matching vendor update, described in
+[vendor/README.md](vendor/README.md).
 
 Kit supplies accessibility roles, labels, control states and standard input
 handlers, so the ordinary MCP tools can inspect and drive its annotated
@@ -141,11 +140,10 @@ accessibility node leaves the state unknown; a present node reports AccessKit's
 flag, which cannot recover a read-only state that the control omits. Kit 0.7.0
 does not currently publish that flag for its read-only inputs.
 
-The two Cargo patches keep your app, `gpui_platform`, and the bridge on one GPUI
-type universe. They can go away once the small additions in the
-[vendor patch inventory](vendor/gpui/PATCHES.md) land upstream.
-
-For GPUI Kit, its single `gpui-pre` patch serves the same purpose.
+The single `[patch.crates-io] gpui-pre` line keeps your app, `gpui_platform`,
+and the bridge on one GPUI type universe. It can go away once the ten small
+additions inventoried in [vendor/README.md](vendor/README.md) land in an
+upstream `gpui-pre` release; each can be dropped independently.
 
 See the [demo](examples/demo/src/main.rs) for a complete window. For live
 HTML/CSS interfaces, see the [visual builder guide](docs/visual-builder.md).
