@@ -136,8 +136,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: python3 script/vendor-gpui.py --crate gpui-pre --check
-      - run: python3 script/vendor-gpui.py --crate gpui-ce --check
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal && rustup default 1.96.0
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: xtask
+
+      - run: cargo xtask vendor --crate gpui-pre --check
+      - run: cargo xtask vendor --crate gpui-ce --check
 
   patch-series:
     # The main matrix builds the bridge against the vendored releases. This job
@@ -190,7 +198,7 @@ jobs:
           VERSION: ${{ matrix.version }}
           WITHOUT: ${{ matrix.without }}
         run: >-
-          python3 script/vendor-gpui.py --crate "$CRATE" --version "$VERSION"
+          cargo xtask vendor --crate "$CRATE" --version "$VERSION"
           --output "$RUNNER_TEMP/$CRATE"
           ${WITHOUT:+--without "$WITHOUT"}
 
@@ -308,7 +316,7 @@ jobs:
         env:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: >-
-          python3 script/check-git-consumer.py --backend gpui-kit
+          cargo xtask check-consumer --backend gpui-kit
           --repository "$REPOSITORY_URL" --rev "$REV"
           --target-dir "$GITHUB_WORKSPACE/target"
 
@@ -316,6 +324,6 @@ jobs:
         env:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: >-
-          python3 script/check-git-consumer.py --backend gpui-ce
+          cargo xtask check-consumer --backend gpui-ce
           --repository "$REPOSITORY_URL" --rev "$REV"
           --target-dir "$GITHUB_WORKSPACE/target"

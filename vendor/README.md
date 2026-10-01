@@ -64,20 +64,22 @@ record the Zed commit the release was cut from.
 
 ### Commands
 
-These need Python 3.11+ and GNU patch (`gpatch` on macOS). `--crate` defaults
-to `gpui-pre`.
+Run these from a checkout of this repository. They only need Rust: `xtask` is
+a small tool in this workspace that downloads the crate and applies the
+patches itself. `--crate` defaults to `gpui-pre`, and `cargo xtask --help`
+lists every option.
 
 ```console
 # Check that a vendored copy matches the published crate plus the patches
-python3 script/vendor-gpui.py --crate gpui-pre --check
-python3 script/vendor-gpui.py --crate gpui-ce --check
+cargo xtask vendor --crate gpui-pre --check
+cargo xtask vendor --crate gpui-ce --check
 
 # Rebuild a vendored copy from the published crate
-python3 script/vendor-gpui.py --crate gpui-ce
+cargo xtask vendor --crate gpui-ce
 
 # Write a patched copy of any supported version somewhere else
-python3 script/vendor-gpui.py --crate gpui-pre --version 0.3.5 --output <dir>
-python3 script/vendor-gpui.py --crate gpui-pre --version 0.3.5 --output <dir> --without font-fallback
+cargo xtask vendor --crate gpui-pre --version 0.3.5 --output <dir>
+cargo xtask vendor --crate gpui-pre --version 0.3.5 --output <dir> --without font-fallback
 ```
 
 The script verifies the download's checksum and changes nothing if a patch
@@ -101,8 +103,8 @@ workspace `Cargo.toml` doesn't match its `.json` file.
 To run that last check yourself against a pushed commit:
 
 ```console
-python3 script/check-git-consumer.py --backend gpui-kit --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
-python3 script/check-git-consumer.py --backend gpui-ce --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
+cargo xtask check-consumer --backend gpui-kit --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
+cargo xtask check-consumer --backend gpui-ce --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
 ```
 
 The Kit demo is a separate workspace. Cargo would otherwise turn on both the
@@ -120,7 +122,7 @@ When GPUI Kit or `gpui-ce` moves to a new version:
    `gpui-pre`, also update the Kit demo's pin.
 4. Add the previous version to the `patch-series` job in
    `.github/workflows/ci.yml`.
-5. Run `python3 script/vendor-gpui.py --crate <crate>` and update the
+5. Run `cargo xtask vendor --crate <crate>` and update the
    lockfiles.
 6. Run the bridge's checks for that backend, for example:
 

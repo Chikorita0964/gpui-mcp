@@ -167,7 +167,7 @@ patches of your own, keep your own patched copy instead:
    Pass `--crate gpui-ce` for `gpui-ce`.
 
    ```console
-   python3 script/vendor-gpui.py --crate gpui-pre --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
+   cargo xtask vendor --crate gpui-pre --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
    ```
 
 2. Apply your own patches to that copy, if you have any.

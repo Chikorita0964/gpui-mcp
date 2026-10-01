@@ -7,6 +7,7 @@ members = [
     "crates/gpui-mcp-server",
     "examples/demo",
     "examples/runtime-showcase",
+    "xtask",
 ]
 exclude = ["vendor/gpui", "vendor/gpui-pre", "vendor/gpui-ce", "examples/gpui-kit"]
 default-members = ["crates/gpui-mcp-server"]
@@ -34,7 +35,7 @@ directories = "6.0.0"
 # below resolves it to that vendored tree, so the rev is never fetched here.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", version = "=0.2.2" }
 # Every version these accept has a patch series in vendor/patches/<crate>/.
-# script/vendor-gpui.py fails if a requirement and vendor/<crate>.json differ.
+# `cargo xtask vendor` fails if a requirement and vendor/<crate>.json differ.
 gpui_pre = { package = "gpui-pre", version = ">=0.3.5, <=0.3.7" }
 gpui_ce = { package = "gpui-ce", version = "=0.2.2" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", features = ["font-kit", "wayland", "x11"] }
