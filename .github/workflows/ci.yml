@@ -108,10 +108,10 @@ jobs:
         run: cargo check -p gpui-mcp --no-default-features --features gpui-ce --locked
 
       - name: Test bridge with gpui-ce
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-ce,test-support --locked
+        run: cargo test -p gpui-mcp --no-default-features --features gpui-ce,test-support,gpui_ce/test-support --locked
 
       - name: Clippy gpui-ce bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-ce,test-support --locked -- -D warnings
+        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-ce,test-support,gpui_ce/test-support --locked -- -D warnings
 
       - name: Upload visual parity failure artifacts
         if: failure()
@@ -196,11 +196,14 @@ jobs:
 
       # The committed lockfile names the vendored release, so these steps
       # resolve the patched release instead of using --locked.
+      # The bridge's unit tests need the GPUI crate's own test support, which
+      # its test-support feature doesn't turn on for gpui-ce.
       - name: Test bridge
         env:
           CRATE: ${{ matrix.crate }}
         run: >-
-          cargo test -p gpui-mcp --no-default-features --features "$CRATE,test-support"
+          cargo test -p gpui-mcp --no-default-features
+          --features "$CRATE,test-support,${CRATE//-/_}/test-support"
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
 
       - name: Check that the bridge resolved the patched release
@@ -216,7 +219,8 @@ jobs:
         env:
           CRATE: ${{ matrix.crate }}
         run: >-
-          cargo clippy -p gpui-mcp --all-targets --no-default-features --features "$CRATE,test-support"
+          cargo clippy -p gpui-mcp --all-targets --no-default-features
+          --features "$CRATE,test-support,${CRATE//-/_}/test-support"
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'" -- -D warnings
 
   msrv:
@@ -258,7 +262,7 @@ jobs:
       - name: Test the gpui-ce backend
         run: >-
           cargo +1.95.0 test -p gpui-mcp --no-default-features
-          --features gpui-ce,test-support --locked
+          --features gpui-ce,test-support,gpui_ce/test-support --locked
 
   external-consumer:
     name: Public Git installation

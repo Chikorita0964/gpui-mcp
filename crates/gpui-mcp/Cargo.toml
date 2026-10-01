@@ -15,7 +15,12 @@ default = ["zed"]
 zed = ["dep:gpui"]
 gpui-pre = ["dep:gpui_pre"]
 gpui-ce = ["dep:gpui_ce"]
-test-support = ["gpui?/test-support", "gpui_pre?/test-support", "gpui_ce?/test-support"]
+# The public test-support API doesn't need GPUI's own test support; only this
+# crate's unit tests do. gpui_ce is deliberately left out: Cargo locks every
+# optional dependency named here, and gpui-ce pins `core-foundation = "=0.10.0"`,
+# which would constrain apps that never use it. To run the unit tests against
+# gpui-ce, add `--features gpui_ce/test-support`.
+test-support = ["gpui?/test-support", "gpui_pre?/test-support"]
 
 [dependencies]
 async-channel.workspace = true
