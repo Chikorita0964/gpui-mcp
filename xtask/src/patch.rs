@@ -6,7 +6,7 @@
 //! what `git diff` emits for these patches: changed files and new files.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
 
@@ -108,6 +108,14 @@ fn parse(patch: &str) -> Result<Vec<FilePatch>> {
             let relative = target
                 .strip_prefix("b/")
                 .with_context(|| format!("unsupported target path: {target}"))?;
+            // The target must stay inside the crate, like an archive member
+            // (`extract`): no `..`, root, or prefix components.
+            if Path::new(relative)
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+            {
+                bail!("unsupported target path: {target}");
+            }
             current.get_or_insert_with(empty).path = PathBuf::from(relative);
         } else if line.starts_with("deleted file mode ")
             || line.starts_with("rename ")
@@ -228,6 +236,14 @@ mod tests {
     fn rejects_mismatched_context() {
         let mut tree = files("one\ntwo\n");
         let patch = "--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,2 +1,2 @@\n one\n-three\n+3\n";
+        assert!(apply(&mut tree, patch).is_err());
+    }
+
+    #[test]
+    fn rejects_targets_outside_the_crate() {
+        let mut tree = Files::new();
+        let patch = "diff --git a/../escape.rs b/../escape.rs\nnew file mode 100644\n\
+                     --- /dev/null\n+++ b/../escape.rs\n@@ -0,0 +1 @@\n+escaped\n";
         assert!(apply(&mut tree, patch).is_err());
     }
 

@@ -35,7 +35,9 @@ impl Crate {
     /// The crate's key in the workspace's `[workspace.dependencies]`.
     fn dependency_key(self) -> &'static str {
         match self {
-            Self::GpuiPre => "gpui_pre",
+            // This workspace renames the dependency (`gpui = { package = "gpui-pre" }`),
+            // so the key that carries the requirement is `gpui`.
+            Self::GpuiPre => "gpui",
             Self::GpuiCe => "gpui_ce",
         }
     }
@@ -225,7 +227,15 @@ fn check_requirement<'a>(
 ) -> Result<()> {
     let key = krate.dependency_key();
     let workspace: toml::Value = toml::from_str(&fs::read_to_string(root.join("Cargo.toml"))?)?;
-    let requirement = workspace["workspace"]["dependencies"][key]["version"]
+    let dependency = &workspace["workspace"]["dependencies"][key];
+    let package = dependency.get("package").and_then(toml::Value::as_str);
+    if package != Some(krate.name()) {
+        bail!(
+            "workspace dependency {key} must declare package = {:?}; found {package:?}",
+            krate.name()
+        );
+    }
+    let requirement = dependency["version"]
         .as_str()
         .with_context(|| format!("workspace dependency {key} has no version"))?;
     let mut versions: Vec<_> = versions.collect();
@@ -364,4 +374,52 @@ fn replace(destination: &Path, files: &Files) -> Result<()> {
         return Err(error.into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Crate, check_requirement};
+    use std::fs;
+    use std::path::Path;
+
+    /// Write a minimal workspace manifest with `dependency` and check it for
+    /// `gpui-pre` against the three patch-series versions.
+    fn check(dir: &Path, dependency: &str) -> anyhow::Result<()> {
+        fs::write(
+            dir.join("Cargo.toml"),
+            format!("[workspace.dependencies]\n{dependency}\n"),
+        )?;
+        check_requirement(
+            dir,
+            Crate::GpuiPre,
+            ["0.3.5", "0.3.6", "0.3.7"].iter().copied(),
+        )
+    }
+
+    #[test]
+    fn check_requirement_accepts_the_renamed_dependency() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        assert!(
+            check(
+                dir.path(),
+                "gpui = { package = \"gpui-pre\", version = \">=0.3.5, <=0.3.7\" }",
+            )
+            .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn check_requirement_rejects_a_missing_or_other_package_rename() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        assert!(
+            check(
+                dir.path(),
+                "gpui = { package = \"gpui-other\", version = \">=0.3.5, <=0.3.7\" }",
+            )
+            .is_err()
+        );
+        assert!(check(dir.path(), "gpui = { version = \">=0.3.5, <=0.3.7\" }").is_err());
+        Ok(())
+    }
 }

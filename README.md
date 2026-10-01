@@ -24,40 +24,44 @@ Add the bridge and its GPUI build to your app:
 
 ```toml
 [dependencies]
-gpui = "=0.2.2"
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", features = ["font-kit", "wayland", "x11"] }
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", features = ["font-kit", "wayland", "x11"] }
 gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 
 [patch.crates-io]
-gpui = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
-
-[patch."https://github.com/zed-industries/zed"]
-gpui = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 ```
 
-Both patches are required. They keep your app, `gpui_platform`, and the bridge
-on one GPUI build. They can go away once the additions in the
-[vendor patch inventory](vendor/gpui/PATCHES.md) land upstream.
+`gpui-pre` is Zed's GPUI published under another name — the library is still
+`gpui` — and the single `[patch.crates-io]` line points it at this repository's
+vendored, patched copy, which keeps your app, `gpui_platform` and the bridge on
+one GPUI build. The patch can go away once the additions inventoried in
+[vendor/README.md](vendor/README.md) land in an upstream `gpui-pre` release;
+each can be dropped independently.
 
-Install the bridge when you open a window:
+Install the bridge when you create a window, and keep the returned handle in
+your root view:
 
 ```rust,ignore
 use gpui_mcp::{AppId, BridgeConfig, BridgeHandle};
 
+let app_id = AppId::new("my-app")?;
 let bridge = BridgeHandle::install(
     window,
     cx,
-    BridgeConfig::new(AppId::new("my-app")?, "My App"),
+    BridgeConfig::new(app_id, "My App"),
 )?;
 ```
 
-That is the whole integration. The client discovers running apps on its own.
-See the [demo](examples/demo/src/main.rs) for a complete window.
+That is the whole integration. The MCP client discovers running apps on its
+own. See the [demo](examples/demo/src/main.rs) for a complete window.
 
 ## Making your UI agent-ready
 
 The tree is built from your rendered elements and their accessibility data.
-Most problems come from the items below.
+Write ordinary GPUI elements with stable IDs and normal event handlers;
+`gpui-mcp` discovers the rendered hierarchy, text, bounds, state, and available
+interactions automatically. Most problems come from the items below.
 
 1. **Keep the `BridgeHandle` alive.** Store it in your root view. Dropping it
    stops the bridge.
@@ -74,12 +78,17 @@ Most problems come from the items below.
    the role can't be inferred, as with tabs.
 5. **State disabled and read-only explicitly.** `enabled` comes only from
    `.aria_disabled(true)`. A grey control with no click handler still reports
-   `enabled: true`. Mark read-only inputs with `.aria_read_only(true)`.
+   `enabled: true`, so a consumer cannot tell a disabled control from one that
+   is wrongly unreachable. Mark read-only inputs with `.aria_read_only(true)`:
+   the tree and `get_element_state` expose `read_only`, and `wait_for_state`
+   accepts an optional `read_only` predicate. A missing accessibility node
+   leaves the state unknown, and a present node reports AccessKit's flag, which
+   cannot recover a read-only state that the control omits.
 6. **Redact secrets.** `.frame_redacted(true)` on an element with an id
    withholds its text and value from the bridge, and from any labels derived
    from them.
 7. **Check the diagnostics.** `get_ui_tree` returns a `diagnostics` list that
-   reports omitted, duplicate and orphaned nodes.
+   reports omitted, duplicate, orphaned and over-capacity nodes.
 
 ```rust,ignore
 div()
@@ -89,7 +98,7 @@ div()
     .child(svg().path("icons/settings.svg").size_4())
 ```
 
-For HTML-authored interfaces that agents can also edit live, see the
+For live HTML/CSS interfaces that agents can also edit, see the
 [visual builder guide](docs/visual-builder.md) and the
 [showcase](examples/runtime-showcase).
 
@@ -97,120 +106,112 @@ For HTML-authored interfaces that agents can also edit live, see the
 
 | Area | Tools |
 | --- | --- |
-| Discover | `list_apps`, `select_app`, `get_ui_tree`, `find_elements`, `get_element` |
-| Act | `click_element`, `type_text`, `set_text`, `set_value`, `keyboard`, `hover_element`, `drag_element`, `scroll`, `pointer_*` |
-| Verify | `wait_for_element`, `wait_for_state`, `get_element_state`, `save_ui_snapshot`, `diff_current_ui` |
-| Pixels | `screenshot`, `screenshot_element`, `compare_screenshots`, `highlight_elements`, `start_video_recording` |
-| Performance | `mark_frames`, `get_frame_report`, `record_performance` |
+| Discover | `list_apps`, `select_app`, `ping`, `check_connection`, `get_ui_tree`, `find_elements`, `get_element`, `get_element_bounds` |
+| Act | `click_element`, `double_click_element`, `click_coordinates`, `hover_element`, `drag_element`, `drag_coordinates`, `scroll`, `keyboard`, `type_text`, `set_text`, `set_value`, `focus_element`, `perform_action`, `pointer_click`, `pointer_down`, `pointer_up`, `pointer_move`, `pointer_drag`, `pointer_scroll`, `pointer_location` |
+| Verify | `wait_for_element`, `wait_for_state`, `get_element_state`, `get_selection_count`, `get_text_info`, `get_value`, `save_ui_snapshot`, `load_ui_snapshot`, `diff_ui_snapshots`, `diff_current_ui` |
+| Pixels | `screenshot`, `screenshot_region`, `screenshot_element`, `capture_screenshot_snapshot`, `compare_screenshots`, `diff_screenshots`, `highlight_elements`, `clear_highlights`, `start_video_recording`, `stop_video_recording` |
+| Performance | `mark_frames`, `get_frame_stats`, `get_frame_report`, `record_performance`, `get_performance_report` |
 | Live edit | `get_live_document`, `preview_live_document` |
+| App | `list_app_commands`, `execute_app_command`, `get_logs`, `clear_logs` |
+
+`get_ui_tree` returns the latest rendered tree. It can return only one node's
+subtree (`root`), limit how many levels below the starting nodes are included
+(`max_depth`; `0` returns the starting nodes only), or omit nodes whose state
+is not visible (`visible_only`). The cut applies to `nodes` only: a returned
+node still lists every child id, and a node's `parent` and the reply's `roots`
+are returned as they are, so the reply can name an id that `nodes` does not
+contain.
+
+`perform_action` runs an accessibility action on an element the way assistive
+technology does, without coordinates or keystrokes: `click`, `increment`,
+`decrement`, `expand`, `collapse`, and `set_value`. Use increment/decrement for
+sliders and spinners, expand/collapse for disclosure widgets, and set_value to
+replace a value; an element that does not register the action is reported
+rather than silently ignored.
 
 Prefer the element tools over coordinates. All coordinates are logical pixels
 relative to the window.
 
-## GPUI Kit, `gpui-pre` and `gpui-ce`
+## GPUI Kit and `gpui-pre`
 
-Besides Zed's own GPUI, the bridge works with two GPUI releases on crates.io:
+The bridge builds against one GPUI: the patched `gpui-pre` 0.3.7 that this
+repository vendors. There are no backends to select and no backend features; an
+application and the bridge always share one GPUI type universe.
 
-| GPUI crate | Used by | Supported versions | Bridge feature |
-| --- | --- | --- | --- |
-| `gpui-pre` | GPUI Kit, `gpui-component` | 0.3.5, 0.3.6, 0.3.7 | `gpui-pre` |
-| `gpui-ce` | The community fork and apps built on it | 0.2.2 | `gpui-ce` |
+### GPUI Kit 0.7.0
 
-Each needs a small set of GPUI patches, which this repository provides. The
-recipes below pull in a patched copy from here.
-
-### GPUI Kit 0.7.0 (`gpui-pre` 0.3.7)
-
-Add this to your workspace's `Cargo.toml`:
+[GPUI Kit](https://github.com/longbridge/gpui-kit) 0.7.0 pins the same
+`gpui-pre` 0.3.7, so its recipe is the one above with `gpui-kit` added:
 
 ```toml
 [dependencies]
 gpui-kit = "=0.7.0"
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-pre"] }
+gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 
 [patch.crates-io]
 gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 ```
 
 Call `gpui_kit::init(cx)`, open the window with `gpui_kit::open_window`, and
-install the bridge as usual. The bridge accepts Kit's `Window` and `App`
-directly. To see it working, run the [Kit demo](examples/gpui-kit):
+install and retain `BridgeHandle` as above. The bridge accepts GPUI Kit's
+re-exported `Window` and `App` directly. Kit's components and platform backend
+resolve to the same patched `gpui-pre`, which is the GPUI the bridge builds
+against, so the MCP server and client configuration need no per-framework
+selection.
+
+Run the [Kit demo](examples/gpui-kit) with:
 
 ```console
 cargo run --manifest-path examples/gpui-kit/Cargo.toml
 ```
 
-### `gpui-ce` 0.2.2
+Kit supplies accessibility roles, labels, control states and standard input
+handlers, so the ordinary MCP tools can inspect and drive its annotated
+components. Kit's disabled controls currently omit the click handler without
+setting AccessKit's disabled state, so their `enabled` field still reports
+`true`; the bridge does not infer disabled state from a missing handler. Kit
+0.7.0 also does not publish `read_only` for its read-only inputs. Custom-drawn
+components expose only the semantics they annotate; pointer tools and capture
+remain available.
 
-Add this to your workspace's `Cargo.toml`:
+GPUI Kit 0.7.0 pins `gpui-pre = 0.3.7`; a newer snapshot pin requires a
+matching vendor update, described in [vendor/README.md](vendor/README.md).
 
-```toml
-[dependencies]
-gpui-ce = "=0.2.2"
-gpui_ce_platform = "=0.1.0"
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-ce"] }
+### The vendored `gpui-pre` copy
 
-[patch.crates-io]
-gpui-ce = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+`vendor/gpui-pre/` is generated from the crates.io release plus the patch
+series in [`vendor/patches/gpui-pre/0.3.7/`](vendor/patches/gpui-pre/0.3.7),
+never edited by hand:
+
+```console
+cargo xtask vendor --crate gpui-pre --check   # verify the committed tree
+cargo xtask vendor --crate gpui-pre           # rebuild it from crates.io
 ```
 
-`gpui-ce` is imported as `gpui`, so install the bridge as usual when you open
-a window.
-
-### Another version, or your own GPUI patches
-
-The `[patch]` recipes above always give you the version this repository
-vendors. If your app is on an older supported version, or you carry GPUI
-patches of your own, keep your own patched copy instead:
-
-1. From a checkout of this repository, write a patched copy into your app.
-   Pass `--crate gpui-ce` for `gpui-ce`.
-
-   ```console
-   cargo xtask vendor --crate gpui-pre --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
-   ```
-
-2. Apply your own patches to that copy, if you have any.
-3. Point your workspace at it:
-
-   ```toml
-   [patch.crates-io]
-   gpui-pre = { path = "vendor/gpui-pre" }
-   ```
-
-The patches are in [`vendor/patches/`](vendor/patches), one folder per crate
-and version. Each version has two:
-
-- `automation.patch` has everything the bridge needs.
-- `font-fallback.patch` is an unrelated font fix. Add `--without font-fallback`
-  to skip it.
-
-CI builds and tests the bridge against every supported version, so these
-patches are kept working.
-
-### Things to know
-
-- Use one backend per app. Every `gpui-mcp` dependency in a GPUI Kit or
-  `gpui-ce` app needs `default-features = false`. Zed apps that turn off default
-  features must add `features = ["zed"]`.
-- Kit components that publish accessibility info work with all the tools.
-  Custom-drawn components only show what they annotate.
-- In Kit 0.7.0, disabled controls report `enabled: true` and read-only inputs
-  don't report `read_only`. Kit doesn't publish these states yet.
-- `gpui-mcp-html` only supports the Zed backend for now.
+`cargo xtask vendor` replaces the old Python scripts, verifies the download's
+checksum, and changes nothing if a patch fails to apply. This repository
+vendors, builds and tests `gpui-pre` 0.3.7 only: the 0.3.5 and 0.3.6 patch
+series stay in place, unbuilt, as upstream ships them, so the next upstream
+sync stays small.
 
 ## Measuring frame cost
 
-Injected input costs the same as real input. The server waits for the frames
-that input caused and adds none of its own.
+Injected input costs what the same input from the operating system costs.
+Pointer and keyboard events invalidate only what their handlers notify, and the
+server waits for the frames that input caused without adding frames of its own.
+Screenshots request fresh frames, but those frames replay every cached view that
+was not notified, so they do not render the whole window.
 
-Call `mark_frames`, perform the interaction, then call `get_frame_report`. For
-every frame since the mark it gives:
+Call `mark_frames`, perform the interaction with `hover_element`,
+`pointer_move`, or a real mouse, then call `get_frame_report`. The report
+covers every frame completed after the mark. For each frame it gives:
 
-- the full `Window::draw` time (`draw_ms`), split into the app's share
+- GPUI's whole `Window::draw` time (`draw_ms`, the interval the profiler
+  records as `FrameTiming::draw_duration`), split into the application's share
   (`app_draw_ms`) and the bridge's (`bridge_ms`);
 - p50, p95 and max for each;
-- every view that rendered and why, plus the cached views that replayed instead.
+- every view that rendered and why, plus the cached views that replayed
+  instead.
 
 The render causes are:
 
@@ -221,23 +222,30 @@ The render causes are:
 - `layout_changed`: its bounds, content mask, or text style changed
 - `uncached`: it is not embedded with `.cached(...)`
 
-A hover inside an `Entity::cached` region should show that region `notified`
-and its siblings replaying. Anything else shows where a caching boundary leaks.
-`get_frame_stats` averages over the same frames. `record_performance` reports a
-fixed interval. In process, use `Automation::mark_frames` and
-`Automation::frame_report`.
+A hover inside a region drawn with `Entity::cached` should show that region
+rendering because it was `notified` and its siblings replaying. Anything else
+shows where a caching boundary leaks. `get_frame_stats` averages over the same
+window, `record_performance` reports the frames drawn during a fixed interval,
+and an app can read the same numbers in process with `Automation::mark_frames`
+and `Automation::frame_report`.
 
-`bridge_ms` is the work the bridge adds to a draw: finishing the accessibility
-tree, building the observed frame, and painting highlights. The semantic tree
-is converted off the UI thread when a client reads it.
+`bridge_ms` covers the work the bridge adds to a draw: finishing the
+accessibility tree when no screen reader wants it, building the observed frame,
+and painting highlights. Recording each element's accessibility node during
+prepaint happens inside the application's own work and stays in `app_draw_ms`.
+The semantic tree is converted when a client reads it, off the UI thread, so
+that cost is in neither.
 
 ## Platform notes
 
 - **Linux:** exact-window capture currently requires X11.
 - **Windows:** screenshots take a short burst of compositor samples and return
   the newest, because Windows Graphics Capture can return a stale frame first.
-  The one-second deadline covers waiting on the compositor, not readback, so
-  even very large windows capture from debug builds.
+  The one-second deadline bounds waiting on the compositor, not readback: the
+  readback cost scales with the window's pixel count and with whether the
+  server was built optimized, so it is measured on the first sample and
+  credited back to the budget, up to a bound. A 5120x1440 window captures from
+  a debug build, and an ordinary window keeps the one-second wait.
 
 ## Security
 

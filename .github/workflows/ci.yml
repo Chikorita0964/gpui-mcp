@@ -64,12 +64,14 @@ jobs:
       - name: Check workspace
         run: cargo check --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
-      - name: Check screenshot-free integration
-        run: cargo check -p gpui-mcp --no-default-features --features zed --locked
-
       - name: Build integration test fixture
         run: cargo build -p gpui-mcp-demo --locked
 
+      # The windowed e2e targets (perform_action, tree_selection, region_capture, frame_cost,
+      # disabled_state) self-skip on Linux: this runner has no DISPLAY or WAYLAND_DISPLAY, so their
+      # has_a_desktop_session() guard returns false. cache_hints is server-only and does run here.
+      # An Xvfb step mirroring the visual-parity one below is owed so those targets get real Linux
+      # coverage; the vendored gpui-pre test target needs its own step (vendor/README.md).
       - name: Test workspace
         run: cargo test --workspace --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
@@ -86,12 +88,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked -- -D warnings
 
-      - name: Check gpui-pre integration
-        run: cargo check -p gpui-mcp --no-default-features --features gpui-pre --locked
-
-      - name: Test bridge with gpui-pre
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support --locked
-
       - name: Check GPUI Kit example formatting
         run: cargo fmt --manifest-path examples/gpui-kit/Cargo.toml -- --check
 
@@ -100,18 +96,6 @@ jobs:
 
       - name: Test GPUI Kit controls and input
         run: cargo test --manifest-path examples/gpui-kit/Cargo.toml --locked
-
-      - name: Clippy GPUI Kit bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support --locked -- -D warnings
-
-      - name: Check gpui-ce integration
-        run: cargo check -p gpui-mcp --no-default-features --features gpui-ce --locked
-
-      - name: Test bridge with gpui-ce
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-ce,test-support,gpui_ce/test-support --locked
-
-      - name: Clippy gpui-ce bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-ce,test-support,gpui_ce/test-support --locked -- -D warnings
 
       - name: Upload visual parity failure artifacts
         if: failure()
@@ -145,30 +129,22 @@ jobs:
           key: xtask
 
       - run: cargo xtask vendor --crate gpui-pre --check
-      - run: cargo xtask vendor --crate gpui-ce --check
 
   patch-series:
-    # The main matrix builds the bridge against the vendored releases. This job
-    # applies each other supported release's patch series to its crates.io
-    # archive and builds and tests the bridge against the result, so a patch
-    # that stops applying or compiling fails here rather than downstream.
-    # The bridge feature for each crate has the crate's name.
+    # The main matrix builds the bridge against the vendored release. This job
+    # applies the patch series to the crates.io archive and builds and tests the
+    # bridge against the result, so a patch that stops applying or compiling
+    # fails here rather than downstream. The 0.3.7 entry leaves out the optional
+    # font-fallback patch, which must keep applying without the automation one.
     name: ${{ matrix.crate }} ${{ matrix.version }}${{ matrix.without && format(' without {0}', matrix.without) || '' }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - crate: gpui-pre
-            version: 0.3.5
-          - crate: gpui-pre
-            version: 0.3.6
           # The optional patches must stay independent of the automation patch.
           - crate: gpui-pre
             version: 0.3.7
-            without: font-fallback
-          - crate: gpui-ce
-            version: 0.2.2
             without: font-fallback
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -204,14 +180,11 @@ jobs:
 
       # The committed lockfile names the vendored release, so these steps
       # resolve the patched release instead of using --locked.
-      # The bridge's unit tests need the GPUI crate's own test support, which
-      # its test-support feature doesn't turn on for gpui-ce.
       - name: Test bridge
         env:
           CRATE: ${{ matrix.crate }}
         run: >-
-          cargo test -p gpui-mcp --no-default-features
-          --features "$CRATE,test-support,${CRATE//-/_}/test-support"
+          cargo test -p gpui-mcp --features test-support
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
 
       - name: Check that the bridge resolved the patched release
@@ -219,7 +192,7 @@ jobs:
           CRATE: ${{ matrix.crate }}
           VERSION: ${{ matrix.version }}
         run: >-
-          cargo tree -p gpui-mcp --no-default-features --features "$CRATE"
+          cargo tree -p gpui-mcp
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
           --depth 1 --prefix none | grep -Fx "$CRATE v$VERSION ($RUNNER_TEMP/$CRATE)"
 
@@ -227,8 +200,8 @@ jobs:
         env:
           CRATE: ${{ matrix.crate }}
         run: >-
-          cargo clippy -p gpui-mcp --all-targets --no-default-features
-          --features "$CRATE,test-support,${CRATE//-/_}/test-support"
+          cargo clippy -p gpui-mcp --all-targets
+          --features test-support
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'" -- -D warnings
 
   msrv:
@@ -259,18 +232,10 @@ jobs:
         with:
           key: msrv
 
-      - name: Check the Zed backend
-        run: cargo +1.95.0 check -p gpui-mcp --locked
-
-      - name: Test the gpui-pre backend
+      - name: Test the bridge and protocol on Rust 1.95
         run: >-
-          cargo +1.95.0 test -p gpui-mcp -p gpui-mcp-protocol --no-default-features
-          --features gpui-mcp/gpui-pre,gpui-mcp/test-support --locked
-
-      - name: Test the gpui-ce backend
-        run: >-
-          cargo +1.95.0 test -p gpui-mcp --no-default-features
-          --features gpui-ce,test-support,gpui_ce/test-support --locked
+          cargo +1.95.0 test -p gpui-mcp -p gpui-mcp-protocol
+          --features gpui-mcp/test-support --locked
 
   external-consumer:
     name: Public Git installation
@@ -320,10 +285,3 @@ jobs:
           --repository "$REPOSITORY_URL" --rev "$REV"
           --target-dir "$GITHUB_WORKSPACE/target"
 
-      - name: Check external gpui-ce consumer
-        env:
-          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: >-
-          cargo xtask check-consumer --backend gpui-ce
-          --repository "$REPOSITORY_URL" --rev "$REV"
-          --target-dir "$GITHUB_WORKSPACE/target"

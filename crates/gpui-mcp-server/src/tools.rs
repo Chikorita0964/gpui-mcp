@@ -20,7 +20,7 @@ use rmcp::{
         CacheScope, CallToolResult, ContentBlock, ErrorData, Implementation,
         ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
-        ResourceContents, ServerCapabilities, ServerInfo,
+        ResourceContents, ServerCapabilities, ServerConfig,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -415,7 +415,7 @@ struct LogsArgs {
     min_level: Option<String>,
 }
 
-#[tool_router(router = core_router)]
+#[tool_router(router = core_router, allow_empty)]
 impl GpuiMcp {
     pub(crate) fn new(registry: BridgeRegistry, artifacts: ArtifactStore) -> Self {
         Self {
@@ -852,12 +852,12 @@ impl CacheHints for ReadResourceResult {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GpuiMcp {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = ServerCapabilities::builder()
             .enable_tools()
             .enable_resources()
             .build();
-        ServerInfo::new(capabilities)
+        ServerConfig::new(capabilities)
             .with_server_info(Implementation::from_build_env())
             .with_instructions(
                 "Discover, inspect, and automate explicitly instrumented GPUI windows. Call list_apps first when more than one app may be running, then select_app with the desired target_id; a single live app is selected automatically. Selection persists for this MCP transport. Prefer semantic element tools over coordinates. Pointer actions use GPUI's native event pipeline; keyboard input uses GPUI directly. Screenshots and snapshots remain in memory, and all coordinates are logical pixels relative to the selected window. Video recording continuously captures raw native-window frames and encodes them directly into H.264/MP4 while recording; keep one MCP transport open for start_video_recording and stop_video_recording. Targets cannot be switched during recording. The optional pointer overlay reflects the same GPUI pointer state used for hover and clicks without reading or moving the global OS cursor. Artifact names are portable filenames inside the configured artifact directory; overwrite is opt-in."
@@ -1305,10 +1305,30 @@ fn object_output(value: JsonValue) -> Json<ObjectOutput> {
 
 /// A structured tool result built from one `serde_json::Value`.
 ///
+/// The top level is rebuilt through a `BTreeMap`, so its keys come out sorted
+/// whichever map `serde_json` is compiled with. Under `preserve_order`, which
+/// the workspace's GPUI turns on, an object keeps its insertion order and the
+/// tree would otherwise serialize in `UiTree` field order; the reply said
+/// `diagnostics, generation, nodes, roots` before the subtree selection was
+/// added and must keep saying it. Only the top level is rebuilt this way:
+/// nested objects (`state`, each node) still follow the map `serde_json` is
+/// compiled with, and the sorted top level is exactly `diagnostics`,
+/// `generation`, `nodes`, `roots`.
+///
+/// A non-object value is wrapped as `{"value": <value>}` so the structured
+/// content is always an object, the rule the reply inherited from
+/// `object_output`.
+///
 /// Returning `Json<T>` instead makes rmcp convert the value into a second
 /// `Value` before encoding its text, which a large tree pays for in full.
 fn serialized_result(value: &impl Serialize) -> Result<CallToolResult, String> {
-    let structured = serde_json::to_value(value).map_err(encode_error)?;
+    let structured = match serde_json::to_value(value).map_err(encode_error)? {
+        JsonValue::Object(fields) => {
+            let sorted: BTreeMap<String, JsonValue> = fields.into_iter().collect();
+            JsonValue::Object(sorted.into_iter().collect())
+        }
+        other => JsonValue::Object(serde_json::Map::from_iter([("value".to_owned(), other)])),
+    };
     Ok(CallToolResult::structured(structured))
 }
 
@@ -1942,6 +1962,32 @@ mod tests {
         assert_ne!(
             filtered, current,
             "an argument that selects less must change the reply"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn serialized_result_wraps_a_non_object_value_so_the_reply_is_an_object() -> Result<(), String>
+    {
+        let reply = serialized_reply(&super::serialized_result(&7_u32)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({ "value": 7 })),
+            "a non-object value is wrapped so the structured content stays an object"
+        );
+        let text = reply
+            .get("content")
+            .and_then(|content| content.get(0))
+            .and_then(|block| block.get("text"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or("the reply carries one text block")?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).map_err(|error| error.to_string())?;
+        assert_eq!(
+            parsed,
+            json!({ "value": 7 }),
+            "the parsed object, not its bytes, is the contract: a non-object value is wrapped as \
+             {{\"value\": <value>}}"
         );
         Ok(())
     }

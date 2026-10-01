@@ -9,3 +9,16 @@ target/
 Thumbs.db
 *.log
 *.tmp
+# Written by the vendored check in vendor/README.md: the crate is its own workspace root, so
+# `cargo check --manifest-path vendor/gpui-pre/Cargo.toml` leaves a lock beside it. Clear that
+# file before `cargo xtask vendor --crate gpui-pre --check`, which compares every file.
+/vendor/gpui-pre/Cargo.lock
+# `cargo xtask vendor` builds the new tree in a staging directory inside vendor/ and swaps it
+# into place; a crash between the two renames leaves the previous tree behind. Delete it.
+/vendor/.gpui-vendor-*/
+# The vendored crate's test modules include font files by relative path
+# (vendor/gpui-pre/src/svg_renderer.rs:361-363 and the wasm-gated
+# vendor/gpui-pre/examples/example_support/fonts.rs): ten files, all under this prefix. The
+# repository carries no assets/ tree, so the whole prefix is ignored rather than the
+# individual names the runbook's workflow creates.
+/assets/fonts/

@@ -29,8 +29,8 @@ pub(crate) enum Backend {
 struct Recipe {
     /// The app's own dependencies.
     dependencies: &'static str,
-    /// The bridge feature that selects this backend.
-    feature: &'static str,
+    /// The bridge feature that selects this backend, when the bridge still has one.
+    feature: Option<&'static str>,
     /// The crates.io GPUI package the Git patch replaces, and its version.
     gpui: (&'static str, &'static str),
     /// The path the app reaches GPUI's types through.
@@ -51,7 +51,7 @@ impl Backend {
         match self {
             Self::GpuiKit => Recipe {
                 dependencies: "gpui-kit = \"=0.7.0\"",
-                feature: "gpui-pre",
+                feature: None,
                 gpui: ("gpui-pre", "0.3.7"),
                 types: "gpui_kit",
                 owners: &[
@@ -64,7 +64,7 @@ impl Backend {
             },
             Self::GpuiCe => Recipe {
                 dependencies: "gpui-ce = \"=0.2.2\"\ngpui_ce_platform = \"=0.1.0\"",
-                feature: "gpui-ce",
+                feature: Some("gpui-ce"),
                 gpui: ("gpui-ce", "0.2.2"),
                 types: "gpui",
                 owners: &["gpui-mcp", "gpui_ce_platform"],
@@ -122,14 +122,17 @@ rust-version = "1.96"
 
 [dependencies]
 {dependencies}
-gpui-mcp = {{ git = {repository}, rev = {rev}, default-features = false, features = ["{feature}"] }}
+gpui-mcp = {{ git = {repository}, rev = {rev}{feature} }}
 
 [patch.crates-io]
 {gpui_package} = {{ git = {repository}, rev = {rev} }}
 "#,
             name = args.backend.name(),
             dependencies = recipe.dependencies,
-            feature = recipe.feature,
+            feature = recipe
+                .feature
+                .map(|feature| format!(", default-features = false, features = [\"{feature}\"]"))
+                .unwrap_or_default(),
         ),
     )?;
     fs::write(
