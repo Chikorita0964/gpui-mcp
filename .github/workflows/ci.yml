@@ -104,6 +104,15 @@ jobs:
       - name: Clippy GPUI Kit bridge
         run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support --locked -- -D warnings
 
+      - name: Check gpui-ce integration
+        run: cargo check -p gpui-mcp --no-default-features --features gpui-ce --locked
+
+      - name: Test bridge with gpui-ce
+        run: cargo test -p gpui-mcp --no-default-features --features gpui-ce,test-support --locked
+
+      - name: Clippy gpui-ce bridge
+        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-ce,test-support --locked -- -D warnings
+
       - name: Upload visual parity failure artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -123,27 +132,35 @@ jobs:
       - run: cargo audit
 
   vendor:
-    name: Reproduce gpui-pre snapshot
+    name: Reproduce vendored GPUI crates
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: python3 script/vendor-gpui-pre.py --check
+      - run: python3 script/vendor-gpui.py --crate gpui-pre --check
+      - run: python3 script/vendor-gpui.py --crate gpui-ce --check
 
-  gpui-pre-range:
-    # The main matrix builds the bridge against the vendored release. This job
+  patch-series:
+    # The main matrix builds the bridge against the vendored releases. This job
     # applies each other supported release's patch series to its crates.io
     # archive and builds and tests the bridge against the result, so a patch
     # that stops applying or compiling fails here rather than downstream.
-    name: gpui-pre ${{ matrix.version }}${{ matrix.without && format(' without {0}', matrix.without) || '' }}
+    # The bridge feature for each crate has the crate's name.
+    name: ${{ matrix.crate }} ${{ matrix.version }}${{ matrix.without && format(' without {0}', matrix.without) || '' }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - version: 0.3.5
-          - version: 0.3.6
+          - crate: gpui-pre
+            version: 0.3.5
+          - crate: gpui-pre
+            version: 0.3.6
           # The optional patches must stay independent of the automation patch.
-          - version: 0.3.7
+          - crate: gpui-pre
+            version: 0.3.7
+            without: font-fallback
+          - crate: gpui-ce
+            version: 0.2.2
             without: font-fallback
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -165,36 +182,42 @@ jobs:
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
-          key: gpui-pre-${{ matrix.version }}-${{ matrix.without }}
+          key: ${{ matrix.crate }}-${{ matrix.version }}-${{ matrix.without }}
 
       - name: Apply the patch series
         env:
+          CRATE: ${{ matrix.crate }}
           VERSION: ${{ matrix.version }}
           WITHOUT: ${{ matrix.without }}
         run: >-
-          python3 script/vendor-gpui-pre.py --version "$VERSION"
-          --output "$RUNNER_TEMP/gpui-pre"
+          python3 script/vendor-gpui.py --crate "$CRATE" --version "$VERSION"
+          --output "$RUNNER_TEMP/$CRATE"
           ${WITHOUT:+--without "$WITHOUT"}
 
       # The committed lockfile names the vendored release, so these steps
       # resolve the patched release instead of using --locked.
       - name: Test bridge
+        env:
+          CRATE: ${{ matrix.crate }}
         run: >-
-          cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support
-          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'"
+          cargo test -p gpui-mcp --no-default-features --features "$CRATE,test-support"
+          --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
 
       - name: Check that the bridge resolved the patched release
         env:
+          CRATE: ${{ matrix.crate }}
           VERSION: ${{ matrix.version }}
         run: >-
-          cargo tree -p gpui-mcp --no-default-features --features gpui-pre
-          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'"
-          --depth 1 --prefix none | grep -Fx "gpui-pre v$VERSION ($RUNNER_TEMP/gpui-pre)"
+          cargo tree -p gpui-mcp --no-default-features --features "$CRATE"
+          --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
+          --depth 1 --prefix none | grep -Fx "$CRATE v$VERSION ($RUNNER_TEMP/$CRATE)"
 
       - name: Clippy
+        env:
+          CRATE: ${{ matrix.crate }}
         run: >-
-          cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support
-          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'" -- -D warnings
+          cargo clippy -p gpui-mcp --all-targets --no-default-features --features "$CRATE,test-support"
+          --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'" -- -D warnings
 
   msrv:
     # gpui-mcp and gpui-mcp-protocol declare an older rust-version than the
@@ -231,6 +254,11 @@ jobs:
         run: >-
           cargo +1.95.0 test -p gpui-mcp -p gpui-mcp-protocol --no-default-features
           --features gpui-mcp/gpui-pre,gpui-mcp/test-support --locked
+
+      - name: Test the gpui-ce backend
+        run: >-
+          cargo +1.95.0 test -p gpui-mcp --no-default-features
+          --features gpui-ce,test-support --locked
 
   external-consumer:
     name: Public Git installation
@@ -276,6 +304,14 @@ jobs:
         env:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: >-
-          python3 script/check-gpui-kit-consumer.py
+          python3 script/check-git-consumer.py --backend gpui-kit
+          --repository "$REPOSITORY_URL" --rev "$REV"
+          --target-dir "$GITHUB_WORKSPACE/target"
+
+      - name: Check external gpui-ce consumer
+        env:
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: >-
+          python3 script/check-git-consumer.py --backend gpui-ce
           --repository "$REPOSITORY_URL" --rev "$REV"
           --target-dir "$GITHUB_WORKSPACE/target"

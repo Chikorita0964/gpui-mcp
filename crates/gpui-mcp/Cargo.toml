@@ -14,12 +14,14 @@ homepage.workspace = true
 default = ["zed"]
 zed = ["dep:gpui"]
 gpui-pre = ["dep:gpui_pre"]
-test-support = ["gpui?/test-support", "gpui_pre?/test-support"]
+gpui-ce = ["dep:gpui_ce"]
+test-support = ["gpui?/test-support", "gpui_pre?/test-support", "gpui_ce?/test-support"]
 
 [dependencies]
 async-channel.workspace = true
 gpui = { workspace = true, optional = true }
 gpui_pre = { workspace = true, optional = true }
+gpui_ce = { workspace = true, optional = true }
 gpui-mcp-protocol = { path = "../gpui-mcp-protocol" }
 interprocess.workspace = true
 rand.workspace = true
