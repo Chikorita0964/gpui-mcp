@@ -107,11 +107,17 @@ For HTML-authored interfaces that agents can also edit live, see the
 Prefer the element tools over coordinates. All coordinates are logical pixels
 relative to the window.
 
-## GPUI Kit and `gpui-pre`
+## GPUI Kit, `gpui-pre` and `gpui-ce`
 
-GPUI Kit and `gpui-component` use `gpui-pre`, a crates.io release of GPUI. The
-bridge supports `gpui-pre` **0.3.5, 0.3.6 and 0.3.7**. Each needs a small set of
-GPUI patches, which this repository provides.
+Besides Zed's own GPUI, the bridge works with two GPUI releases on crates.io:
+
+| GPUI crate | Used by | Supported versions | Bridge feature |
+| --- | --- | --- | --- |
+| `gpui-pre` | GPUI Kit, `gpui-component` | 0.3.5, 0.3.6, 0.3.7 | `gpui-pre` |
+| `gpui-ce` | The community fork and apps built on it | 0.2.2 | `gpui-ce` |
+
+Each needs a small set of GPUI patches, which this repository provides. The
+recipes below pull in a patched copy from here.
 
 ### GPUI Kit 0.7.0 (`gpui-pre` 0.3.7)
 
@@ -134,16 +140,34 @@ directly. To see it working, run the [Kit demo](examples/gpui-kit):
 cargo run --manifest-path examples/gpui-kit/Cargo.toml
 ```
 
-### Another `gpui-pre` version, or your own GPUI patches
+### `gpui-ce` 0.2.2
 
-The `[patch]` above always gives you the patched 0.3.7 from this repository.
-If your app is on 0.3.5 or 0.3.6, or you carry GPUI patches of your own, keep
-your own copy of `gpui-pre` instead:
+Add this to your workspace's `Cargo.toml`:
 
-1. From a checkout of this repository, write a patched copy into your app:
+```toml
+[dependencies]
+gpui-ce = "=0.2.2"
+gpui_ce_platform = "=0.1.0"
+gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-ce"] }
+
+[patch.crates-io]
+gpui-ce = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+```
+
+`gpui-ce` is imported as `gpui`, so install the bridge as usual when you open
+a window.
+
+### Another version, or your own GPUI patches
+
+The `[patch]` recipes above always give you the version this repository
+vendors. If your app is on an older supported version, or you carry GPUI
+patches of your own, keep your own patched copy instead:
+
+1. From a checkout of this repository, write a patched copy into your app.
+   Pass `--crate gpui-ce` for `gpui-ce`.
 
    ```console
-   python3 script/vendor-gpui-pre.py --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
+   cargo xtask vendor --crate gpui-pre --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
    ```
 
 2. Apply your own patches to that copy, if you have any.
@@ -154,8 +178,8 @@ your own copy of `gpui-pre` instead:
    gpui-pre = { path = "vendor/gpui-pre" }
    ```
 
-The patches for each version are in
-[`vendor/patches/gpui-pre/`](vendor/patches/gpui-pre). Each version has two:
+The patches are in [`vendor/patches/`](vendor/patches), one folder per crate
+and version. Each version has two:
 
 - `automation.patch` has everything the bridge needs.
 - `font-fallback.patch` is an unrelated font fix. Add `--without font-fallback`
@@ -166,9 +190,9 @@ patches are kept working.
 
 ### Things to know
 
-- Use one backend per app. Every `gpui-mcp` dependency in a Kit app needs
-  `default-features = false`. Zed apps that turn off default features must add
-  `features = ["zed"]`.
+- Use one backend per app. Every `gpui-mcp` dependency in a GPUI Kit or
+  `gpui-ce` app needs `default-features = false`. Zed apps that turn off default
+  features must add `features = ["zed"]`.
 - Kit components that publish accessibility info work with all the tools.
   Custom-drawn components only show what they annotate.
 - In Kit 0.7.0, disabled controls report `enabled: true` and read-only inputs

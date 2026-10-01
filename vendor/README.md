@@ -8,7 +8,8 @@ GPUI ships an equivalent.
 | --- | --- | --- |
 | `gpui/` | GPUI 0.2.2 from Zed commit `16c9aa7ea6d897a8044d9501cde1b295256722f2` | The `zed` backend |
 | `gpui-pre/` | The crates.io `gpui-pre` 0.3.7 release (Zed commit `1a28cff4b409169bac058bca40dfbfeb7621d19b`), as used by GPUI Kit 0.7.0 | The `gpui-pre` backend |
-| `patches/gpui-pre/` | The patches for each supported `gpui-pre` version | `gpui-pre/` and downstream apps |
+| `gpui-ce/` | The crates.io `gpui-ce` 0.2.2 release, the community fork of GPUI | The `gpui-ce` backend |
+| `patches/<crate>/<version>/` | The patches for each supported `gpui-pre` and `gpui-ce` version | `gpui-pre/`, `gpui-ce/` and downstream apps |
 
 Each copy keeps its Apache-2.0 license in `LICENSE-APACHE`.
 
@@ -18,10 +19,10 @@ The changes are listed in [`gpui/PATCHES.md`](gpui/PATCHES.md). The ones
 present on 2026-09-22 were still unmerged upstream that day. The frame-cost
 changes added on 2026-09-23 were written against the same commit.
 
-## `gpui-pre/`
+## `gpui-pre/` and `gpui-ce/`
 
-`gpui-pre/` carries the same changes as `gpui/`, so both backends behave the
-same way. This includes the parts GPUI Kit depends on:
+Both carry the same changes as `gpui/`, so all three backends behave the same
+way. This includes the parts GPUI Kit depends on:
 
 - Accessibility elements from other crates are observed.
 - Clicks and other interactions are still detected through wrapper elements.
@@ -30,13 +31,18 @@ same way. This includes the parts GPUI Kit depends on:
 The Kit demo's tests cover control states, focus, Unicode text replacement and
 redaction.
 
-The copy is the published crate with three changes: the patches are applied,
+Each copy is the published crate with three changes: the patches are applied,
 source files use LF line endings, and the published `Cargo.lock` is removed.
 
 ### Supported versions
 
-The bridge accepts `gpui-pre` 0.3.5 to 0.3.7. Each version has its own folder
-in `patches/gpui-pre/<version>/` with two patches, applied in this order:
+| Crate | Versions | Vendored here |
+| --- | --- | --- |
+| `gpui-pre` | 0.3.5, 0.3.6, 0.3.7 | 0.3.7 |
+| `gpui-ce` | 0.2.2 | 0.2.2 |
+
+Each version has its own folder in `patches/<crate>/<version>/` with two
+patches, applied in this order:
 
 1. `automation.patch`: everything the bridge needs.
 2. `font-fallback.patch`: keeps the requested weight and style when a font
@@ -44,47 +50,61 @@ in `patches/gpui-pre/<version>/` with two patches, applied in this order:
    skipped.
 
 The patches differ slightly between versions because the GPUI code they
-change differs. 0.3.5 and 0.3.6 don't have the `is_enabled()` helper. In
-0.3.5, the view-caching code hasn't been split into helper functions yet.
+change differs:
 
-`gpui-pre.json` lists each version with its download checksum and Zed commit,
-and says which version is in `gpui-pre/`.
+- `gpui-pre` 0.3.5, 0.3.6 and `gpui-ce` don't have the `is_enabled()` helper.
+- In `gpui-pre` 0.3.5 and `gpui-ce`, the view-caching code hasn't been split
+  into helper functions yet.
+- `gpui-ce` has no touch gestures, so it has no touch changes, and it shows
+  tooltips from a different spot in `div.rs`.
+
+`gpui-pre.json` and `gpui-ce.json` list each version with its download
+checksum, and say which version is vendored here. For `gpui-pre`, they also
+record the Zed commit the release was cut from.
 
 ### Commands
 
-These need Python 3.11+ and GNU patch (`gpatch` on macOS).
+Run these from a checkout of this repository. They only need Rust: `xtask` is
+a small tool in this workspace that downloads the crate and applies the
+patches itself. `--crate` defaults to `gpui-pre`, and `cargo xtask --help`
+lists every option.
 
 ```console
-# Check that gpui-pre/ matches the published crate plus the patches
-python3 script/vendor-gpui-pre.py --check
+# Check that a vendored copy matches the published crate plus the patches
+cargo xtask vendor --crate gpui-pre --check
+cargo xtask vendor --crate gpui-ce --check
 
-# Rebuild gpui-pre/ from the published crate
-python3 script/vendor-gpui-pre.py
+# Rebuild a vendored copy from the published crate
+cargo xtask vendor --crate gpui-ce
 
 # Write a patched copy of any supported version somewhere else
-python3 script/vendor-gpui-pre.py --version 0.3.5 --output <dir>
-python3 script/vendor-gpui-pre.py --version 0.3.5 --output <dir> --without font-fallback
+cargo xtask vendor --crate gpui-pre --version 0.3.5 --output <dir>
+cargo xtask vendor --crate gpui-pre --version 0.3.5 --output <dir> --without font-fallback
 ```
 
 The script verifies the download's checksum and changes nothing if a patch
-fails to apply. It refuses to run if the version range in the workspace
-`Cargo.toml` doesn't match `gpui-pre.json`.
+fails to apply. It refuses to run if a crate's version requirement in the
+workspace `Cargo.toml` doesn't match its `.json` file.
 
 ### What CI checks
 
-- `gpui-pre/` matches the published crate plus its patches.
-- The bridge builds, passes its tests and passes Clippy against `gpui-pre/`,
-  against patched 0.3.5 and 0.3.6, and against 0.3.7 without the font patch.
+- Both vendored copies match the published crate plus their patches.
+- The bridge builds, passes its tests and passes Clippy on every OS against
+  both vendored copies.
+- On Linux it does the same against patched `gpui-pre` 0.3.5 and 0.3.6, and
+  against `gpui-pre` 0.3.7 and `gpui-ce` 0.2.2 without the font patch.
 - The Kit demo builds and passes its tests.
 - The bridge builds and passes its tests on Rust 1.95, the oldest version it
   supports.
-- A fresh app that installs the bridge from the pushed Git commit builds. Kit
-  and the bridge must share a single patched `gpui-pre`.
+- Fresh apps that install the bridge from the pushed Git commit build, one for
+  GPUI Kit and one for `gpui-ce`. In each, the app's GPUI crates and the bridge
+  must share a single patched GPUI.
 
 To run that last check yourself against a pushed commit:
 
 ```console
-python3 script/check-gpui-kit-consumer.py --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
+cargo xtask check-consumer --backend gpui-kit --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
+cargo xtask check-consumer --backend gpui-ce --repository https://github.com/themixednuts/gpui-mcp --rev <full-commit-sha> --target-dir target
 ```
 
 The Kit demo is a separate workspace. Cargo would otherwise turn on both the
@@ -93,23 +113,26 @@ the same reason, `--all-features` on the main workspace fails on purpose.
 
 ### Adding a new version
 
-When GPUI Kit moves to a new `gpui-pre` version:
+When GPUI Kit or `gpui-ce` moves to a new version:
 
-1. Add the version to `gpui-pre.json` and make it the `vendored` one.
-2. Copy the newest folder in `patches/gpui-pre/` to the new version and fix
+1. Add the version to `<crate>.json` and make it the `vendored` one.
+2. Copy the newest folder in `patches/<crate>/` to the new version and fix
    any patches that no longer apply.
-3. Raise the upper bound of `gpui_pre` in the workspace `Cargo.toml`, and
-   update the Kit demo's pin.
-4. Add the previous version to the `gpui-pre-range` job in
+3. Update the crate's version requirement in the workspace `Cargo.toml`. For
+   `gpui-pre`, also update the Kit demo's pin.
+4. Add the previous version to the `patch-series` job in
    `.github/workflows/ci.yml`.
-5. Run `python3 script/vendor-gpui-pre.py` and update both lockfiles.
-6. Run:
+5. Run `cargo xtask vendor --crate <crate>` and update the
+   lockfiles.
+6. Run the bridge's checks for that backend, for example:
 
    ```console
-   cargo check -p gpui-mcp --no-default-features --features gpui-pre --locked
-   cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support --locked
-   cargo test --manifest-path examples/gpui-kit/Cargo.toml --locked
+   cargo check -p gpui-mcp --no-default-features --features gpui-ce --locked
+   cargo test -p gpui-mcp --no-default-features --features gpui-ce,test-support --locked
    ```
 
-To drop an old version, delete its folder, remove it from `gpui-pre.json` and
-the CI job, and raise the lower bound in `Cargo.toml`.
+   For `gpui-pre`, also run
+   `cargo test --manifest-path examples/gpui-kit/Cargo.toml --locked`.
+
+To drop an old version, delete its folder, remove it from `<crate>.json` and
+the CI job, and update the version requirement in `Cargo.toml`.

@@ -43,8 +43,8 @@ the same commit on 2026-09-23:
 - pointer ownership that prevents a stale native mouse position from cancelling
   a synthetic hover before the physical mouse actually moves;
 - font-family fallback that preserves the requested weight, style, and OpenType
-  features. Automation does not depend on it, so the `gpui-pre` series keeps it
-  in a separate `font-fallback.patch` that consumers may skip;
+  features. Automation does not depend on it, so the `gpui-pre` and `gpui-ce`
+  series keep it in a separate `font-fallback.patch` that consumers may skip;
 - frame cost and view-cache observation. `FrameObserver::frame_drawn` receives
   a `DrawnFrame` when `Window::draw` returns. It carries the draw's wall time,
   the same interval the profiler records as `FrameTiming::draw_duration`, but
