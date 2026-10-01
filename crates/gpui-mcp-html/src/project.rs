@@ -6,7 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
 
 use gpui_mcp::LiveDocumentSource;
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher as _};
+use notify::{
+    Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _,
+    event::{AccessKind, AccessMode},
+};
 
 use crate::{
     BindingDocument, BindingDocumentError, HtmlUi, HtmlUiError, LiveHtml, ReloadError, ReloadReport,
@@ -259,6 +262,18 @@ impl ProjectWatcher {
         };
         loop {
             match self.receiver.try_recv() {
+                // Linux's inotify backend reports opens and non-writing closes,
+                // so reading the bundle to reload it would queue another reload.
+                // A close after writing still counts as a change.
+                Ok(Ok(event))
+                    if matches!(
+                        event.kind,
+                        EventKind::Access(
+                            AccessKind::Open(_)
+                                | AccessKind::Read
+                                | AccessKind::Close(AccessMode::Read)
+                        )
+                    ) => {}
                 Ok(Ok(event)) => {
                     files.extend(
                         event
@@ -511,6 +526,17 @@ mod tests {
         }
 
         assert!(change.is_some_and(|change| change.files().contains(&ProjectFile::Css)));
+        Ok(())
+    }
+
+    #[test]
+    fn reading_the_bundle_queues_no_change() -> Result<(), Box<dyn std::error::Error>> {
+        let (_root, paths) = fixture()?;
+        let watcher = ProjectWatcher::new(paths.clone())?;
+        ProjectSnapshot::load(&paths)?;
+        std::thread::sleep(Duration::from_millis(200));
+
+        assert!(watcher.poll()?.is_none());
         Ok(())
     }
 
