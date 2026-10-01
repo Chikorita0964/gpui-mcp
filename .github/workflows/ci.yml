@@ -2,12 +2,19 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   schedule:
     - cron: "23 6 * * 1"
 
 permissions:
   contents: read
+
+# A newer push to a pull request cancels its superseded run. Pushes to main and
+# scheduled runs each get their own group so main's results are never lost.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -124,8 +131,11 @@ jobs:
 
   external-consumer:
     name: Public Git installation
-    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    env:
+      # Pull request runs check out a temporary merge commit that cannot be
+      # fetched by revision, so install from the pull request head instead.
+      REV: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -151,7 +161,7 @@ jobs:
           INSTALL_ROOT: ${{ runner.temp }}/gpui-mcp-install
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: >-
-          cargo install --git "$REPOSITORY_URL" --rev "$GITHUB_SHA" --locked
+          cargo install --git "$REPOSITORY_URL" --rev "$REV" --locked
           --root "$INSTALL_ROOT" gpui-mcp-server
 
       - name: Verify the installed MCP executable
@@ -164,5 +174,5 @@ jobs:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: >-
           python3 script/check-gpui-kit-consumer.py
-          --repository "$REPOSITORY_URL" --rev "$GITHUB_SHA"
+          --repository "$REPOSITORY_URL" --rev "$REV"
           --target-dir "$GITHUB_WORKSPACE/target"
