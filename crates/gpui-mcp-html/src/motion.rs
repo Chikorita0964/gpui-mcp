@@ -1,6 +1,6 @@
 //! CSS transitions and `@keyframes` for the live renderer.
 //!
-//! With the `gpui-kit` feature they run on GPUI Kit's motion runtime
+//! On the `gpui-pre` backend (GPUI Kit) they run on GPUI Kit's motion runtime
 //! (`gpui_base::motion`), the same runtime generated GPUI Kit code uses, so
 //! the Studio canvas and an exported app animate identically. The values
 //! come from htmlswap's typed lowering: `AnimatableProperty` says what a rule
@@ -17,7 +17,7 @@ use htmlswap::{RenderMotionPlan, StyleDeclaration};
 use crate::cascade::Computed;
 
 /// What one element animates this frame.
-#[cfg_attr(not(feature = "gpui-kit"), allow(dead_code))]
+#[cfg_attr(not(feature = "gpui-pre"), allow(dead_code))]
 pub(crate) struct Inputs<'a> {
     /// The element's runtime id, which keys its motion state.
     pub(crate) key: &'a str,
@@ -54,30 +54,31 @@ pub(crate) fn has_motion(computed: &Computed) -> bool {
             .any(|animation| animation.name.is_some())
 }
 
-#[cfg(feature = "gpui-kit")]
-pub(crate) use kit::animate;
+#[cfg(feature = "gpui-pre")]
+pub(crate) use kit::{animate, duration, easing, frames, keyframes, timing};
 
 /// Without GPUI Kit's motion runtime, values take their end state at once.
-#[cfg(not(feature = "gpui-kit"))]
+#[cfg(not(feature = "gpui-pre"))]
 pub(crate) fn animate(_: &Inputs<'_>, _: &mut Window, _: &mut App) -> Output {
     Output::default()
 }
 
-#[cfg(feature = "gpui-kit")]
+#[cfg(feature = "gpui-pre")]
 mod kit {
     use std::time::Duration;
 
     use gpui::{App, SharedString, Window};
     use gpui_base::animation::Lerp;
     use gpui_base::motion::{
-        Easing as KitEasing, IterationCount, Keyframe, Keyframes, MotionStatus, PlaybackDirection,
-        SignedDuration, StepPosition as KitStep, Timing, Transition as KitTransition,
-        animate_keyframes, transition_with_status,
+        Easing as KitEasing, Interpolate, IterationCount, Keyframe, Keyframes, MotionStatus,
+        PlaybackDirection, SignedDuration, StepPosition as KitStep, Timing,
+        Transition as KitTransition, animate_keyframes, transition_with_status,
     };
     use htmlswap::computed::{AnimatableProperty, AnimatedValue, ComputedStyle};
     use htmlswap::motion::{
-        AnimationDirection, Easing, FillMode, Iterations, StepPosition, Transition,
+        Animation, AnimationDirection, Easing, FillMode, Iterations, StepPosition, Transition,
     };
+    use htmlswap::{RenderKeyframes, StyleDeclaration};
 
     use super::{Inputs, Output};
 
@@ -91,7 +92,7 @@ mod kit {
         }
     }
 
-    fn easing(easing: Easing) -> KitEasing {
+    pub(crate) fn easing(easing: Easing) -> KitEasing {
         match easing {
             Easing::Linear => KitEasing::Linear,
             Easing::CubicBezier(x1, y1, x2, y2) => {
@@ -110,7 +111,7 @@ mod kit {
         }
     }
 
-    fn duration(ms: f32) -> Duration {
+    pub(crate) fn duration(ms: f32) -> Duration {
         Duration::from_secs_f32(ms.max(0.0) / 1000.0)
     }
 
@@ -184,41 +185,8 @@ mod kit {
             let Some(source) = inputs.plan.keyframes(name) else {
                 continue;
             };
-            let frames = source
-                .frames
-                .iter()
-                .map(|frame| {
-                    let easing = frame
-                        .declarations
-                        .iter()
-                        .rev()
-                        .find(|d| d.property.as_str() == "animation-timing-function")
-                        .and_then(|d| Easing::parse(d.value.as_str()))
-                        .unwrap_or(animation.easing);
-                    (
-                        frame.offset,
-                        (inputs.compute_keyframe)(&frame.declarations),
-                        easing,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let timing = Timing::new(duration(animation.duration_ms))
-                .delay(delay(animation.delay_ms))
-                .iterations(match animation.iterations {
-                    Iterations::Infinite => IterationCount::Infinite,
-                    // GPUI Kit plays whole iterations; a fractional count
-                    // finishes its last iteration.
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    Iterations::Count(count) => {
-                        IterationCount::Finite(count.max(0.0).ceil() as u64)
-                    }
-                })
-                .direction(match animation.direction {
-                    AnimationDirection::Normal => PlaybackDirection::Normal,
-                    AnimationDirection::Reverse => PlaybackDirection::Reverse,
-                    AnimationDirection::Alternate => PlaybackDirection::Alternate,
-                    AnimationDirection::AlternateReverse => PlaybackDirection::AlternateReverse,
-                });
+            let frames = frames(source, animation.easing, inputs.compute_keyframe);
+            let timing = timing(animation);
             for property in AnimatableProperty::ALL {
                 if frames
                     .iter()
@@ -230,7 +198,9 @@ mod kit {
                     .get(&output.style)
                     .or_else(|| property.get(inputs.target))
                     .or_else(|| property.initial(&inputs.underlying));
-                let Some(keyframes) = keyframes(&frames, property, underlying) else {
+                let Some(keyframes) =
+                    keyframes(&frames, property, underlying, |value| Some(Value(value)))
+                else {
                     continue;
                 };
                 let sample = animate_keyframes(
@@ -259,25 +229,73 @@ mod kit {
         output
     }
 
+    /// A `@keyframes` rule's frames as typed styles, with each frame's
+    /// easing (its `animation-timing-function`, else the animation's).
+    pub(crate) fn frames(
+        source: &RenderKeyframes,
+        easing: Easing,
+        compute: &dyn Fn(&[StyleDeclaration]) -> ComputedStyle,
+    ) -> Vec<(f32, ComputedStyle, Easing)> {
+        source
+            .frames
+            .iter()
+            .map(|frame| {
+                let easing = frame
+                    .declarations
+                    .iter()
+                    .rev()
+                    .find(|d| d.property.as_str() == "animation-timing-function")
+                    .and_then(|d| Easing::parse(d.value.as_str()))
+                    .unwrap_or(easing);
+                (frame.offset, compute(&frame.declarations), easing)
+            })
+            .collect()
+    }
+
+    /// An animation's timing. Easing is per keyframe, as in CSS, so the
+    /// timing itself is linear.
+    pub(crate) fn timing(animation: &Animation) -> Timing {
+        Timing::new(duration(animation.duration_ms))
+            .delay(delay(animation.delay_ms))
+            .iterations(match animation.iterations {
+                Iterations::Infinite => IterationCount::Infinite,
+                // GPUI Kit plays whole iterations; a fractional count
+                // finishes its last iteration.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                Iterations::Count(count) => IterationCount::Finite(count.max(0.0).ceil() as u64),
+            })
+            .direction(match animation.direction {
+                AnimationDirection::Normal => PlaybackDirection::Normal,
+                AnimationDirection::Reverse => PlaybackDirection::Reverse,
+                AnimationDirection::Alternate => PlaybackDirection::Alternate,
+                AnimationDirection::AlternateReverse => PlaybackDirection::AlternateReverse,
+            })
+    }
+
     /// One property's keyframes, with missing `0%` and `100%` keyframes
-    /// taking the underlying value (CSS Animations 1 §3).
-    fn keyframes(
+    /// taking the underlying value (CSS Animations 1 §3), each value
+    /// converted by `value`.
+    pub(crate) fn keyframes<T: Interpolate>(
         frames: &[(f32, ComputedStyle, Easing)],
         property: AnimatableProperty,
         underlying: Option<AnimatedValue>,
-    ) -> Option<Keyframes<Value>> {
+        value: impl Fn(AnimatedValue) -> Option<T>,
+    ) -> Option<Keyframes<T>> {
         let mut list = frames
             .iter()
             .filter_map(|(offset, style, ease)| {
-                Some(Keyframe::new(*offset, Value(property.get(style)?)).ease(easing(*ease)))
+                Some(Keyframe::new(*offset, value(property.get(style)?)?).ease(easing(*ease)))
             })
             .collect::<Vec<_>>();
         if list.first().is_none_or(|frame| frame.offset > 0.0) {
             let ease = frames.first().map_or(Easing::Linear, |frame| frame.2);
-            list.insert(0, Keyframe::new(0.0, Value(underlying?)).ease(easing(ease)));
+            list.insert(
+                0,
+                Keyframe::new(0.0, value(underlying?)?).ease(easing(ease)),
+            );
         }
         if list.last().is_none_or(|frame| frame.offset < 1.0) {
-            list.push(Keyframe::new(1.0, Value(underlying?)));
+            list.push(Keyframe::new(1.0, value(underlying?)?));
         }
         Keyframes::try_new(list).ok()
     }

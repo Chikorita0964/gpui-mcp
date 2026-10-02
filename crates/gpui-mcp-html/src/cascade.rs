@@ -67,7 +67,7 @@ impl StateNeeds {
 pub(crate) struct Environment<'a> {
     pub(crate) media: MediaEnvironment,
     /// Types of the running view transition, if one is running.
-    pub(crate) view_transition_types: Option<&'a [CompactString]>,
+    pub(crate) view_transition_types: Option<&'a [gpui::SharedString]>,
 }
 
 impl Environment<'_> {
@@ -83,6 +83,13 @@ impl Environment<'_> {
         self.view_transition_types.hash(&mut hasher);
         hasher.finish()
     }
+}
+
+/// Whether a running transition has any of `types`.
+fn active_type(active: &[gpui::SharedString], types: &[CompactString]) -> bool {
+    types
+        .iter()
+        .any(|kind| active.iter().any(|active| active.as_ref() == kind.as_str()))
 }
 
 /// Whether a variant applies now.
@@ -136,7 +143,7 @@ pub(crate) fn applies(
             }
             RenderStyleCondition::ActiveViewTransitionType(types) => environment
                 .view_transition_types
-                .is_some_and(|active| types.iter().any(|kind| active.contains(kind))),
+                .is_some_and(|active| active_type(active, types)),
             RenderStyleCondition::StartingStyle => {
                 starting_seen = true;
                 true
@@ -176,6 +183,7 @@ pub(crate) fn supported(variant: &RenderStyleVariant) -> bool {
 /// Whether a condition holds in an environment, for rules outside the
 /// element tree (view-transition pseudo-elements). Interaction states do
 /// not apply there.
+#[cfg(feature = "gpui-pre")]
 pub(crate) fn condition_holds(
     condition: &RenderStyleCondition,
     environment: &Environment<'_>,
@@ -184,7 +192,7 @@ pub(crate) fn condition_holds(
         RenderStyleCondition::Media(query) => environment.media.matches(query).unwrap_or(false),
         RenderStyleCondition::ActiveViewTransitionType(types) => environment
             .view_transition_types
-            .is_some_and(|active| types.iter().any(|kind| active.contains(kind))),
+            .is_some_and(|active| active_type(active, types)),
         _ => false,
     }
 }
@@ -287,7 +295,7 @@ pub(crate) struct Computed {
     pub(crate) animations: Vec<Animation>,
     /// The typed style with `@starting-style` applied, when the element has
     /// one. Only GPUI Kit's motion runtime animates from it.
-    #[cfg_attr(not(feature = "gpui-kit"), allow(dead_code))]
+    #[cfg_attr(not(feature = "gpui-pre"), allow(dead_code))]
     pub(crate) starting: Option<ComputedStyle>,
 }
 

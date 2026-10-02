@@ -2824,6 +2824,7 @@ dependencies = [
  "gpui-mcp",
  "gpui-mcp-capture",
  "gpui-pre",
+ "gpui-view-transitions",
  "gpui_platform",
  "htmlswap",
  "image",
@@ -3109,6 +3110,14 @@ name = "gpui-pre-ztracing-macro"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "829258540ea51bb9ea4a71686beffe5c99586901ba9f39944d06e4a180ab63fe"
+
+[[package]]
+name = "gpui-view-transitions"
+version = "0.1.0"
+dependencies = [
+ "gpui-base",
+ "gpui-pre",
+]
 
 [[package]]
 name = "gpui_apple"
@@ -3641,7 +3650,7 @@ dependencies = [
 [[package]]
 name = "htmlswap"
 version = "0.1.0"
-source = "git+https://github.com/themixednuts/htmlswap?rev=88aab3240d204ae8c8aaad46fb54b9211e3bb40c#88aab3240d204ae8c8aaad46fb54b9211e3bb40c"
+source = "git+https://github.com/themixednuts/htmlswap?rev=e6079d37972dc1428751246cd0e690e52f0dce0a#e6079d37972dc1428751246cd0e690e52f0dce0a"
 dependencies = [
  "arcstr",
  "clap",

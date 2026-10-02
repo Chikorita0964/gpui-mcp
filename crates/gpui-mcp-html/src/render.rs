@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
-use std::time::Instant;
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, Entity, FocusHandle, FrameAction,
@@ -11,7 +10,7 @@ use gpui::{
 };
 use gpui_mcp::{Automation, MAX_LABEL_BYTES, MAX_TEXT_BYTES};
 use htmlswap::{
-    CompactString, RenderElement, RenderNode, RenderPlan, RenderStyleCondition, RenderStyleVariant,
+    RenderElement, RenderNode, RenderPlan, RenderStyleCondition, RenderStyleVariant,
     StyleDeclaration, UiRole,
 };
 
@@ -22,8 +21,8 @@ use crate::gpui_style;
 use crate::input::{RuntimeTextInput, RuntimeTextInputOptions};
 use crate::motion::{self, Translated};
 use crate::view_transition::{
-    Measured, Morph, MorphMotion, NamedSlots, OldImage, OldRoot, OldState, PropertySnapshot, Shift,
-    Side, Stage, ViewTransition, declares_name, element_at, transition_classes, transition_name,
+    DocumentTransitions, OldState, PropertySnapshot, declares_name, element_at, transition_classes,
+    transition_name,
 };
 use crate::{
     Binding, BindingMode, ElementId, HandlerId, HookEvent, HookOutcome, HookRegistry,
@@ -205,17 +204,21 @@ pub struct LiveHtml {
     pressed: Rc<RefCell<Option<ElementId>>>,
     /// Per-render clock and motion settings.
     frame: Cell<FrameContext>,
-    /// Types of the most recent view transition; `view_transition_active`
-    /// says whether it is still running.
-    view_transition_types: Vec<CompactString>,
-    view_transition_active: Cell<bool>,
-    view_transition: Rc<RefCell<Option<ViewTransition>>>,
+    transitions: DocumentTransitions,
     /// Elements that may carry a `view-transition-name`.
     named_elements: Rc<HashSet<ElementId>>,
-    named: Rc<RefCell<NamedSlots>>,
-    /// The document root's box from the latest prepaint.
-    root_measured: Measured,
-    shift: Shift,
+}
+
+/// What drawing the outgoing document of a view transition needs.
+#[derive(Clone, Copy)]
+struct Inert<'a> {
+    old: &'a OldState,
+    /// The named element being drawn as its own image, which fills its box.
+    keep: Option<&'a [usize]>,
+    /// Named elements, which the root image leaves out.
+    is_named: &'a dyn Fn(&[usize]) -> bool,
+    environment: Environment<'a>,
+    fonts: &'a HashSet<String>,
 }
 
 /// Elements drawn by the previous and the current render pass.
@@ -242,7 +245,6 @@ impl DrawnElements {
 /// Values fixed for one render pass.
 #[derive(Clone, Copy, Debug)]
 struct FrameContext {
-    now: Option<Instant>,
     reduce_motion: bool,
     /// Whether anything drawn this pass is still moving.
     moving: bool,
@@ -273,8 +275,11 @@ impl LiveHtml {
         let diagnostics = collect_render_diagnostics(ui.plan());
         let named_elements = Rc::new(collect_named_elements(ui.plan()));
         let state_anchors = Rc::new(collect_state_anchors(ui.plan()));
+        let ui = Rc::new(ui);
+        let transitions = DocumentTransitions::default();
+        transitions.set_document(ui.clone());
         Ok(Self {
-            ui: Rc::new(ui),
+            ui,
             revision: 1,
             automation,
             hooks,
@@ -298,17 +303,11 @@ impl LiveHtml {
             pointer_hovered: Rc::default(),
             pressed: Rc::default(),
             frame: Cell::new(FrameContext {
-                now: None,
                 reduce_motion: false,
                 moving: false,
             }),
-            view_transition_types: Vec::new(),
-            view_transition_active: Cell::new(false),
-            view_transition: Rc::default(),
+            transitions,
             named_elements,
-            named: Rc::default(),
-            root_measured: Rc::default(),
-            shift: Rc::default(),
         })
     }
 
@@ -376,23 +375,15 @@ impl LiveHtml {
         // A swap between two documents that both opt in with
         // `@view-transition { navigation: auto; }` is a navigation.
         let navigation = &ui.plan().motion.view_transition;
-        let pending = self
-            .view_transition
-            .borrow()
-            .as_ref()
-            .is_some_and(ViewTransition::pending);
-        if !pending && navigation.navigation && self.ui.plan().motion.view_transition.navigation {
-            let types = navigation.types.clone();
+        let types = navigation
+            .types
+            .iter()
+            .map(|kind| SharedString::from(kind.to_string()))
+            .collect::<Vec<_>>();
+        if self.transitions.is_pending() {
+            self.transitions.add_types(types);
+        } else if navigation.navigation && self.ui.plan().motion.view_transition.navigation {
             self.begin_view_transition(types, None);
-        } else if pending {
-            for kind in &navigation.types {
-                if !self.view_transition_types.contains(kind) {
-                    self.view_transition_types.push(kind.clone());
-                }
-            }
-            if let Some(transition) = self.view_transition.borrow_mut().as_mut() {
-                transition.types.clone_from(&self.view_transition_types);
-            }
         }
 
         let previous_focus_handles = self.focus_handles.borrow().len();
@@ -428,6 +419,7 @@ impl LiveHtml {
             .retain(|element_id| element_ids.contains(element_id));
         let previous_revision = self.revision;
         self.ui = Rc::new(ui);
+        self.transitions.set_document(self.ui.clone());
         self.bindings = bindings;
         self.diagnostics = diagnostics;
         self.named_elements = named_elements;
@@ -477,7 +469,7 @@ impl LiveHtml {
             .collect();
         let types = types
             .into_iter()
-            .map(|kind| CompactString::from(kind.as_ref()))
+            .map(|kind| SharedString::from(kind.as_ref().to_owned()))
             .collect();
         let started = self.begin_view_transition(types, Some(properties));
         if started {
@@ -489,38 +481,27 @@ impl LiveHtml {
     /// Whether a view transition is pending or running.
     #[must_use]
     pub fn view_transition_running(&self) -> bool {
-        self.view_transition.borrow().is_some()
+        self.transitions.is_active()
     }
 
     /// Finish the current view transition at once, like
     /// `ViewTransition.skipTransition()`.
     pub fn skip_view_transition(&mut self) {
-        self.view_transition.borrow_mut().take();
-        self.view_transition_active.set(false);
-        self.styles.borrow_mut().elements.clear();
+        self.transitions.skip();
     }
 
     fn begin_view_transition(
         &mut self,
-        types: Vec<CompactString>,
+        types: Vec<SharedString>,
         properties: Option<PropertySnapshot>,
     ) -> bool {
-        let Some(root) = self.root_measured.get() else {
-            return false;
-        };
-        let old = OldState::capture(
-            self.ui.clone(),
-            self.bindings.clone(),
+        let old = OldState {
+            ui: self.ui.clone(),
+            bindings: self.bindings.clone(),
             properties,
-            self.disclosures.borrow().clone(),
-            root,
-            &self.named.borrow(),
-        );
-        self.view_transition_types.clone_from(&types);
-        self.view_transition_active.set(true);
-        self.styles.borrow_mut().elements.clear();
-        *self.view_transition.borrow_mut() = Some(ViewTransition::new(types, old));
-        true
+            disclosures: self.disclosures.borrow().clone(),
+        };
+        self.transitions.start(types, old)
     }
 
     /// Prefer a color scheme for `prefers-color-scheme`, `light-dark()` and
@@ -573,17 +554,16 @@ impl LiveHtml {
     ) -> AnyElement {
         self.automation.attach(window);
         self.viewport_override.set(viewport);
+        let now = cx.background_executor().now();
         self.frame.set(FrameContext {
-            now: Some(cx.background_executor().now()),
             reduce_motion: cx.reduce_motion(),
             moving: false,
         });
         self.drawn.borrow_mut().begin();
-        self.named.borrow_mut().begin();
-        if let Some(transition) = self.view_transition.borrow_mut().as_mut() {
-            transition.begin_frame(self.frame.get().now.unwrap_or_else(Instant::now));
-        }
-        let environment = self.environment(window);
+        // A running transition's types match `:active-view-transition-type()`.
+        let types = self.transitions.types();
+        let environment = self.environment(window, types.as_deref());
+        self.transitions.begin_frame(now, environment.media);
         let available_fonts = self.available_fonts(cx);
         let plan = self.ui.plan();
         let root_declarations = cascade::root_declarations(&plan.root, &environment);
@@ -611,137 +591,49 @@ impl LiveHtml {
         if root_style.color.is_none() && root_scope.declares_color_scheme() {
             root = root.text_color(gpui_style::color(root_scope.color()));
         }
-        let mut root = root
+        let root = root
             .id(SharedString::from(self.scoped_id("html-root")))
             .role(AccessibleRole::Application);
-        let transition = self.root_transition(environment, &available_fonts, window, cx);
-        if let Some((_, opacity, _)) = &transition
-            && *opacity < 1.0
-        {
-            let base = root.style().opacity.unwrap_or(1.0);
-            root.style().opacity = Some(base * opacity);
-        }
-        let stage = Stage::new(
-            root.into_any_element(),
-            self.root_measured.clone(),
-            self.shift.clone(),
-        );
-        let rendered = match transition {
-            Some((offset, _, old_root)) => stage.transition(offset, old_root),
-            None => stage,
-        }
-        .into_any_element();
+        let rendered = self.transitions.stage(root, |old, path, is_named| {
+            let image = match path {
+                None => self
+                    .render_old_root(old, is_named, environment, &available_fonts, window, cx)
+                    .size_full()
+                    .into_any_element(),
+                Some(path) => {
+                    let element = element_at(old.ui.plan(), path)?;
+                    let inert = Inert {
+                        old,
+                        keep: Some(path),
+                        is_named,
+                        environment,
+                        fonts: &available_fonts,
+                    };
+                    self.render_inert_element(&inert, element, &mut path.to_vec(), window, cx)
+                }
+            };
+            // The outgoing document is an image: hidden from semantics.
+            let id = match path {
+                None => self.scoped_id("html-view-transition-old"),
+                Some(path) => {
+                    self.scoped_id(&format!("html-view-transition-old-{}", generated_id(path)))
+                }
+            };
+            Some(
+                div()
+                    .id(SharedString::from(id))
+                    .aria_hidden(true)
+                    .size_full()
+                    .child(image)
+                    .into_any_element(),
+            )
+        });
         self.viewport_override.set(None);
-        self.named.borrow_mut().end();
-        let finished = self
-            .view_transition
-            .borrow()
-            .as_ref()
-            .is_some_and(|transition| !transition.running);
-        if finished {
-            // This frame already shows the end state; the next one drops the
-            // old images and the active types.
-            self.view_transition.borrow_mut().take();
-            self.view_transition_active.set(false);
-            window.request_animation_frame();
-        }
-        if self.frame.get().moving || self.view_transition.borrow().is_some() {
+        self.transitions.end_frame(window);
+        if self.frame.get().moving {
             window.request_animation_frame();
         }
         rendered
-    }
-
-    /// The root's part of a running transition: the new root's offset and
-    /// opacity, and the old root image with the old named images over it.
-    fn root_transition(
-        &self,
-        viewport: Environment<'_>,
-        available_fonts: &HashSet<String>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Option<((LengthPercentage, LengthPercentage), f32, OldRoot)> {
-        let mut guard = self.view_transition.borrow_mut();
-        let transition = guard.as_mut()?;
-        let motion = &self.ui.plan().motion;
-        let media =
-            |condition: &RenderStyleCondition| cascade::condition_holds(condition, &viewport);
-        let elapsed = transition.elapsed;
-        let timing = transition.timing("root", &[], motion, &media);
-        let old_part = timing.part(Side::Old, elapsed, motion);
-        let new_part = timing.part(Side::New, elapsed, motion);
-        let default_fade = timing.default_fade(Side::Old) && timing.default_fade(Side::New);
-        let mut running = old_part.running || new_part.running;
-        // The old image is drawn over the new one, so the default cross-fade
-        // only needs to fade the old side out.
-        let new_opacity = if default_fade { 1.0 } else { new_part.opacity };
-
-        let image = self
-            .render_old_root(&transition.old, viewport, available_fonts, window, cx)
-            .size_full()
-            .opacity(old_part.opacity);
-        let old = &transition.old;
-        let mut path = Vec::new();
-
-        let mut names = old
-            .named
-            .iter()
-            .map(|(name, captured)| (name.clone(), captured.clone()))
-            .collect::<Vec<_>>();
-        names.sort_by(|a, b| a.1.path.cmp(&b.1.path));
-        let mut images = Vec::with_capacity(names.len());
-        for (name, captured) in &names {
-            let incoming = self.named.borrow().incoming(name);
-            let timing = transition.timing(name, &captured.classes, motion, &media);
-            let group = timing.group(elapsed);
-            let part = timing.part(Side::Old, elapsed, motion);
-            running |= group.running || part.running;
-            let old = &transition.old;
-            let Some(element) = element_at(old.ui.plan(), &captured.path) else {
-                continue;
-            };
-            path.clear();
-            path.extend_from_slice(&captured.path);
-            let child = self.render_inert_element(
-                old,
-                element,
-                &mut path,
-                Some(&captured.path),
-                viewport,
-                available_fonts,
-                window,
-                cx,
-            );
-            let child = div()
-                .size_full()
-                .opacity(part.opacity)
-                .child(child)
-                .into_any_element();
-            images.push(OldImage::lifted(
-                child,
-                captured.bounds,
-                incoming,
-                group.progress,
-                part.translate,
-            ));
-        }
-        transition.running |= running;
-        let old = &transition.old;
-        let image = div()
-            .id(SharedString::from(self.scoped_id("html-view-transition")))
-            .aria_hidden(true)
-            .size_full()
-            .child(image)
-            .children(images)
-            .into_any_element();
-        Some((
-            new_part.translate,
-            new_opacity,
-            OldRoot {
-                image,
-                bounds: old.root,
-                translate: old_part.translate,
-            },
-        ))
     }
 
     fn available_fonts(&self, cx: &App) -> Rc<HashSet<String>> {
@@ -753,7 +645,11 @@ impl LiveHtml {
         fonts
     }
 
-    fn environment(&self, window: &Window) -> Environment<'_> {
+    fn environment<'a>(
+        &self,
+        window: &Window,
+        view_transition_types: Option<&'a [SharedString]>,
+    ) -> Environment<'a> {
         let (width, height) = self.viewport_override.get().unwrap_or_else(|| {
             let size = window.viewport_size();
             (size.width.into(), size.height.into())
@@ -774,10 +670,7 @@ impl LiveHtml {
                 hover: true,
                 fine_pointer: true,
             },
-            view_transition_types: self
-                .view_transition_active
-                .get()
-                .then_some(self.view_transition_types.as_slice()),
+            view_transition_types,
         }
     }
 
@@ -855,7 +748,8 @@ impl LiveHtml {
             properties: &property_values,
             enabled: state.enabled,
         };
-        let environment = self.environment(window);
+        let types = self.transitions.types();
+        let environment = self.environment(window, types.as_deref());
         let interaction = self.interaction(&element_id, window, cx);
         let needs = {
             let mut needs = cascade::own_state_needs(element);
@@ -1099,25 +993,14 @@ impl LiveHtml {
             }
         }
 
-        let named = self.named_element(element, &element_id, path, environment);
-        if let Some((_, Some((_, opacity)))) = &named
-            && *opacity < 1.0
-        {
-            let base = host.style().opacity.unwrap_or(1.0);
-            host.style().opacity = Some(base * opacity);
-        }
-        let rendered = match translate {
-            Some((x, y)) => Translated::new(host.into_any_element(), x, y).into_any_element(),
+        // A named element is captured and moved with its `translate`
+        // applied, as browsers capture an element's transformed box.
+        let rendered = match self.transition_name_of(element, &element_id, &environment) {
+            Some((name, classes)) => self.transitions.named(name, &classes, path.to_vec(), host),
             None => host.into_any_element(),
         };
-        match named {
-            Some((measured, motion)) => Morph::new(
-                rendered,
-                measured,
-                self.shift.clone(),
-                motion.map(|(motion, _)| motion),
-            )
-            .into_any_element(),
+        match translate {
+            Some((x, y)) => Translated::new(rendered, x, y).into_any_element(),
             None => rendered,
         }
     }
@@ -1126,17 +1009,25 @@ impl LiveHtml {
     fn render_old_root(
         &self,
         old: &OldState,
-        viewport: Environment<'_>,
+        is_named: &dyn Fn(&[usize]) -> bool,
+        environment: Environment<'_>,
         available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> Div {
         let old_plan = old.ui.plan();
-        let root_declarations = cascade::root_declarations(&old_plan.root, &viewport);
-        let initial = ComputedScope::root(&viewport.media);
+        let root_declarations = cascade::root_declarations(&old_plan.root, &environment);
+        let initial = ComputedScope::root(&environment.media);
         let root_scope = initial.document_root(root_declarations.iter().copied());
         let root_style = cascade::typed(&root_scope, &initial, &root_declarations);
         self.scopes.borrow_mut().push(root_scope);
+        let inert = Inert {
+            old,
+            keep: None,
+            is_named,
+            environment,
+            fonts: available_fonts,
+        };
         let mut path = Vec::new();
         let children = old_plan
             .nodes
@@ -1145,16 +1036,7 @@ impl LiveHtml {
             .map(|(index, node)| {
                 path.clear();
                 path.push(index);
-                self.render_inert(
-                    old,
-                    node,
-                    &mut path,
-                    None,
-                    viewport,
-                    available_fonts,
-                    window,
-                    cx,
-                )
+                self.render_inert(&inert, node, &mut path, window, cx)
             })
             .collect::<Vec<_>>();
         self.scopes.borrow_mut().pop();
@@ -1165,108 +1047,55 @@ impl LiveHtml {
         )
     }
 
-    /// A named element's slot, and its group motion and opacity while a
-    /// transition runs.
-    fn named_element(
+    /// A named element's `view-transition-name` and classes, if it has one.
+    fn transition_name_of(
         &self,
         element: &RenderElement,
         element_id: &ElementId,
-        path: &[usize],
-        viewport: Environment<'_>,
-    ) -> Option<(Measured, Option<(MorphMotion, f32)>)> {
+        environment: &Environment<'_>,
+    ) -> Option<(SharedString, Vec<SharedString>)> {
         if !self.named_elements.contains(element_id) {
             return None;
         }
-        let declarations = cascade::declarations(element, &viewport, Interaction::default(), &[]);
+        let declarations = cascade::declarations(element, environment, Interaction::default(), &[]);
         let name = transition_name(declarations.iter().copied(), element_id.as_str())?;
-        let classes = transition_classes(declarations.iter().copied());
-        let measured = self.named.borrow_mut().visit(&name, path, classes)?;
-        let mut guard = self.view_transition.borrow_mut();
-        let Some(transition) = guard.as_mut() else {
-            return Some((measured, None));
-        };
-        let motion = &self.ui.plan().motion;
-        let media =
-            |condition: &RenderStyleCondition| cascade::condition_holds(condition, &viewport);
-        let elapsed = transition.elapsed;
-        let from = transition
-            .old
-            .named
-            .get(&name)
-            .map(|captured| captured.bounds.origin);
-        let classes = self
-            .named
-            .borrow()
-            .classes(&name)
-            .map(<[CompactString]>::to_vec)
-            .unwrap_or_default();
-        let timing = transition.timing(&name, &classes, motion, &media);
-        let group = timing.group(elapsed);
-        let part = timing.part(Side::New, elapsed, motion);
-        // When the old image is drawn over this one, the default cross-fade
-        // only needs to fade the old side out.
-        let opacity =
-            if from.is_some() && timing.default_fade(Side::Old) && timing.default_fade(Side::New) {
-                1.0
-            } else {
-                part.opacity
-            };
-        transition.running |= group.running || part.running;
-        Some((
-            measured,
-            Some((
-                MorphMotion {
-                    from,
-                    progress: group.progress,
-                    translate: part.translate,
-                },
-                opacity,
-            )),
-        ))
+        Some((name, transition_classes(declarations.iter().copied())))
     }
 
-    /// Render an element of the outgoing document as a static image: its
-    /// styles and bound values, without ids, handlers, focus or semantics.
-    #[allow(clippy::too_many_arguments)]
+    /// Render a node of the outgoing document as a static image: its styles
+    /// and bound values, without ids, handlers, focus or semantics.
     fn render_inert(
         &self,
-        old: &OldState,
+        inert: &Inert<'_>,
         node: &RenderNode,
         path: &mut Vec<usize>,
-        keep: Option<&[usize]>,
-        viewport: Environment<'_>,
-        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
         match node {
             RenderNode::Text(text) => text.value.clone().into_any_element(),
             RenderNode::Raw(raw) => raw.html.clone().into_any_element(),
-            RenderNode::Element(element) => self.render_inert_element(
-                old,
-                element,
-                path,
-                keep,
-                viewport,
-                available_fonts,
-                window,
-                cx,
-            ),
+            RenderNode::Element(element) => {
+                self.render_inert_element(inert, element, path, window, cx)
+            }
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_inert_element(
         &self,
-        old: &OldState,
+        inert: &Inert<'_>,
         element: &RenderElement,
         path: &mut Vec<usize>,
-        keep: Option<&[usize]>,
-        viewport: Environment<'_>,
-        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
+        let Inert {
+            old,
+            keep,
+            is_named,
+            environment: viewport,
+            fonts: available_fonts,
+        } = *inert;
         let element_id = ElementId::new(
             attribute(element, "id").map_or_else(|| generated_id(path), str::to_owned),
         );
@@ -1310,16 +1139,7 @@ impl LiveHtml {
                     continue;
                 }
                 path.push(index);
-                children.push(self.render_inert(
-                    old,
-                    child,
-                    path,
-                    keep,
-                    viewport,
-                    available_fonts,
-                    window,
-                    cx,
-                ));
+                children.push(self.render_inert(inert, child, path, window, cx));
                 path.pop();
             }
             self.scopes.borrow_mut().pop();
@@ -1350,7 +1170,7 @@ impl LiveHtml {
         if keep == Some(path.as_slice()) {
             // The image of a named element fills its group's box.
             host = host.size_full();
-        } else if old.is_named(path) {
+        } else if is_named(path) {
             // Named elements are drawn as their own images.
             host.style().visibility = Some(gpui::Visibility::Hidden);
         }

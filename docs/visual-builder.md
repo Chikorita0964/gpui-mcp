@@ -175,10 +175,10 @@ inspectable while a component is being implemented.
 
 Motion is written in standard CSS. Transitions and animations run on GPUI
 Kit's motion runtime (`gpui_base::motion`), the same runtime exported GPUI Kit
-code calls, so the canvas and the exported app move identically. Enable it
-with the `gpui-kit` feature (which selects the `gpui-pre` backend). Without
-it, on the Zed backend or plain `gpui-pre`, animated properties take their end
-values at once; nothing is approximated. Elements that declare no motion do no
+code calls, so the canvas and the exported app move identically. This is
+always on with the `gpui-pre` backend. On the Zed backend, which GPUI Kit
+does not support, animated properties take their end values at once; nothing
+is approximated. Elements that declare no motion do no
 per-frame motion work.
 
 **Transitions.** `transition` (and its longhands) animates every property in
@@ -202,7 +202,9 @@ reduce-motion setting.
 **View transitions.** Elements with a `view-transition-name` animate between
 two states: a group moves each one from its old box to its new box, while the
 old and new images cross-fade, and everything else (`root`) cross-fades as
-well. `view-transition-name: none` opts out, and `auto`/`match-element` name
+well. They run on the `gpui-view-transitions` crate (on `gpui_base::motion`),
+which exported GPUI Kit code uses too; on the Zed backend a transition applies
+its end state at once, and `start_view_transition` returns `false`. `view-transition-name: none` opts out, and `auto`/`match-element` name
 an element by its id. A transition starts in one of two ways:
 
 ```rust,ignore
@@ -232,8 +234,9 @@ new images play `@keyframes` such as fades and slides (`opacity` and
 GPUI keeps no pixels between frames, so the old state is drawn by rendering the
 previous document again, inertly: same styles and bound values, but no ids,
 handlers or focus, and hidden from semantic snapshots. The new state is the
-live document, which stays interactive throughout. A group moves its element
-rather than scaling it; an old image is stretched to the group's box, and the
+live document, which stays interactive throughout. Captured and new boxes
+include an element's `translate`, as browsers capture transformed boxes. A
+group moves its element rather than scaling it; an old image is stretched to the group's box, and the
 new element keeps its own size. A name used by more than one element is not
 transitioned, while the rest of the transition proceeds. Custom components
 draw only their children in old images.
