@@ -26,6 +26,8 @@ mod grid;
 mod hooks;
 #[cfg(feature = "runtime")]
 mod input;
+#[cfg(feature = "runtime")]
+mod motion;
 #[cfg(feature = "dev-watch")]
 mod project;
 #[cfg(feature = "runtime")]

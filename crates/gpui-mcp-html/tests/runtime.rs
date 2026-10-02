@@ -1172,3 +1172,129 @@ fn rendered_elements_map_back_to_their_markup(cx: &mut TestAppContext) {
         Some("button")
     );
 }
+
+/// Draw the frame GPUI's animation loop would draw next, `advance` later.
+fn next_frame(visual: &mut gpui::VisualTestContext, advance: std::time::Duration) {
+    visual.executor().advance_clock(advance);
+    visual.update(|window, cx| {
+        window.simulate_next_frame(cx);
+    });
+    visual.run_until_parked();
+}
+
+fn mount<'a>(
+    html: &str,
+    css: &str,
+    cx: &'a mut TestAppContext,
+) -> Option<(Automation, &'a mut gpui::VisualTestContext)> {
+    cx.update(gpui_mcp_html::init);
+    let ui = expect_ok(
+        HtmlUi::compile_with_stylesheet(html, BindingDocument::new(), "motion.css", css),
+        "motion fixture should compile",
+    )?;
+    let automation = Automation::for_test();
+    let live = expect_ok(
+        LiveHtml::new(ui, automation.clone(), HookRegistry::new()),
+        "motion fixture should connect",
+    )?;
+    let (_view, visual) = cx.add_window_view(|_, _| RuntimeView { live });
+    visual.run_until_parked();
+    Some((automation, visual))
+}
+
+fn bounds_of(automation: &Automation, id: &str) -> gpui_mcp::Rect {
+    automation.snapshot().nodes[id].bounds.unwrap_or_default()
+}
+
+#[gpui::test]
+fn css_transitions_interpolate_interaction_changes(cx: &mut TestAppContext) {
+    let css = "body { width: 600px; height: 400px; }
+.box { width: 100px; height: 20px; transition: width 1s linear, translate 1s linear; }
+.box:hover { width: 200px; translate: 100px 0; }";
+    let Some((automation, visual)) = mount(
+        r#"<main id="page"><div id="box" class="box">Box</div></main>"#,
+        css,
+        cx,
+    ) else {
+        return;
+    };
+    let start = bounds_of(&automation, "box");
+    assert_close(start.width, 100.0, "starting width");
+
+    let ms = std::time::Duration::from_millis;
+    visual.simulate_mouse_move(
+        point(px(start.x + 10.0), px(start.y + 10.0)),
+        None,
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    next_frame(visual, ms(500));
+    let half = bounds_of(&automation, "box");
+    assert_close(half.width, 150.0, "width half-way through the transition");
+    assert_close(
+        half.x - start.x,
+        50.0,
+        "translate half-way, without moving layout",
+    );
+
+    // Leaving half-way reverses from the value on screen.
+    visual.simulate_mouse_move(point(px(590.0), px(390.0)), None, Modifiers::default());
+    visual.run_until_parked();
+    next_frame(visual, ms(250));
+    assert_close(
+        bounds_of(&automation, "box").width,
+        137.5,
+        "a reversed transition starts from where it was",
+    );
+    next_frame(visual, ms(2000));
+    let settled = bounds_of(&automation, "box");
+    assert_close(settled.width, 100.0, "settled width");
+    assert_close(settled.x, start.x, "settled position");
+}
+
+#[gpui::test]
+fn starting_style_and_keyframes_animate_on_first_render(cx: &mut TestAppContext) {
+    let css = "body { width: 600px; height: 400px; }
+#page { display: flex; flex-direction: column; }
+.grow { width: 100px; height: 10px; transition: width 1s linear; }
+@starting-style { .grow { width: 0px; } }
+@keyframes stretch { from { width: 0px; } to { width: 200px; } }
+.pulse { width: 100px; height: 10px; animation: stretch 1s linear; }";
+    let Some((automation, visual)) = mount(
+        r#"<main id="page"><div id="grow" class="grow"></div><div id="pulse" class="pulse"></div></main>"#,
+        css,
+        cx,
+    ) else {
+        return;
+    };
+    assert_close(
+        bounds_of(&automation, "grow").width,
+        0.0,
+        "entry starts from @starting-style",
+    );
+    assert_close(
+        bounds_of(&automation, "pulse").width,
+        0.0,
+        "animation starts at its first keyframe",
+    );
+
+    let ms = std::time::Duration::from_millis;
+    next_frame(visual, ms(250));
+    assert_close(
+        bounds_of(&automation, "grow").width,
+        25.0,
+        "entry transition",
+    );
+    assert_close(bounds_of(&automation, "pulse").width, 50.0, "keyframes");
+    next_frame(visual, ms(1000));
+    assert_close(
+        bounds_of(&automation, "grow").width,
+        100.0,
+        "entry finished",
+    );
+    assert_close(
+        bounds_of(&automation, "pulse").width,
+        100.0,
+        "without fill-mode the animation releases the element's own value",
+    );
+}

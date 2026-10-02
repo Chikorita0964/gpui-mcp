@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
+use std::time::Instant;
 
 use gpui::{
     AlignItems, AlignSelf, AnyElement, App, AppContext as _, BoxShadow, Context, DefiniteLength,
@@ -11,7 +12,7 @@ use gpui::{
 };
 use gpui_mcp::{Automation, MAX_LABEL_BYTES, MAX_TEXT_BYTES};
 use htmlswap::{
-    RenderElement, RenderNode, RenderPlan, RenderStyleCondition, RenderStyleVariant,
+    CompactString, RenderElement, RenderNode, RenderPlan, RenderStyleCondition, RenderStyleVariant,
     StyleDeclaration, StyleProperty, UiRole,
 };
 
@@ -19,10 +20,12 @@ use crate::components::{ComponentNode, ComponentRegistry};
 use crate::document::{attribute, is_text_editable};
 use crate::grid::GridProperty;
 use crate::input::{RuntimeTextInput, RuntimeTextInputOptions};
+use crate::motion::{Animated, Inputs, MotionState, MotionValue, Translated};
 use crate::{
     Binding, BindingMode, ElementId, HandlerId, HookEvent, HookOutcome, HookRegistry,
     HookRegistryError, HtmlUi, StateValue, UiEvent, UiProperty,
 };
+use htmlswap::motion::{Animation, Transition};
 
 /// Minimal hover tooltip view that renders an element's `title` attribute text.
 struct TitleTooltip {
@@ -173,8 +176,30 @@ pub struct LiveHtml {
     hovered_element: Rc<RefCell<Option<ElementId>>>,
     disclosures: Rc<RefCell<HashMap<ElementId, bool>>>,
     embedded_namespace: Option<SemanticNamespace>,
-    viewport_override: Cell<Option<MediaViewport>>,
+    /// Media-query dimensions for the render in progress, when overridden.
+    viewport_override: Cell<Option<(f32, f32)>>,
     available_fonts: RefCell<Option<Rc<HashSet<String>>>>,
+    motion: Rc<RefCell<MotionState>>,
+    motion_rules: Rc<RefCell<MotionCache>>,
+    /// Elements under the pointer, for elements whose interaction styles transition.
+    pointer_hovered: Rc<RefCell<HashSet<ElementId>>>,
+    /// The element the primary button is pressed on.
+    pressed: Rc<RefCell<Option<ElementId>>>,
+    /// Per-render clock and motion settings.
+    frame: Cell<FrameContext>,
+    /// Types of the most recent view transition; `view_transition_active`
+    /// says whether it is still running.
+    view_transition_types: Vec<CompactString>,
+    view_transition_active: Cell<bool>,
+}
+
+/// Values fixed for one render pass.
+#[derive(Clone, Copy, Debug)]
+struct FrameContext {
+    now: Option<Instant>,
+    reduce_motion: bool,
+    /// Whether anything drawn this pass is still moving.
+    moving: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -216,6 +241,17 @@ impl LiveHtml {
             embedded_namespace: None,
             viewport_override: Cell::new(None),
             available_fonts: RefCell::new(None),
+            motion: Rc::default(),
+            motion_rules: Rc::default(),
+            pointer_hovered: Rc::default(),
+            pressed: Rc::default(),
+            frame: Cell::new(FrameContext {
+                now: None,
+                reduce_motion: false,
+                moving: false,
+            }),
+            view_transition_types: Vec::new(),
+            view_transition_active: Cell::new(false),
         })
     }
 
@@ -306,6 +342,10 @@ impl LiveHtml {
             self.hovered_element.borrow_mut().take();
         }
 
+        self.motion_rules.borrow_mut().clear();
+        self.pointer_hovered
+            .borrow_mut()
+            .retain(|element_id| element_ids.contains(element_id));
         let previous_revision = self.revision;
         self.ui = Rc::new(ui);
         self.bindings = bindings;
@@ -326,7 +366,7 @@ impl LiveHtml {
     /// Build a live GPUI element tree. Call this from the owning view's `Render` implementation.
     #[must_use]
     pub fn render(&self, window: &mut Window, cx: &mut App) -> AnyElement {
-        self.render_with_media_viewport(MediaViewport::from_window(window), window, cx)
+        self.render_with_media_viewport(None, window, cx)
     }
 
     /// Render with an explicit logical viewport for an embedded responsive-preview surface.
@@ -341,22 +381,26 @@ impl LiveHtml {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        let viewport = if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
-            MediaViewport { width, height }
-        } else {
-            MediaViewport::from_window(window)
-        };
+        let viewport = (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
+            .then_some((width, height));
         self.render_with_media_viewport(viewport, window, cx)
     }
 
     fn render_with_media_viewport(
         &self,
-        viewport: MediaViewport,
+        viewport: Option<(f32, f32)>,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
         self.automation.attach(window);
-        self.viewport_override.set(Some(viewport));
+        self.viewport_override.set(viewport);
+        self.frame.set(FrameContext {
+            now: Some(cx.background_executor().now()),
+            reduce_motion: cx.reduce_motion(),
+            moving: false,
+        });
+        self.motion.borrow_mut().begin();
+        let viewport = self.media_viewport(window);
         let available_fonts = self.available_fonts(cx);
         let children = self
             .ui
@@ -384,6 +428,10 @@ impl LiveHtml {
             .role(AccessibleRole::Application)
             .into_any_element();
         self.viewport_override.set(None);
+        self.motion.borrow_mut().end();
+        if self.frame.get().moving {
+            window.request_animation_frame();
+        }
         rendered
     }
 
@@ -396,10 +444,19 @@ impl LiveHtml {
         fonts
     }
 
-    fn media_viewport(&self, window: &Window) -> MediaViewport {
-        self.viewport_override
-            .get()
-            .unwrap_or_else(|| MediaViewport::from_window(window))
+    fn media_viewport(&self, window: &Window) -> MediaViewport<'_> {
+        let base = self.viewport_override.get().map_or_else(
+            || MediaViewport::from_window(window),
+            |(width, height)| MediaViewport::new(width, height),
+        );
+        MediaViewport {
+            reduce_motion: self.frame.get().reduce_motion,
+            view_transition_types: self
+                .view_transition_active
+                .get()
+                .then_some(self.view_transition_types.as_slice()),
+            ..base
+        }
     }
 
     /// Map every rendered element of the active document to its HTML source:
@@ -526,23 +583,105 @@ impl LiveHtml {
             host = host.track_focus(focus_handle);
         }
         let forced_hover = self.hovered_element.borrow().as_ref() == Some(&element_id);
-        host = apply_interactive_styles(
-            host,
-            element,
-            forced_hover,
-            self.media_viewport(window),
-            available_fonts,
-        );
-        if hoverable {
+        let viewport = self.media_viewport(window);
+        let interaction = Interaction {
+            hovered: forced_hover || self.pointer_hovered.borrow().contains(&element_id),
+            focused: focus_handle
+                .as_ref()
+                .is_some_and(|handle| handle.is_focused(window)),
+            active: self.pressed.borrow().as_ref() == Some(&element_id),
+        };
+        let motion = self.motion_rules(&element_id, element, viewport, interaction);
+        let mut translate = None;
+        if let Some(rules) = &motion {
+            // Interaction styles are resolved here rather than by GPUI's paint-time
+            // refinements, so that their changes can be interpolated.
+            for (style, on) in [
+                (InteractiveStyle::Hover, interaction.hovered),
+                (InteractiveStyle::Focus, interaction.focused),
+                (InteractiveStyle::Active, interaction.active),
+            ] {
+                if on {
+                    let variants = interactive_variants(element, style, viewport);
+                    host = apply_variant_declarations(host, &variants, available_fonts);
+                }
+            }
+            let mut targets = rules.targets;
+            for (property, binding) in [
+                (Animated::Width, UiProperty::Width),
+                (Animated::Height, UiProperty::Height),
+            ] {
+                if let Some(pixels) = property_values
+                    .get(&binding)
+                    .and_then(StateValue::as_pixels)
+                {
+                    targets[property as usize] = Some(MotionValue::Pixels(pixels));
+                }
+            }
+            let frame = self.motion.borrow_mut().frame(
+                &element_id,
+                &Inputs {
+                    targets,
+                    starting: rules.starting,
+                    transitions: &rules.transitions,
+                    animations: &rules.animations,
+                    keyframes: &self.ui.plan().motion,
+                },
+                self.frame.get().now.unwrap_or_else(Instant::now),
+            );
+            if frame.moving {
+                let mut context = self.frame.get();
+                context.moving = true;
+                self.frame.set(context);
+            }
+            host = apply_motion_frame(host, &frame);
+            translate = frame
+                .get(Animated::Translate)
+                .and_then(MotionValue::translate)
+                .filter(|(x, y)| {
+                    *x != crate::motion::Offset::ZERO || *y != crate::motion::Offset::ZERO
+                });
+            if rules.active {
+                let pressed = self.pressed.clone();
+                let pressed_id = element_id.clone();
+                host = host.on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
+                    *pressed.borrow_mut() = Some(pressed_id.clone());
+                    window.refresh();
+                });
+                for release in [false, true] {
+                    let pressed = self.pressed.clone();
+                    let release_listener =
+                        move |_: &gpui::MouseUpEvent, window: &mut Window, _: &mut App| {
+                            if pressed.borrow_mut().take().is_some() {
+                                window.refresh();
+                            }
+                        };
+                    host = if release {
+                        host.on_mouse_up_out(gpui::MouseButton::Left, release_listener)
+                    } else {
+                        host.on_mouse_up(gpui::MouseButton::Left, release_listener)
+                    };
+                }
+            }
+        } else {
+            host = apply_interactive_styles(host, element, forced_hover, viewport, available_fonts);
+        }
+        if hoverable || motion.as_ref().is_some_and(|rules| rules.hover) {
             // GPUI's style-only hover hook does not itself retain enough state for a
             // runtime document to reproduce the hovered cascade on every refreshed frame.
             // Mirror native hit-test transitions into the same state used by semantic hover,
             // so physical input, MCP PlatformInput, and semantic automation resolve one CSS
             // :hover state instead of taking separate rendering paths.
             let hovered_element = self.hovered_element.clone();
+            let pointer_hovered = self.pointer_hovered.clone();
             let hovered_id = element_id.clone();
             host = host.on_hover(move |hovered, window, _| {
                 update_hovered_element(&hovered_element, &hovered_id, *hovered);
+                if *hovered {
+                    pointer_hovered.borrow_mut().insert(hovered_id.clone());
+                } else {
+                    pointer_hovered.borrow_mut().remove(&hovered_id);
+                }
                 window.refresh();
             });
         }
@@ -612,7 +751,54 @@ impl LiveHtml {
             }
         }
 
-        host.into_any_element()
+        match translate {
+            Some((x, y)) => Translated::new(host.into_any_element(), x, y).into_any_element(),
+            None => host.into_any_element(),
+        }
+    }
+
+    /// The element's parsed motion rules in this interaction state, or `None`
+    /// when it declares no transition, animation or starting style.
+    fn motion_rules(
+        &self,
+        element_id: &ElementId,
+        element: &RenderElement,
+        viewport: MediaViewport<'_>,
+        interaction: Interaction,
+    ) -> Option<Rc<MotionRules>> {
+        let mut cache = self.motion_rules.borrow_mut();
+        let context = (
+            viewport.width.to_bits(),
+            viewport.height.to_bits(),
+            viewport.reduce_motion,
+            viewport.view_transition_types.map(<[CompactString]>::len),
+        );
+        if cache.context != Some(context) {
+            cache.clear();
+            cache.context = Some(context);
+        }
+        if let Some(cached) = cache.elements.get(element_id) {
+            if !cached.declares {
+                return None;
+            }
+            if let Some(rules) = &cached.states[interaction.bits()] {
+                return Some(rules.clone());
+            }
+        }
+        let declares = declares_motion(element);
+        let entry = cache
+            .elements
+            .entry(element_id.clone())
+            .or_insert_with(|| CachedMotion {
+                declares,
+                states: Default::default(),
+            });
+        if !declares {
+            return None;
+        }
+        let rules = Rc::new(MotionRules::resolve(element, viewport, interaction));
+        entry.states[interaction.bits()] = Some(rules.clone());
+        Some(rules)
     }
 
     fn disclosure_open(
@@ -856,6 +1042,154 @@ impl LiveHtml {
             children.into_iter().fold(div(), gpui::ParentElement::child)
         }
     }
+}
+
+/// The interaction state an element's styles are resolved in.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Interaction {
+    hovered: bool,
+    focused: bool,
+    active: bool,
+}
+
+impl Interaction {
+    const fn bits(self) -> usize {
+        self.hovered as usize | (self.focused as usize) << 1 | (self.active as usize) << 2
+    }
+}
+
+/// Parsed motion rules, cached per element and interaction state until the
+/// document, viewport, or view-transition state changes.
+#[derive(Default)]
+struct MotionCache {
+    context: Option<(u32, u32, bool, Option<usize>)>,
+    elements: HashMap<ElementId, CachedMotion>,
+}
+
+impl MotionCache {
+    fn clear(&mut self) {
+        self.context = None;
+        self.elements.clear();
+    }
+}
+
+struct CachedMotion {
+    declares: bool,
+    states: [Option<Rc<MotionRules>>; 8],
+}
+
+/// What motion an element has in one interaction state.
+struct MotionRules {
+    targets: [Option<MotionValue>; 7],
+    starting: [Option<MotionValue>; 7],
+    transitions: Vec<Transition>,
+    animations: Vec<Animation>,
+    hover: bool,
+    active: bool,
+}
+
+impl MotionRules {
+    fn resolve(
+        element: &RenderElement,
+        viewport: MediaViewport<'_>,
+        interaction: Interaction,
+    ) -> Self {
+        let conditional = element
+            .style_variants
+            .iter()
+            .filter(|variant| media_only_variant_matches(variant, viewport))
+            .flat_map(|variant| &variant.declarations);
+        let base: Vec<&StyleDeclaration> = element
+            .stylesheet_declarations
+            .iter()
+            .chain(&element.styles)
+            .chain(conditional)
+            .collect();
+        let mut current = base.clone();
+        for (style, on) in [
+            (InteractiveStyle::Hover, interaction.hovered),
+            (InteractiveStyle::Focus, interaction.focused),
+            (InteractiveStyle::Active, interaction.active),
+        ] {
+            if on {
+                current.extend(
+                    interactive_variants(element, style, viewport)
+                        .into_iter()
+                        .flat_map(|variant| &variant.declarations),
+                );
+            }
+        }
+        let starting = element
+            .style_variants
+            .iter()
+            .filter(|variant| {
+                variant
+                    .conditions
+                    .contains(&RenderStyleCondition::StartingStyle)
+                    && variant.conditions.iter().all(|condition| match condition {
+                        RenderStyleCondition::StartingStyle => true,
+                        RenderStyleCondition::Media(query) => {
+                            media_query_matches(query, viewport).unwrap_or(false)
+                        }
+                        _ => false,
+                    })
+            })
+            .flat_map(|variant| &variant.declarations);
+        let starting: Vec<&StyleDeclaration> = base.iter().copied().chain(starting).collect();
+        Self {
+            targets: crate::motion::computed(current.iter().copied()),
+            starting: crate::motion::computed(starting),
+            transitions: htmlswap::motion::transitions(current.iter().copied()),
+            animations: htmlswap::motion::animations(current.iter().copied()),
+            hover: has_interactive_style(element, InteractiveStyle::Hover),
+            active: has_interactive_style(element, InteractiveStyle::Active),
+        }
+    }
+}
+
+/// Whether an element declares any transition, animation, or starting style.
+fn declares_motion(element: &RenderElement) -> bool {
+    let is_motion = |declaration: &StyleDeclaration| {
+        let name = declaration.property.as_str();
+        name.starts_with("transition") || name.starts_with("animation")
+    };
+    element
+        .stylesheet_declarations
+        .iter()
+        .chain(&element.styles)
+        .any(is_motion)
+        || element.style_variants.iter().any(|variant| {
+            variant
+                .conditions
+                .contains(&RenderStyleCondition::StartingStyle)
+                || variant.declarations.iter().any(is_motion)
+        })
+}
+
+/// Draw the interpolated values of animated properties.
+fn apply_motion_frame<T: Styled>(mut host: T, frame: &crate::motion::Frame) -> T {
+    if let Some(color) = frame
+        .get(Animated::BackgroundColor)
+        .and_then(MotionValue::rgba)
+    {
+        host = host.bg(rgba(color));
+    }
+    if let Some(color) = frame.get(Animated::Color).and_then(MotionValue::rgba) {
+        host = host.text_color(rgba(color));
+    }
+    if let Some(color) = frame.get(Animated::BorderColor).and_then(MotionValue::rgba) {
+        host = host.border_color(rgba(color));
+    }
+    if let Some(opacity) = frame.get(Animated::Opacity).and_then(MotionValue::number) {
+        host = host.opacity(opacity.clamp(0.0, 1.0));
+    }
+    if let Some(width) = frame.get(Animated::Width).and_then(MotionValue::length) {
+        host = host.w(width);
+    }
+    if let Some(height) = frame.get(Animated::Height).and_then(MotionValue::length) {
+        host = host.h(height);
+    }
+    host
 }
 
 fn apply_native_defaults(host: Div, element: &RenderElement) -> Div {
@@ -1430,7 +1764,7 @@ pub(crate) fn dispatch_input_change(
 fn apply_styles(
     host: Div,
     element: &RenderElement,
-    viewport: MediaViewport,
+    viewport: MediaViewport<'_>,
     available_fonts: &HashSet<String>,
 ) -> Div {
     let host = apply_declarations(
@@ -1447,7 +1781,7 @@ fn apply_styles(
 fn apply_media_variants<T: Styled>(
     host: T,
     variants: &[RenderStyleVariant],
-    viewport: MediaViewport,
+    viewport: MediaViewport<'_>,
     available_fonts: &HashSet<String>,
 ) -> T {
     variants
@@ -1749,54 +2083,67 @@ fn apply_align_items<T: Styled>(mut host: T, value: AlignItems) -> T {
     host
 }
 
+/// What CSS conditions are evaluated against while rendering.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct MediaViewport {
+struct MediaViewport<'a> {
     width: f32,
     height: f32,
+    /// `prefers-reduced-motion: reduce`, from GPUI's reduce-motion setting.
+    reduce_motion: bool,
+    /// Types of the active view transition, for `:active-view-transition-type()`.
+    view_transition_types: Option<&'a [CompactString]>,
 }
 
-impl MediaViewport {
+impl MediaViewport<'static> {
+    const fn new(width: f32, height: f32) -> Self {
+        Self {
+            width,
+            height,
+            reduce_motion: false,
+            view_transition_types: None,
+        }
+    }
+
     fn from_window(window: &Window) -> Self {
         let size = window.viewport_size();
-        Self {
-            width: size.width.into(),
-            height: size.height.into(),
-        }
+        Self::new(size.width.into(), size.height.into())
     }
 }
 
+/// Whether a variant depends only on conditions the renderer evaluates while
+/// rendering (media queries and view-transition types), as opposed to
+/// interaction state.
 fn media_only_variant_supported(variant: &RenderStyleVariant) -> bool {
     !variant.conditions.is_empty()
-        && variant.conditions.iter().all(|condition| {
-            let RenderStyleCondition::Media(query) = condition else {
-                return false;
-            };
-            media_query_matches(
-                query,
-                MediaViewport {
-                    width: 1024.0,
-                    height: 768.0,
-                },
-            )
-            .is_some()
+        && variant.conditions.iter().all(|condition| match condition {
+            RenderStyleCondition::Media(query) => {
+                media_query_matches(query, MediaViewport::new(1024.0, 768.0)).is_some()
+            }
+            RenderStyleCondition::ActiveViewTransitionType(_) => true,
+            _ => false,
         })
 }
 
-fn media_only_variant_matches(variant: &RenderStyleVariant, viewport: MediaViewport) -> bool {
+fn media_only_variant_matches(variant: &RenderStyleVariant, viewport: MediaViewport<'_>) -> bool {
     media_only_variant_supported(variant) && media_conditions_match(variant, viewport)
 }
 
-fn media_conditions_match(variant: &RenderStyleVariant, viewport: MediaViewport) -> bool {
+fn media_conditions_match(variant: &RenderStyleVariant, viewport: MediaViewport<'_>) -> bool {
     variant.conditions.iter().all(|condition| match condition {
         RenderStyleCondition::Media(query) => media_query_matches(query, viewport).unwrap_or(false),
         RenderStyleCondition::PseudoClass(_) => true,
-        RenderStyleCondition::PseudoElement(_)
+        RenderStyleCondition::ActiveViewTransitionType(types) => viewport
+            .view_transition_types
+            .is_some_and(|active| types.iter().any(|kind| active.contains(kind))),
+        // Starting styles only seed entry transitions; see `motion`.
+        RenderStyleCondition::StartingStyle
+        | RenderStyleCondition::PseudoElement(_)
         | RenderStyleCondition::Supports(_)
         | RenderStyleCondition::Container(_) => false,
     })
 }
 
-fn media_query_matches(query: &str, viewport: MediaViewport) -> Option<bool> {
+fn media_query_matches(query: &str, viewport: MediaViewport<'_>) -> Option<bool> {
     query
         .to_ascii_lowercase()
         .split(',')
@@ -1805,7 +2152,7 @@ fn media_query_matches(query: &str, viewport: MediaViewport) -> Option<bool> {
         .map(|branches| branches.into_iter().any(|matches| matches))
 }
 
-fn media_query_branch_matches(query: &str, viewport: MediaViewport) -> Option<bool> {
+fn media_query_branch_matches(query: &str, viewport: MediaViewport<'_>) -> Option<bool> {
     if query.is_empty() {
         return None;
     }
@@ -1822,7 +2169,7 @@ fn media_query_branch_matches(query: &str, viewport: MediaViewport) -> Option<bo
         .map(|parts| parts.into_iter().all(|matches| matches))
 }
 
-fn media_query_part_matches(part: &str, viewport: MediaViewport) -> Option<bool> {
+fn media_query_part_matches(part: &str, viewport: MediaViewport<'_>) -> Option<bool> {
     let feature = part.strip_prefix('(')?.strip_suffix(')')?.trim();
     if let Some(matches) = media_range_matches(feature, viewport) {
         return Some(matches);
@@ -1842,11 +2189,16 @@ fn media_query_part_matches(part: &str, viewport: MediaViewport) -> Option<bool>
         // GPUI Studio targets desktop windows, where hover and a fine pointer are available.
         "hover" | "any-hover" => Some(value == "hover"),
         "pointer" | "any-pointer" => Some(value == "fine"),
+        "prefers-reduced-motion" => match value {
+            "reduce" => Some(viewport.reduce_motion),
+            "no-preference" => Some(!viewport.reduce_motion),
+            _ => None,
+        },
         _ => None,
     }
 }
 
-fn media_range_matches(feature: &str, viewport: MediaViewport) -> Option<bool> {
+fn media_range_matches(feature: &str, viewport: MediaViewport<'_>) -> Option<bool> {
     for operator in ["<=", ">=", "<", ">", "="] {
         let Some((left, right)) = feature.split_once(operator) else {
             continue;
@@ -1864,7 +2216,7 @@ fn media_range_matches(feature: &str, viewport: MediaViewport) -> Option<bool> {
     None
 }
 
-fn media_dimension(value: &str, viewport: MediaViewport) -> Option<f32> {
+fn media_dimension(value: &str, viewport: MediaViewport<'_>) -> Option<f32> {
     match value {
         "width" => Some(viewport.width),
         "height" => Some(viewport.height),
@@ -1912,14 +2264,7 @@ fn interactive_style(variant: &RenderStyleVariant) -> Option<InteractiveStyle> {
                 pseudo_class = Some(value.as_str());
             }
             RenderStyleCondition::Media(query)
-                if media_query_matches(
-                    query,
-                    MediaViewport {
-                        width: 1024.0,
-                        height: 768.0,
-                    },
-                )
-                .is_some() => {}
+                if media_query_matches(query, MediaViewport::new(1024.0, 768.0)).is_some() => {}
             _ => return None,
         }
     }
@@ -1945,7 +2290,7 @@ fn apply_interactive_styles(
     mut host: Stateful<Div>,
     element: &RenderElement,
     forced_hover: bool,
-    viewport: MediaViewport,
+    viewport: MediaViewport<'_>,
     available_fonts: &HashSet<String>,
 ) -> Stateful<Div> {
     let hover_variants = interactive_variants(element, InteractiveStyle::Hover, viewport);
@@ -1969,11 +2314,11 @@ fn apply_interactive_styles(
     host
 }
 
-fn interactive_variants(
-    element: &RenderElement,
+fn interactive_variants<'a>(
+    element: &'a RenderElement,
     style: InteractiveStyle,
-    viewport: MediaViewport,
-) -> Vec<&RenderStyleVariant> {
+    viewport: MediaViewport<'_>,
+) -> Vec<&'a RenderStyleVariant> {
     element
         .style_variants
         .iter()
@@ -2154,7 +2499,7 @@ fn apply_flex_shrink<T: Styled>(mut host: T, value: f32) -> T {
     host
 }
 
-fn opacity(value: &str) -> Option<f32> {
+pub(crate) fn opacity(value: &str) -> Option<f32> {
     value
         .parse::<f32>()
         .ok()
@@ -2234,7 +2579,7 @@ impl ScrollAxes {
     }
 }
 
-fn element_scroll_axes(element: &RenderElement, viewport: MediaViewport) -> ScrollAxes {
+fn element_scroll_axes(element: &RenderElement, viewport: MediaViewport<'_>) -> ScrollAxes {
     let mut axes = ScrollAxes::default();
     for declaration in element
         .stylesheet_declarations
@@ -2446,7 +2791,7 @@ fn split_top_level_whitespace(value: &str) -> Vec<&str> {
     parts
 }
 
-fn color(value: &str) -> Option<u32> {
+pub(crate) fn color(value: &str) -> Option<u32> {
     let value = value.trim();
     if let Some(arguments) = value
         .strip_prefix("rgba(")
@@ -3268,14 +3613,8 @@ mod tests {
 
     #[test]
     fn desktop_media_queries_follow_the_live_gpui_viewport() {
-        let wide = MediaViewport {
-            width: 1280.0,
-            height: 900.0,
-        };
-        let compact = MediaViewport {
-            width: 900.0,
-            height: 650.0,
-        };
+        let wide = MediaViewport::new(1280.0, 900.0);
+        let compact = MediaViewport::new(900.0, 650.0);
 
         assert_eq!(
             media_query_matches("(max-width: 1120px)", wide),
@@ -3299,7 +3638,19 @@ mod tests {
         );
         assert_eq!(
             media_query_matches("(prefers-reduced-motion: reduce)", wide),
-            None
+            Some(false)
+        );
+        let reduced = MediaViewport {
+            reduce_motion: true,
+            ..wide
+        };
+        assert_eq!(
+            media_query_matches("(prefers-reduced-motion: reduce)", reduced),
+            Some(true)
+        );
+        assert_eq!(
+            media_query_matches("(prefers-reduced-motion: no-preference)", reduced),
+            Some(false)
         );
     }
 
