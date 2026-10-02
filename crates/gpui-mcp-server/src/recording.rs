@@ -510,7 +510,12 @@ fn rgba_to_rgb(rgba: &[u8], rgb: &mut [u8]) -> Result<(), String> {
     {
         return Err("video RGBA and RGB conversion buffers do not match".to_owned());
     }
-    for (source, destination) in rgba.chunks_exact(4).zip(rgb.chunks_exact_mut(3)) {
+    for (source, destination) in rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(rgb.as_chunks_mut::<3>().0.iter_mut())
+    {
         destination.copy_from_slice(&source[..3]);
     }
     Ok(())

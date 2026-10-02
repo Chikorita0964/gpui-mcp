@@ -2365,10 +2365,9 @@ fn border_value(value: &str) -> Option<BorderValue> {
             _ => None,
         } {
             style = Some(value);
-        } else if let Some(value) = color(token) {
-            parsed_color = Some(value);
         } else {
-            return None;
+            let value = color(token)?;
+            parsed_color = Some(value);
         }
     }
 

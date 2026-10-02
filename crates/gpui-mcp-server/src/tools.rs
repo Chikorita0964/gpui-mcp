@@ -22,7 +22,7 @@ use rmcp::{
         ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
         ResourceContents, ServerCapabilities, ServerConfig,
     },
-    service::RequestContext,
+    service::{MaybeSendFuture, RequestContext},
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
@@ -850,6 +850,9 @@ impl CacheHints for ReadResourceResult {
     }
 }
 
+// `tool_handler` expands to dispatcher methods that never await; that shape
+// belongs to the macro, so it cannot be fixed in this impl.
+#[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GpuiMcp {
     fn get_info(&self) -> ServerConfig {
@@ -895,12 +898,15 @@ impl ServerHandler for GpuiMcp {
         Ok(ListResourcesResult::with_all_items(resources).uncacheable(&context))
     }
 
-    async fn list_resource_templates(
+    fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
-    ) -> Result<ListResourceTemplatesResult, ErrorData> {
-        Ok(ListResourceTemplatesResult::with_all_items(Vec::new()).uncacheable(&context))
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + MaybeSendFuture + '_
+    {
+        std::future::ready(Ok(
+            ListResourceTemplatesResult::with_all_items(Vec::new()).uncacheable(&context)
+        ))
     }
 
     async fn read_resource(

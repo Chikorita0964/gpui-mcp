@@ -176,7 +176,7 @@ fn patched_release(
     let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
     let archive = download(&url)?;
     let sha256 = release["sha256"].as_str().context("missing `sha256`")?;
-    if format!("{:x}", Sha256::digest(&archive)) != sha256 {
+    if hex(&Sha256::digest(&archive)) != sha256 {
         bail!("{name} archive checksum mismatch");
     }
     let mut files = extract(&archive, &format!("{name}-{version}"))?;
@@ -206,6 +206,17 @@ fn patched_release(
             .with_context(|| format!("applying vendor/patches/{name}/{version}/{file}"))?;
     }
     Ok(files)
+}
+
+/// Lowercase hex, matching the `sha256` fields in `vendor/*.json`.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        // Writing into a `String` cannot fail.
+        let _ = write!(text, "{byte:02x}");
+    }
+    text
 }
 
 fn crlf_to_lf(content: &[u8]) -> Vec<u8> {
