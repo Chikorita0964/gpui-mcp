@@ -30,13 +30,21 @@ use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Element, ElementId as GpuiElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, Pixels, Point, Style, Window, deferred, point, size,
 };
+use htmlswap::computed::{AnimatableProperty, AnimatedValue, ComputedScope, LengthPercentage};
+use htmlswap::motion::Easing as CssEasing;
 use htmlswap::motion::{Animation, Easing, StepPosition, animations};
 use htmlswap::{
     CompactString, RenderMotionPlan, RenderStyleCondition, StyleDeclaration, ViewTransitionPart,
 };
 
-use crate::motion::{Animated, Frame, MotionValue, Offset, apply_keyframes, elapsed_ms};
 use crate::{Binding, ElementId, HtmlUi, StateValue, UiProperty};
+
+/// A translation: `px + fraction × own size` on each axis.
+type Offset = LengthPercentage;
+
+fn elapsed_ms(started: Instant, now: Instant) -> f32 {
+    now.saturating_duration_since(started).as_secs_f32() * 1000.0
+}
 
 /// Duration of the user-agent group animation when no author rule sets one.
 const DEFAULT_DURATION_MS: f32 = 250.0;
@@ -426,8 +434,8 @@ impl NameTiming {
             Side::Old => &self.old,
             Side::New => &self.new,
         };
-        let mut frame = Frame::default();
-        frame.values[Animated::Opacity.index()] = Some(MotionValue::Number(1.0));
+        let mut opacity = AnimatedValue::Number(1.0);
+        let mut translate = AnimatedValue::Translate(Offset::ZERO, Offset::ZERO);
         let mut running = false;
         for animation in list {
             let Some(name) = animation.name.as_deref() else {
@@ -437,33 +445,97 @@ impl NameTiming {
             let Some(phase) = animation.phase(elapsed) else {
                 continue;
             };
-            let opacity = match name {
-                FADE_OUT => Some(1.0 - animation.easing.sample(phase.progress)),
-                FADE_IN => Some(animation.easing.sample(phase.progress)),
+            match name {
+                FADE_OUT => {
+                    opacity = AnimatedValue::Number(1.0 - animation.easing.sample(phase.progress));
+                }
+                FADE_IN => opacity = AnimatedValue::Number(animation.easing.sample(phase.progress)),
                 name => {
                     if let Some(keyframes) = motion.keyframes(name) {
-                        apply_keyframes(&mut frame, keyframes, animation.easing, phase.progress);
+                        let frames = computed_keyframes(keyframes, animation.easing);
+                        for (property, value) in [
+                            (AnimatableProperty::Opacity, &mut opacity),
+                            (AnimatableProperty::Translate, &mut translate),
+                        ] {
+                            if let Some(sampled) =
+                                sample_keyframes(&frames, property, phase.progress, *value)
+                            {
+                                *value = sampled;
+                            }
+                        }
                     }
-                    None
                 }
-            };
-            if let Some(opacity) = opacity {
-                frame.values[Animated::Opacity.index()] = Some(MotionValue::Number(opacity));
             }
         }
         PartFrame {
-            opacity: frame
-                .get(Animated::Opacity)
-                .and_then(MotionValue::number)
-                .unwrap_or(1.0)
-                .clamp(0.0, 1.0),
-            translate: frame
-                .get(Animated::Translate)
-                .and_then(MotionValue::translate)
+            opacity: opacity.number().unwrap_or(1.0).clamp(0.0, 1.0),
+            translate: translate
+                .translate()
                 .unwrap_or((Offset::ZERO, Offset::ZERO)),
             running,
         }
     }
+}
+
+/// A `@keyframes` rule's frames as typed styles, with each frame's easing.
+fn computed_keyframes(
+    keyframes: &htmlswap::RenderKeyframes,
+    easing: CssEasing,
+) -> Vec<(f32, htmlswap::computed::ComputedStyle, CssEasing)> {
+    let scope = ComputedScope::default();
+    keyframes
+        .frames
+        .iter()
+        .map(|frame| {
+            let declarations = frame.declarations.iter().collect::<Vec<_>>();
+            let frame_easing = frame
+                .declarations
+                .iter()
+                .rev()
+                .find(|d| d.property.as_str() == "animation-timing-function")
+                .and_then(|d| CssEasing::parse(d.value.as_str()))
+                .unwrap_or(easing);
+            (
+                frame.offset,
+                crate::cascade::typed(&scope, &scope, &declarations),
+                frame_easing,
+            )
+        })
+        .collect()
+}
+
+/// One property's value at `progress`, with missing `0%` and `100%` frames
+/// taking the underlying value (CSS Animations 1 §3).
+fn sample_keyframes(
+    frames: &[(f32, htmlswap::computed::ComputedStyle, CssEasing)],
+    property: AnimatableProperty,
+    progress: f32,
+    underlying: AnimatedValue,
+) -> Option<AnimatedValue> {
+    let set = frames
+        .iter()
+        .filter_map(|(offset, style, easing)| Some((*offset, property.get(style)?, *easing)))
+        .collect::<Vec<_>>();
+    if set.is_empty() {
+        return None;
+    }
+    let start = set
+        .iter()
+        .rev()
+        .find(|(offset, ..)| *offset <= progress)
+        .copied()
+        .unwrap_or((0.0, underlying, set[0].2));
+    let end = set
+        .iter()
+        .find(|(offset, ..)| *offset > progress)
+        .map_or((1.0, underlying), |(offset, value, _)| (*offset, *value));
+    let span = end.0 - start.0;
+    let local = if span > 0.0 {
+        ((progress - start.0) / span).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    Some(start.1.mix(end.1, start.2.sample(local)))
 }
 
 fn default_animation(name: &str) -> StyleDeclaration {
@@ -509,8 +581,8 @@ fn inherited_timing(group: &Animation) -> Vec<StyleDeclaration> {
 
 fn resolve(translate: (Offset, Offset), size: gpui::Size<Pixels>) -> Point<Pixels> {
     point(
-        translate.0.resolve(size.width),
-        translate.1.resolve(size.height),
+        gpui::px(translate.0.resolve(f32::from(size.width))),
+        gpui::px(translate.1.resolve(f32::from(size.height))),
     )
 }
 

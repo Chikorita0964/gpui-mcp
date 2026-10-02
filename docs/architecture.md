@@ -71,13 +71,13 @@ one owner; the others call it rather than re-implementing it.
    follow the CSS specifications; state pseudo-classes apply to the element
    they are written on (`.card:hover .title` lowers to a GPUI group hover).
 
-## Migration from today
+## Migration status
 
-| Today | Target |
-|---|---|
-| `LiveHtml` parses CSS strings every frame | Maps htmlswap's typed lowering |
-| `LiveHtml` has its own transition and animation engine (PR #13) | `gpui_base::motion` |
-| View-transition elements inside `LiveHtml` (PR #13) | `gpui-view-transitions` crate |
-| htmlswap attaches dynamic pseudo-classes to the subject element | State attached to the element written on (group hover, `:not(:hover)`) |
-| htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | Add a GPUI Kit 0.7 (gpui-pre 0.3.7) target |
-| gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings | GPUI Kit on gpui-pre; themes as CSS custom properties |
+| Before | Now | Status |
+|---|---|---|
+| `LiveHtml` parsed CSS strings every frame | Maps htmlswap's typed lowering (`gpui_style`), cached per element and state | Done |
+| `LiveHtml` had its own transition and animation engine | `gpui_base::motion` behind the `gpui-kit` feature; end states elsewhere | Done |
+| htmlswap attached dynamic pseudo-classes to the subject element | State attached to the element written on (`ElementState { ancestor }`) | Done |
+| View-transition elements inside `LiveHtml` | `gpui-view-transitions` crate on `gpui_base::motion` | Next |
+| htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | Add a GPUI Kit 0.7 (gpui-pre 0.3.7) target | Planned |
+| gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings | GPUI Kit on gpui-pre; themes as CSS custom properties | Planned |

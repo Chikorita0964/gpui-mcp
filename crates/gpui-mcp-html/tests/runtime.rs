@@ -1206,6 +1206,7 @@ fn bounds_of(automation: &Automation, id: &str) -> gpui_mcp::Rect {
     automation.snapshot().nodes[id].bounds.unwrap_or_default()
 }
 
+#[cfg(feature = "gpui-kit")]
 #[gpui::test]
 fn css_transitions_interpolate_interaction_changes(cx: &mut TestAppContext) {
     let css = "body { width: 600px; height: 400px; }
@@ -1237,13 +1238,14 @@ fn css_transitions_interpolate_interaction_changes(cx: &mut TestAppContext) {
         "translate half-way, without moving layout",
     );
 
-    // Leaving half-way reverses from the value on screen.
+    // Leaving half-way reverses from the value on screen, over half the
+    // duration (the reversing shortening factor, CSS Transitions 1 §3).
     visual.simulate_mouse_move(point(px(590.0), px(390.0)), None, Modifiers::default());
     visual.run_until_parked();
     next_frame(visual, ms(250));
     assert_close(
         bounds_of(&automation, "box").width,
-        137.5,
+        125.0,
         "a reversed transition starts from where it was",
     );
     next_frame(visual, ms(2000));
@@ -1252,6 +1254,7 @@ fn css_transitions_interpolate_interaction_changes(cx: &mut TestAppContext) {
     assert_close(settled.x, start.x, "settled position");
 }
 
+#[cfg(feature = "gpui-kit")]
 #[gpui::test]
 fn starting_style_and_keyframes_animate_on_first_render(cx: &mut TestAppContext) {
     let css = "body { width: 600px; height: 400px; }
@@ -1296,6 +1299,48 @@ fn starting_style_and_keyframes_animate_on_first_render(cx: &mut TestAppContext)
         bounds_of(&automation, "pulse").width,
         100.0,
         "without fill-mode the animation releases the element's own value",
+    );
+}
+
+/// Without GPUI Kit's motion runtime, animated properties take their end
+/// values at once rather than approximating the animation.
+#[cfg(not(feature = "gpui-kit"))]
+#[gpui::test]
+fn without_gpui_kit_motion_applies_end_states(cx: &mut TestAppContext) {
+    let css = "body { width: 600px; height: 400px; }
+#page { display: flex; flex-direction: column; }
+.box { margin: 50px; width: 100px; height: 20px; transition: width 1s linear; }
+.box:hover { width: 200px; }
+@starting-style { .box { width: 0px; } }
+@keyframes stretch { from { width: 0px; } to { width: 300px; } }
+.pulse { width: 100px; height: 10px; animation: stretch 1s linear; }";
+    let Some((automation, visual)) = mount(
+        r#"<main id="page"><div id="box" class="box">Box</div><div id="pulse" class="pulse"></div></main>"#,
+        css,
+        cx,
+    ) else {
+        return;
+    };
+    let start = bounds_of(&automation, "box");
+    assert_close(start.width, 100.0, "no entry transition");
+    assert_close(bounds_of(&automation, "pulse").width, 100.0, "no keyframes");
+
+    visual.simulate_mouse_move(
+        point(px(start.x + 10.0), px(start.y + 10.0)),
+        None,
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert_close(
+        bounds_of(&automation, "box").width,
+        200.0,
+        "hover applies at once",
+    );
+    next_frame(visual, std::time::Duration::from_millis(500));
+    assert_close(
+        bounds_of(&automation, "box").width,
+        200.0,
+        "nothing animates",
     );
 }
 

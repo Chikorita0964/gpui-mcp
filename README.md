@@ -287,7 +287,9 @@ patches are kept working.
 - In Kit 0.7.0, disabled controls report `enabled: true` and read-only inputs
   don't report `read_only`. Kit doesn't publish these states yet.
 - `gpui-mcp-html` works with GPUI Kit too: add it with
-  `default-features = false, features = ["gpui-pre", "json", "ron"]`. Its
+  `default-features = false, features = ["gpui-kit", "json", "ron"]`
+  (`gpui-kit` runs CSS motion on `gpui_base::motion`; plain `gpui-pre` works
+  without motion). Its
   `grid-template-*` support needs the `grid.patch` described below, which the
   `[patch]` recipe already includes.
 

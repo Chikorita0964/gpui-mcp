@@ -98,6 +98,12 @@ jobs:
       - name: Clippy HTML runtime with gpui-pre
         run: cargo clippy -p gpui-mcp-html --all-targets --no-default-features --features gpui-pre,json,ron,dev-watch --locked -- -D warnings
 
+      - name: Test HTML runtime with GPUI Kit motion
+        run: cargo test -p gpui-mcp-html --no-default-features --features gpui-kit,json,ron,dev-watch --locked
+
+      - name: Clippy HTML runtime with GPUI Kit motion
+        run: cargo clippy -p gpui-mcp-html --all-targets --no-default-features --features gpui-kit,json,ron,dev-watch --locked -- -D warnings
+
       - name: Check GPUI Kit example formatting
         run: cargo fmt --manifest-path examples/gpui-kit/Cargo.toml -- --check
 
