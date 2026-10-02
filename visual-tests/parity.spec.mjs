@@ -153,6 +153,32 @@ async function applyBrowserState(page, testCase) {
   }
 }
 
+// page.screenshot doesn't wait for a compositor frame. On a cold Windows
+// runner the first page can have none yet, and Chromium then fails the
+// capture with this error instead of returning an image.
+const chromiumNoFrameError = 'Unable to capture screenshot';
+const chromiumCaptureAttempts = 3;
+
+async function waitForPaintedFrame(page) {
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+}
+
+async function captureChromium(page, options) {
+  for (let attempt = 1; ; attempt += 1) {
+    await waitForPaintedFrame(page);
+    try {
+      return await page.screenshot(options);
+    } catch (error) {
+      if (attempt >= chromiumCaptureAttempts || !error.message.includes(chromiumNoFrameError)) {
+        throw error;
+      }
+      console.log(`Chromium had no frame to capture (attempt ${attempt}); retrying`);
+    }
+  }
+}
+
 function compareImages(chromium, gpui, diff, testCase) {
   const changedPixels = pixelmatch(
     chromium.data,
@@ -311,7 +337,7 @@ for (const testCase of cases) {
       await page.setContent(html, { waitUntil: 'load' });
       await page.evaluate(() => document.fonts.ready);
       await applyBrowserState(page, testCase);
-      await page.screenshot({
+      await captureChromium(page, {
         path: chromiumPath,
         animations: 'disabled',
         caret: 'hide',
