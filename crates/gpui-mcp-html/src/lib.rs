@@ -38,6 +38,8 @@ mod scaffold;
 mod session;
 #[cfg(feature = "runtime")]
 mod source_map;
+#[cfg(feature = "runtime")]
+mod view_transition;
 
 pub use binding::{
     BINDING_DOCUMENT_VERSION, Binding, BindingDocument, BindingDocumentError, BindingMode,
