@@ -87,7 +87,8 @@ struct ElementArgs {
     id: String,
 }
 
-/// Selection arguments for `get_ui_tree`; unset, they return the whole tree.
+/// Selection and reply-shape arguments for `get_ui_tree`; unset, they return
+/// the whole tree in full.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 struct TreeArgs {
     /// Return only this node and its descendants instead of the tree's roots.
@@ -99,6 +100,9 @@ struct TreeArgs {
     /// Omit nodes whose state is not visible.
     #[serde(default)]
     visible_only: bool,
+    /// Return the generation, the node count, the roots, and an ordered id list, without the nodes.
+    #[serde(default)]
+    ids_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -122,6 +126,9 @@ struct FindArgs {
     /// Maximum matches, capped at 200.
     #[serde(default = "default_result_limit")]
     limit: u16,
+    /// Return only the match count and the matching ids, without the elements.
+    #[serde(default)]
+    ids_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -334,6 +341,17 @@ struct SnapshotArgs {
     name: String,
 }
 
+/// Arguments for `load_ui_snapshot`; `save_ui_snapshot` takes the bare name
+/// without the compact flag.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct LoadSnapshotArgs {
+    /// In-memory snapshot name: 1-64 ASCII letters, digits, `.`, `_`, or `-`.
+    name: String,
+    /// Return the generation, the node count, the roots, and an ordered id list, without the nodes.
+    #[serde(default)]
+    ids_only: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct DiffSnapshotsArgs {
     /// Left/base in-memory snapshot name.
@@ -392,6 +410,9 @@ struct CompareImagesArgs {
 struct RecordPerformanceArgs {
     /// Sampling interval in milliseconds, capped at 30000.
     duration_ms: u64,
+    /// Return the embedded frame report without per-frame samples or the last frame's view draws.
+    #[serde(default)]
+    summary_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -404,6 +425,9 @@ struct FrameReportArgs {
     #[serde(default = "default_frame_limit")]
     #[schemars(range(min = 1, max = 512))]
     frame_limit: u16,
+    /// Return the summary and view activity without per-frame samples.
+    #[serde(default)]
+    summary_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1339,11 +1363,42 @@ fn serialized_result(value: &impl Serialize) -> Result<CallToolResult, String> {
 }
 
 /// The `get_ui_tree` reply for `args`, or the whole tree when it selects all of it.
+///
+/// The compact `ids_only` reply is shaped from the same selected-or-whole tree,
+/// so its count, roots and ids describe exactly the nodes the full reply would
+/// have carried.
 fn tree_result(tree: &UiTree, args: &TreeArgs) -> Result<CallToolResult, String> {
-    match select_tree(tree, args)? {
-        Some(selected) => serialized_result(&selected),
-        None => serialized_result(tree),
+    let selected = select_tree(tree, args)?;
+    let tree = selected.as_ref().unwrap_or(tree);
+    if args.ids_only {
+        return serialized_result(&tree_ids_reply(tree));
     }
+    serialized_result(tree)
+}
+
+/// The `find_elements` reply for `nodes`: every match, or just the count and
+/// their ids in the order the full reply lists the elements.
+fn find_reply(nodes: &[&UiNode], ids_only: bool) -> JsonValue {
+    if ids_only {
+        json!({
+            "count": nodes.len(),
+            "ids": nodes.iter().map(|node| node.id.as_str()).collect::<Vec<_>>(),
+        })
+    } else {
+        json!({ "count": nodes.len(), "elements": nodes })
+    }
+}
+
+/// The compact `get_ui_tree`/`load_ui_snapshot` reply: the generation, the node
+/// count, the starting ids and every selected node's id, in the order the full
+/// reply's `nodes` map lists them.
+fn tree_ids_reply(tree: &UiTree) -> JsonValue {
+    json!({
+        "generation": tree.generation,
+        "node_count": tree.nodes.len(),
+        "roots": tree.roots,
+        "ids": tree.nodes.keys().collect::<Vec<_>>(),
+    })
 }
 
 /// The part of `tree` that `args` asks for, or `None` when it asks for all of it.
@@ -1428,7 +1483,7 @@ mod tests {
 
     use super::{
         FindArgs, MAX_SETTLE_FRAMES, Role, StartVideoRecordingArgs, TreeArgs, UiTree,
-        WaitStateArgs, default_result_limit_for_test, find_nodes, select_tree,
+        WaitStateArgs, default_result_limit_for_test, find_nodes, find_reply, select_tree,
         settle_pending_frames, settle_requested_frames, state_matches, tree_diff, tree_result,
     };
 
@@ -1621,6 +1676,7 @@ mod tests {
                 exact: false,
                 visible_only: true,
                 limit: default_result_limit_for_test(),
+                ids_only: false,
             },
         );
         assert_eq!(found.len(), 1);
@@ -1747,6 +1803,7 @@ mod tests {
             root: root.map(str::to_owned),
             max_depth,
             visible_only,
+            ids_only: false,
         }
     }
 
@@ -1968,6 +2025,119 @@ mod tests {
         assert_ne!(
             filtered, current,
             "an argument that selects less must change the reply"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn find_reply_ids_only_lists_the_same_matches_in_the_same_order() -> Result<(), String> {
+        let nodes = [
+            plain_node("beta", None, &[], true),
+            plain_node("alpha", None, &[], true),
+        ];
+        let tree = UiTree {
+            generation: 1,
+            roots: vec!["alpha".to_owned(), "beta".to_owned()],
+            nodes: nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect(),
+            diagnostics: Vec::new(),
+        };
+        let found = find_nodes(
+            &tree,
+            &FindArgs {
+                query: None,
+                role: None,
+                exact: false,
+                visible_only: true,
+                limit: 100,
+                ids_only: true,
+            },
+        );
+        assert_eq!(
+            found
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "beta"],
+            "matches come out in the tree's own order"
+        );
+
+        let full = find_reply(&found, false);
+        let compact = find_reply(&found, true);
+        let elements = full["elements"]
+            .as_array()
+            .ok_or("the full reply lists elements")?;
+        let element_ids: Vec<&str> = elements
+            .iter()
+            .map(|element| {
+                element["id"]
+                    .as_str()
+                    .ok_or_else(|| "an element carries an id".to_owned())
+            })
+            .collect::<Result<_, String>>()?;
+        assert_eq!(compact["count"], full["count"]);
+        assert_eq!(
+            compact["ids"],
+            json!(element_ids),
+            "the compact ids are the full reply's element ids in the same order"
+        );
+        assert!(compact.get("elements").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn tree_ids_only_reply_describes_the_same_selection() -> Result<(), String> {
+        let tree = selection_fixture();
+
+        let visible = TreeArgs {
+            ids_only: true,
+            ..args(None, None, true)
+        };
+        let reply = serialized_reply(&tree_result(&tree, &visible)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({
+                "generation": 3,
+                "node_count": 4,
+                "roots": ["app"],
+                "ids": ["app", "inside", "panel", "row"],
+            })),
+            "the compact reply counts and names exactly the selected nodes"
+        );
+
+        let rooted = TreeArgs {
+            root: Some("panel".to_owned()),
+            ids_only: true,
+            ..TreeArgs::default()
+        };
+        let reply = serialized_reply(&tree_result(&tree, &rooted)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({
+                "generation": 3,
+                "node_count": 2,
+                "roots": ["panel"],
+                "ids": ["panel", "row"],
+            })),
+            "a root argument shapes the compact reply from that subtree's nodes"
+        );
+
+        let whole = TreeArgs {
+            ids_only: true,
+            ..TreeArgs::default()
+        };
+        let reply = serialized_reply(&tree_result(&tree, &whole)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({
+                "generation": 3,
+                "node_count": 5,
+                "roots": ["app"],
+                "ids": ["app", "hidden", "inside", "panel", "row"],
+            })),
+            "without a selection the compact reply lists the whole tree, hidden nodes included"
         );
         Ok(())
     }

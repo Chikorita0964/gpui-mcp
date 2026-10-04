@@ -1,11 +1,25 @@
 use super::{
-    BridgeResult, Duration, FrameReportArgs, GpuiMcp, Json, LogsArgs, Operation, Parameters,
-    RecordPerformanceArgs, ToolRouter, Value, ack_json, average_render_work_ms, encode_error, json,
-    object_output, performance_assessment, sleep, tool, tool_router, validate_timeout,
+    BridgeResult, Duration, FrameReportArgs, GpuiMcp, Json, JsonValue, LogsArgs, Operation,
+    Parameters, RecordPerformanceArgs, ToolRouter, Value, ack_json, average_render_work_ms,
+    encode_error, json, object_output, performance_assessment, sleep, tool, tool_router,
+    validate_timeout,
 };
+use gpui_mcp_protocol::FrameReport;
 
 /// Per-frame samples `record_performance` returns alongside its summary.
 const RECORDED_FRAME_LIMIT: u16 = 64;
+
+/// A frame report as JSON; `summary_only` removes the per-frame samples and the
+/// last frame's view draws, keeping every scalar, the summary and the view
+/// activity, so a caller still learns how many frames the report covers.
+fn report_value(report: &FrameReport, summary_only: bool) -> Result<JsonValue, String> {
+    let mut value = serde_json::to_value(report).map_err(encode_error)?;
+    if summary_only && let Some(object) = value.as_object_mut() {
+        object.remove("frames");
+        object.remove("last_frame_views");
+    }
+    Ok(value)
+}
 
 #[tool_router(router = diagnostics_router)]
 impl GpuiMcp {
@@ -34,7 +48,7 @@ impl GpuiMcp {
     }
 
     #[tool(
-        description = "Report every frame completed after the last mark_frames (or after since_frame_count): per-frame GPUI draw time, the application's share (app_draw_ms) and the bridge's (bridge_ms), p50/p95/max, and which views rendered, why, and which replayed from cache"
+        description = "Report every frame completed after the last mark_frames (or after since_frame_count): per-frame GPUI draw time, the application's share (app_draw_ms) and the bridge's (bridge_ms), p50/p95/max, and which views rendered, why, and which replayed from cache. Pass `summary_only` for the aggregates without per-frame samples."
     )]
     async fn get_frame_report(
         &self,
@@ -43,13 +57,11 @@ impl GpuiMcp {
         let report = self
             .frame_report(args.since_frame_count, args.frame_limit)
             .await?;
-        Ok(object_output(
-            serde_json::to_value(report).map_err(encode_error)?,
-        ))
+        Ok(object_output(report_value(&report, args.summary_only)?))
     }
 
     #[tool(
-        description = "Observe frames over a bounded interval and report before/after statistics plus per-frame samples, percentiles, and view-cache activity for exactly the frames drawn in the interval"
+        description = "Observe frames over a bounded interval and report before/after statistics plus per-frame samples, percentiles, and view-cache activity for exactly the frames drawn in the interval. Pass `summary_only` for the same report without per-frame samples."
     )]
     async fn record_performance(
         &self,
@@ -67,7 +79,7 @@ impl GpuiMcp {
             "before": before,
             "after": after,
             "observed_frame_delta": after.frame_count.saturating_sub(before.frame_count),
-            "frames": report,
+            "frames": report_value(&report, args.summary_only)?,
             "cadence_note": "Event-driven applications repaint only when needed; a low observed cadence while idle is healthy and is not an FPS-capacity measurement.",
         })))
     }
@@ -115,4 +127,95 @@ impl GpuiMcp {
 
 pub(super) fn router() -> ToolRouter<GpuiMcp> {
     GpuiMcp::diagnostics_router()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use gpui_mcp_protocol::{
+        FrameReport, FrameSample, FrameSummary, ViewActivity, ViewDraw, ViewOutcome,
+    };
+
+    use super::report_value;
+
+    fn fixture() -> FrameReport {
+        FrameReport {
+            after_frame_count: 41,
+            latest_frame_count: 44,
+            truncated: true,
+            summary: FrameSummary {
+                frames: 3,
+                ..FrameSummary::default()
+            },
+            frames: vec![FrameSample {
+                frame_count: 42,
+                ..FrameSample::default()
+            }],
+            views: vec![ViewActivity {
+                entity_id: 7,
+                type_name: "DemoView".to_owned(),
+                rendered: 1,
+                reused: 2,
+                causes: BTreeMap::new(),
+            }],
+            last_frame_views: vec![ViewDraw {
+                entity_id: 7,
+                type_name: "DemoView".to_owned(),
+                outcome: ViewOutcome::Rendered,
+                cause: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn report_value_defaults_to_the_unchanged_serialization() -> Result<(), String> {
+        let report = fixture();
+        let default = serde_json::to_string(&report_value(&report, false)?)
+            .map_err(|error| error.to_string())?;
+        // The tool has always converted the report through `to_value` before
+        // answering, so this is the value - and the bytes - of the default
+        // reply, whatever key order the serde_json build uses.
+        let previous = serde_json::to_string(
+            &serde_json::to_value(&report).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        assert_eq!(
+            default, previous,
+            "without summary_only the reply value must be the one the tool returned before the flag"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn report_value_summary_only_drops_only_the_per_frame_samples() -> Result<(), String> {
+        let report = fixture();
+        let full = report_value(&report, false)?;
+        let compact = report_value(&report, true)?;
+        let compact = compact
+            .as_object()
+            .ok_or("the compact report is an object")?;
+        assert!(
+            !compact.contains_key("frames"),
+            "the per-frame samples are dropped"
+        );
+        assert!(
+            !compact.contains_key("last_frame_views"),
+            "the last frame's view draws are dropped"
+        );
+        for field in [
+            "after_frame_count",
+            "latest_frame_count",
+            "truncated",
+            "summary",
+            "views",
+        ] {
+            assert_eq!(
+                compact.get(field),
+                full.get(field),
+                "{field} survives the reduction"
+            );
+        }
+        Ok(())
+    }
 }

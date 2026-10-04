@@ -122,6 +122,19 @@ node still lists every child id, and a node's `parent` and the reply's `roots`
 are returned as they are, so the reply can name an id that `nodes` does not
 contain.
 
+Several of the larger tools take an opt-in argument for a smaller reply.
+`find_elements`, `get_ui_tree`, and `load_ui_snapshot` accept `ids_only`, which
+drops the full nodes: `find_elements` returns the count and the ids, while
+`get_ui_tree` and `load_ui_snapshot` return the generation, the node count, the
+roots, and the ids. `get_frame_report`, `record_performance`,
+`get_live_document`, and `preview_live_document` accept `summary_only`, which
+returns the summary instead of the full detail. Defaults are unchanged; the
+compact form appears only when the caller asks for it. A client that runs code
+(OMP's eval cell, any MCP host that executes code) can call several tools in
+one turn and should prefer the compact form for the big replies, so the
+combined result stays under the client's display cap. Each tool's description
+gives the exact shape of its compact reply.
+
 `perform_action` runs an accessibility action on an element the way assistive
 technology does, without coordinates or keystrokes: `click`, `increment`,
 `decrement`, `expand`, `collapse`, and `set_value`. Use increment/decrement for

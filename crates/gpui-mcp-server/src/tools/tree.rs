@@ -1,15 +1,15 @@
 use super::{
     CallToolResult, DiffCurrentArgs, DiffSnapshotsArgs, Duration, ElementArgs, FindArgs, GpuiMcp,
-    Instant, Json, MAX_TREE_SNAPSHOTS, Parameters, SnapshotArgs, ToolRouter, TreeArgs, UiTree,
-    Value, WaitElementArgs, WaitStateArgs, encode_error, find_nodes, get_node, json,
-    map_wait_error, object_output, require_bounds, state_matches, tool, tool_router, tree_diff,
-    tree_result, validate_name, validate_timeout,
+    Instant, Json, LoadSnapshotArgs, MAX_TREE_SNAPSHOTS, Parameters, SnapshotArgs, ToolRouter,
+    TreeArgs, UiTree, Value, WaitElementArgs, WaitStateArgs, encode_error, find_nodes, find_reply,
+    get_node, json, map_wait_error, object_output, require_bounds, state_matches, tool,
+    tool_router, tree_diff, tree_ids_reply, tree_result, validate_name, validate_timeout,
 };
 
 #[tool_router(router = tree_router)]
 impl GpuiMcp {
     #[tool(
-        description = "Return the latest rendered GPUI semantic tree with real layout bounds. Optionally return only one node's subtree (`root`), limit how many levels below the starting nodes are included (`max_depth`; 0 returns the starting nodes only), or omit nodes whose state is not visible (`visible_only`). The cut applies to `nodes` only: a returned node still lists every child id, and a node's `parent` and the reply's `roots` are returned as they are, so the reply can name an id that `nodes` does not contain.",
+        description = "Return the latest rendered GPUI semantic tree with real layout bounds. Optionally return only one node's subtree (`root`), limit how many levels below the starting nodes are included (`max_depth`; 0 returns the starting nodes only), or omit nodes whose state is not visible (`visible_only`). Pass `ids_only` for the generation, the selected node count, the roots, and an ordered id list without the nodes. The cut applies to `nodes` only: a returned node still lists every child id, and a node's `parent` and the reply's `roots` are returned as they are, so the reply can name an id that `nodes` does not contain.",
         output_schema = rmcp::handler::server::tool::schema_for_output::<UiTree>()
     )]
     async fn get_ui_tree(
@@ -21,7 +21,7 @@ impl GpuiMcp {
     }
 
     #[tool(
-        description = "Find GPUI semantic elements by label substring or exact label and optional role"
+        description = "Find GPUI semantic elements by label substring or exact label and optional role. Pass `ids_only` for a count plus the matching ids without the elements."
     )]
     async fn find_elements(
         &self,
@@ -29,9 +29,7 @@ impl GpuiMcp {
     ) -> Result<Json<Value>, String> {
         let tree = self.tree().await?;
         let nodes = find_nodes(&tree, &args);
-        Ok(object_output(
-            json!({ "count": nodes.len(), "elements": nodes }),
-        ))
+        Ok(object_output(find_reply(&nodes, args.ids_only)))
     }
 
     #[tool(description = "Return one semantic element by its stable identifier")]
@@ -74,6 +72,7 @@ impl GpuiMcp {
                 exact: args.exact,
                 visible_only: true,
                 limit: 1,
+                ids_only: false,
             };
             if let Some(node) = find_nodes(&tree, &query).into_iter().next() {
                 return Ok(object_output(json!({
@@ -151,16 +150,21 @@ impl GpuiMcp {
         ))
     }
 
-    #[tool(description = "Load a saved in-memory semantic tree snapshot")]
+    #[tool(
+        description = "Load a saved in-memory semantic tree snapshot. Pass `ids_only` for the generation, the node count, the roots, and an ordered id list without the nodes."
+    )]
     async fn load_ui_snapshot(
         &self,
-        Parameters(args): Parameters<SnapshotArgs>,
+        Parameters(args): Parameters<LoadSnapshotArgs>,
     ) -> Result<Json<Value>, String> {
         let snapshots = self.snapshots.read().await;
         let tree = snapshots
             .trees
             .get(&args.name)
             .ok_or_else(|| format!("tree snapshot {:?} was not found", args.name))?;
+        if args.ids_only {
+            return Ok(object_output(tree_ids_reply(tree)));
+        }
         Ok(object_output(
             serde_json::to_value(tree).map_err(encode_error)?,
         ))
