@@ -31,7 +31,8 @@ from pathlib import Path
 ROOT = Path.cwd()
 CACHE = Path(os.environ.get("ORCH_TESTS_CACHE") or Path.home() / ".cache" / "gpui-mcp" / "orch-tests")
 CI_FEATURES = {"gpui-mcp": "test-support", "gpui-mcp-html": "dev-watch,visual-parity"}
-EVERYTHING = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/", "vendor/", "sh/orch-tests.py")
+EVERYTHING = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/", "vendor/", "sh/orch-tests.py",
+              "sh/orch-tests.known")
 NOTHING = ("docs/", "README.md", "LICENSE", "SECURITY.md", "CLAUDE.md", ".github/")
 MIN_BOUND, NO_HISTORY_BOUND = 600, 3600
 
@@ -108,7 +109,7 @@ def key(pkgs, suite) -> str:
         paths = [pkgs[n]["dir"] for n in sorted(closure(pkgs, suite))]
     else:
         paths = [p["dir"] for p in pkgs.values()]
-    paths += ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "sh/orch-tests.py"]
+    paths += ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "sh/orch-tests.py", "sh/orch-tests.known"]
     vendor = git("rev-parse", "HEAD:vendor").stdout.strip() + git("status", "--porcelain", "--", "vendor").stdout
     digest = hashlib.sha256(f"{suite}\n{vendor}\n".encode())
     for p, h in sorted(blob_hashes(paths).items()):
@@ -124,6 +125,20 @@ def median(suite):
     return v[(len(v) - 1) // 2] if v else None
 
 
+def known() -> dict:
+    """{package: [test names]} from sh/orch-tests.known: known baseline failures to skip."""
+    out = {}
+    try:
+        lines = (ROOT / "sh" / "orch-tests.known").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 2 and not line.lstrip().startswith("#"):
+            out.setdefault(parts[0], []).append(parts[1])
+    return out
+
+
 def command(pkgs, suite) -> list:
     if suite == "fmt":
         return ["cargo", "fmt", "--all", "--", "--check"]
@@ -134,7 +149,25 @@ def command(pkgs, suite) -> list:
     cmd = ["cargo", "test", "-p", suite, "--locked"]
     if suite in CI_FEATURES:
         cmd += ["--features", CI_FEATURES[suite]]
+    skips = known().get(suite, [])
+    if skips:
+        cmd += ["--", *[a for name in skips for a in ("--skip", name)]]
     return cmd
+
+
+def salt_config(pkgs) -> list:
+    """`--config` arguments that give this worktree's workspace packages artifacts of their own in the
+    shared target directory. Cargo keys a path package's artifacts on its path RELATIVE to the
+    workspace, so every worktree would otherwise share (and reuse) the main checkout's builds of our
+    own crates - a test that bakes env!("CARGO_MANIFEST_DIR") then reads another worktree's files,
+    and an older worktree can run main's newer code. A per-worktree codegen-units value changes only
+    those packages' unit hash; the dependencies (gpui included) stay shared. The main checkout itself
+    gets no salt."""
+    if ROOT.resolve() == main_checkout().resolve():
+        return []
+    units = 2 + int(hashlib.sha256(str(ROOT.resolve()).encode()).hexdigest(), 16) % 250
+    return [a for name in sorted(pkgs) for prof in ("dev", "test")
+            for a in ("--config", f'profile.{prof}.package."{name}".codegen-units={units}')]
 
 
 def run_suite(pkgs, suite, k) -> dict:
@@ -144,8 +177,9 @@ def run_suite(pkgs, suite, k) -> dict:
     env.setdefault("CARGO_TARGET_DIR", str(main_checkout() / "target"))
     t0 = time.time()
     try:
-        r = subprocess.run(command(pkgs, suite), cwd=str(ROOT), env=env, capture_output=True, text=True,
-                           timeout=bound)
+        cmd = command(pkgs, suite)
+        cmd = cmd[:1] + salt_config(pkgs) + cmd[1:]
+        r = subprocess.run(cmd, cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=bound)
         rc, out = r.returncode, r.stdout + r.stderr
     except subprocess.TimeoutExpired:
         rc, out = 124, f"TIMEOUT: {suite} ran past {bound:.0f}s"
