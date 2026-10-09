@@ -1013,19 +1013,13 @@ mod tests {
         ProcessId::new(value).ok_or_else(|| anyhow::anyhow!("invalid process ID"))
     }
 
+    /// A process id no process can have: above Linux's `pid_max` (at most
+    /// 2^22) and the range Windows hands out. A real process that has just
+    /// exited is no substitute, as Windows reuses its id almost at once and
+    /// parallel tests start processes of their own.
+    #[allow(clippy::unnecessary_wraps)]
     fn exited_process_id() -> Result<u32> {
-        #[cfg(windows)]
-        let mut command = std::process::Command::new("cmd");
-        #[cfg(windows)]
-        command.args(["/C", "exit"]);
-        #[cfg(unix)]
-        let command = std::process::Command::new("true");
-        #[cfg(unix)]
-        let mut command = command;
-        let mut child = command.spawn()?;
-        let pid = child.id();
-        child.wait()?;
-        Ok(pid)
+        Ok(0x7FFF_FFFC)
     }
 
     fn long_running_process() -> Result<std::process::Child> {
