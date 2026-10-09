@@ -258,6 +258,26 @@ struct ElementRuntime<'a> {
     enabled: bool,
 }
 
+/// What [`LiveHtml::finish_element`] styles and wires, once the element's
+/// children are rendered.
+struct Finish<'a, 'e> {
+    element: &'a RenderElement,
+    path: &'a [usize],
+    disclosure_owner: Option<&'a ElementId>,
+    id: &'a str,
+    runtime_id: &'a str,
+    element_id: &'a ElementId,
+    bindings: &'a [Binding],
+    property_values: &'a HashMap<UiProperty, StateValue>,
+    state: &'a ElementState,
+    needs: cascade::StateNeeds,
+    computed: &'a Rc<cascade::Computed>,
+    parent: &'a ComputedScope,
+    environment: &'a cascade::Environment<'e>,
+    children: Vec<AnyElement>,
+    text_input: Option<Entity<RuntimeTextInput>>,
+}
+
 impl LiveHtml {
     /// Connect a compiled document to application hooks and MCP automation.
     ///
@@ -777,6 +797,68 @@ impl LiveHtml {
         self.interactions.borrow_mut().pop();
         self.scopes.borrow_mut().pop();
 
+        self.finish_element(
+            Finish {
+                element,
+                path,
+                disclosure_owner,
+                id: &id,
+                runtime_id: &runtime_id,
+                element_id: &element_id,
+                bindings: &bindings,
+                property_values: &property_values,
+                state: &state,
+                needs,
+                computed: &computed,
+                parent: &parent,
+                environment: &environment,
+                children,
+                text_input,
+            },
+            available_fonts,
+            window,
+            cx,
+        )
+    }
+
+    /// Style the element around its rendered children and wire its
+    /// interactions. Kept out of [`Self::render_element`], which recurses
+    /// into the children, so its style temporaries are not on the stack for
+    /// every level of the document (the main thread has 1 MiB on Windows).
+    #[inline(never)]
+    #[allow(clippy::too_many_lines)]
+    fn finish_element(
+        &self,
+        finish: Finish<'_, '_>,
+        available_fonts: &HashSet<String>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let Finish {
+            element,
+            path,
+            disclosure_owner,
+            id,
+            runtime_id,
+            element_id,
+            bindings,
+            property_values,
+            state,
+            needs,
+            computed,
+            parent,
+            environment,
+            children,
+            text_input,
+        } = finish;
+        let id = id.to_owned();
+        let runtime_id = runtime_id.to_owned();
+        let runtime = ElementRuntime {
+            element_id,
+            bindings,
+            properties: property_values,
+            enabled: state.enabled,
+        };
         // Bound sizes override the stylesheet, and are what size transitions
         // move toward.
         let bound = |property: UiProperty| {
@@ -786,8 +868,8 @@ impl LiveHtml {
                 .map(|pixels| htmlswap::computed::Size::Length(LengthPercentage::px(pixels)))
         };
         let (bound_width, bound_height) = (bound(UiProperty::Width), bound(UiProperty::Height));
-        let entering = self.drawn.borrow_mut().draw(&element_id);
-        let animated = motion::has_motion(&computed);
+        let entering = self.drawn.borrow_mut().draw(element_id);
+        let animated = motion::has_motion(computed);
         let overridden = bound_width.is_some() || bound_height.is_some();
         let owned;
         let style = if animated || overridden {
@@ -802,12 +884,12 @@ impl LiveHtml {
                 let keyframe_scope = &computed.scope;
                 let compute_keyframe = |declarations: &[StyleDeclaration]| {
                     let declarations = declarations.iter().collect::<Vec<_>>();
-                    cascade::typed(keyframe_scope, &parent, &declarations)
+                    cascade::typed(keyframe_scope, parent, &declarations)
                 };
                 let output = motion::animate(
                     &motion::Inputs {
                         key: &runtime_id,
-                        computed: &computed,
+                        computed,
                         target: &target,
                         entering,
                         plan: &self.ui.plan().motion,
@@ -851,7 +933,7 @@ impl LiveHtml {
             host.text_style().font_features =
                 Some(gpui::FontFeatures(std::sync::Arc::new(features)));
         }
-        host = apply_native_state(host, element, &state);
+        host = apply_native_state(host, element, state);
         if !state.visible {
             host = host.hidden();
         }
@@ -866,12 +948,12 @@ impl LiveHtml {
                 .or_default()
                 .clone()
         });
-        let toggle = semantic_toggle(element, &state, &bindings);
+        let toggle = semantic_toggle(element, state, bindings);
         let mut host = install_pointer_hooks(
             host,
             &runtime_id,
-            &element_id,
-            &bindings,
+            element_id,
+            bindings,
             &self.hooks,
             state.enabled,
             toggle,
@@ -966,7 +1048,7 @@ impl LiveHtml {
         if let Some(component_id) = attribute(element, "component") {
             host = host.frame_metadata("component_id", component_id);
         }
-        if let Some(label) = accessible_label(element, &property_values) {
+        if let Some(label) = accessible_label(element, property_values) {
             host = host.aria_label(label);
         }
         if let Some(title) = attribute(element, "title") {
@@ -979,7 +1061,7 @@ impl LiveHtml {
                 .into()
             });
         }
-        if let Some(text) = element_text(element, &property_values, &bindings) {
+        if let Some(text) = element_text(element, property_values, bindings) {
             if text.redacted {
                 host = host.frame_redacted(true);
             } else if is_editable_role(role) {
@@ -989,7 +1071,7 @@ impl LiveHtml {
                 host = host.frame_action(FrameAction::SetText);
             }
         }
-        if let Some(value) = element_value(element, &property_values, &bindings) {
+        if let Some(value) = element_value(element, property_values, bindings) {
             if !is_editable_role(role) {
                 host = host.aria_value(value.value);
             }
@@ -1000,7 +1082,7 @@ impl LiveHtml {
 
         // A named element is captured and moved with its `translate`
         // applied, as browsers capture an element's transformed box.
-        let rendered = match self.transition_name_of(element, &element_id, &environment) {
+        let rendered = match self.transition_name_of(element, element_id, environment) {
             Some((name, classes)) => self.transitions.named(name, &classes, path.to_vec(), host),
             None => host.into_any_element(),
         };
