@@ -1,23 +1,35 @@
 //! Typed computed styles (htmlswap's lowering) onto GPUI styles.
 //!
-//! Each field maps to the GPUI style it means, without parsing. Values GPUI
-//! cannot draw are left unset here and reported by [`limits`], so the
-//! renderer and diagnostics agree on what is supported.
+//! htmlswap's [`plan`] decides what each computed value becomes in GPUI,
+//! what GPUI draws only approximately and what it cannot draw; the code
+//! generator prints the same plan. This module only converts the plan's
+//! values into GPUI's, so the renderer, the generated code and diagnostics
+//! agree on what is supported.
 
 use std::collections::HashSet;
 
 use gpui::{
     AbsoluteLength, AlignContent, AlignItems, BoxShadow, CursorStyle, DefiniteLength,
-    FlexDirection, FlexWrap, FontFallbacks, FontStyle, FontWeight, Length, Overflow, SharedString,
-    StrikethroughStyle, Styled, TextAlign as GpuiTextAlign, UnderlineStyle, Visibility, point, px,
-    relative, rgba,
+    FlexDirection, FlexWrap, FontFallbacks, FontStyle, FontWeight, Length, Overflow, Pixels,
+    SharedString, StrikethroughStyle, Styled, TextAlign, UnderlineStyle, Visibility, Window, point,
+    px, relative, rems, rgba,
+};
+use htmlswap::computed::gpui::{
+    Absolute, Definite, Features, GpuiAlign, GpuiCursor, GpuiDecoration, GpuiDisplay,
+    GpuiDistribute, GpuiLength, GpuiOverflow, GpuiPosition, GpuiStyle, GpuiTextAlign, GpuiTracks,
+    Radius, plan,
 };
 use htmlswap::computed::{
-    Align, BorderStyle, BoxSizing, ComputedStyle, Cursor, DecorationStyle, DecorationThickness,
-    Display, Distribute, FlexDirection as CssFlexDirection, FlexWrap as CssFlexWrap, FontFamily,
-    FontStyle as CssFontStyle, GridAutoFlow, GridLine, LengthAuto, LengthPercentage, LineHeight,
-    Overflow as CssOverflow, Position, RepeatCount, Rgba, Size, TextAlign, TextOverflow, TextWrap,
-    Track, TrackBreadth, TrackSize, Visibility as CssVisibility, WhiteSpace,
+    Bases, ComputedStyle, FlexDirection as CssFlexDirection, FlexWrap as CssFlexWrap, FontFamily,
+    FontStyle as CssFontStyle, GridAutoFlow, GridLine, RepeatCount, Rgba, Track, TrackBreadth,
+    TrackSize,
+};
+
+/// What this renderer's GPUI draws: both backends carry the grid and
+/// inset-shadow patches.
+const FEATURES: Features = Features {
+    grid_tracks: true,
+    inset_shadows: true,
 };
 
 /// The GPUI color for a computed color.
@@ -25,152 +37,97 @@ pub(crate) fn color(color: Rgba) -> gpui::Hsla {
     rgba(color.to_u32()).into()
 }
 
-fn definite(length: LengthPercentage) -> Option<DefiniteLength> {
-    match (length.as_px(), length.as_fraction()) {
-        (Some(pixels), _) => Some(px(pixels).into()),
-        (None, Some(fraction)) => Some(relative(fraction)),
-        // `calc()` mixing a length and a percentage.
-        (None, None) => None,
+/// The runtime bases lengths resolve against in `window`.
+pub(crate) fn bases(window: &Window) -> Bases {
+    let viewport = window.viewport_size();
+    Bases {
+        rem: f32::from(window.rem_size()),
+        viewport_width: f32::from(viewport.width),
+        viewport_height: f32::from(viewport.height),
     }
 }
 
-fn length(value: LengthAuto) -> Option<Length> {
+fn pixels(value: Absolute, bases: &Bases) -> Pixels {
+    px(value.length().resolve(bases, 0.0))
+}
+
+fn absolute(value: Absolute, bases: &Bases) -> AbsoluteLength {
+    match (value.as_px(), value.as_rems()) {
+        (Some(pixels), _) => px(pixels).into(),
+        // GPUI resolves rems against the window's rem size as it lays out.
+        (None, Some(value)) => rems(value).into(),
+        (None, None) => pixels(value, bases).into(),
+    }
+}
+
+fn definite(value: Definite, bases: &Bases) -> DefiniteLength {
     match value {
-        LengthAuto::Auto => Some(Length::Auto),
-        LengthAuto::Length(length) => definite(length).map(Length::Definite),
+        Definite::Absolute(value) => absolute(value, bases).into(),
+        Definite::Fraction(fraction) => relative(fraction),
     }
 }
 
-/// A size as GPUI holds it.
-enum GpuiSize {
-    Length(Length),
-    /// `max-width: none`: no limit, which GPUI expresses by leaving it unset.
-    Unlimited,
-}
-
-fn size(value: Size) -> Option<GpuiSize> {
+fn length(value: GpuiLength, bases: &Bases) -> Length {
     match value {
-        Size::Auto => Some(GpuiSize::Length(Length::Auto)),
-        Size::None => Some(GpuiSize::Unlimited),
-        Size::Length(length) => definite(length).map(|length| GpuiSize::Length(length.into())),
-        Size::MinContent | Size::MaxContent | Size::FitContent => None,
+        GpuiLength::Auto => Length::Auto,
+        GpuiLength::Definite(value) => Length::Definite(definite(value, bases)),
     }
 }
 
-/// What `content-box` sizing adds to a size on one axis: the padding and
-/// drawn border widths, which GPUI (always border-box) needs included.
-/// `None` when the padding is relative, so no absolute size can include it.
-fn content_box_extra(style: &ComputedStyle, horizontal: bool) -> Option<f32> {
-    if matches!(style.box_sizing, Some(BoxSizing::BorderBox)) {
-        return Some(0.0);
-    }
-    let (padding, sides) = if horizontal {
-        (
-            [style.padding.left, style.padding.right],
-            [
-                (style.border_width.left, style.border_style.left),
-                (style.border_width.right, style.border_style.right),
-            ],
-        )
-    } else {
-        (
-            [style.padding.top, style.padding.bottom],
-            [
-                (style.border_width.top, style.border_style.top),
-                (style.border_width.bottom, style.border_style.bottom),
-            ],
-        )
-    };
-    let mut extra = 0.0;
-    for padding in padding.into_iter().flatten() {
-        extra += padding.as_px()?;
-    }
-    for (width, line) in sides {
-        if !matches!(line, None | Some(BorderStyle::None | BorderStyle::Hidden)) {
-            extra += width.unwrap_or(0.0);
-        }
-    }
-    Some(extra)
-}
-
-/// A size in GPUI's border-box terms. `None` when GPUI cannot express it.
-fn box_size(value: Size, extra: Option<f32>) -> Option<GpuiSize> {
-    match (value, extra) {
-        (Size::Length(length), Some(extra)) if extra != 0.0 => length
-            .as_px()
-            .map(|pixels| GpuiSize::Length(px(pixels + extra).into())),
-        (Size::Length(_), None) => None,
-        _ => size(value),
-    }
-}
-
-fn absolute(length: LengthPercentage) -> Option<AbsoluteLength> {
-    length.as_px().map(|pixels| px(pixels).into())
-}
-
-const fn align(value: Align) -> Option<AlignItems> {
-    Some(match value {
-        Align::Start | Align::SelfStart | Align::Left => AlignItems::Start,
-        Align::End | Align::SelfEnd | Align::Right => AlignItems::End,
-        Align::FlexStart => AlignItems::FlexStart,
-        Align::FlexEnd => AlignItems::FlexEnd,
-        Align::Center => AlignItems::Center,
-        Align::Baseline => AlignItems::Baseline,
-        Align::Stretch | Align::Normal => AlignItems::Stretch,
-        Align::Auto | Align::LastBaseline => return None,
-    })
-}
-
-const fn distribute(value: Distribute) -> Option<AlignContent> {
-    Some(match value {
-        Distribute::Start | Distribute::Left => AlignContent::Start,
-        Distribute::End | Distribute::Right => AlignContent::End,
-        Distribute::FlexStart => AlignContent::FlexStart,
-        Distribute::FlexEnd => AlignContent::FlexEnd,
-        Distribute::Center => AlignContent::Center,
-        Distribute::Stretch => AlignContent::Stretch,
-        Distribute::SpaceBetween => AlignContent::SpaceBetween,
-        Distribute::SpaceAround => AlignContent::SpaceAround,
-        Distribute::SpaceEvenly => AlignContent::SpaceEvenly,
-        Distribute::Normal => return None,
-    })
-}
-
-const fn overflow(value: CssOverflow) -> Overflow {
+const fn align(value: GpuiAlign) -> AlignItems {
     match value {
-        CssOverflow::Visible => Overflow::Visible,
-        CssOverflow::Hidden => Overflow::Hidden,
-        CssOverflow::Clip => Overflow::Clip,
-        CssOverflow::Scroll | CssOverflow::Auto => Overflow::Scroll,
+        GpuiAlign::Start => AlignItems::Start,
+        GpuiAlign::End => AlignItems::End,
+        GpuiAlign::FlexStart => AlignItems::FlexStart,
+        GpuiAlign::FlexEnd => AlignItems::FlexEnd,
+        GpuiAlign::Center => AlignItems::Center,
+        GpuiAlign::Baseline => AlignItems::Baseline,
+        GpuiAlign::Stretch => AlignItems::Stretch,
     }
 }
 
-const fn cursor(value: Cursor) -> Option<CursorStyle> {
-    Some(match value {
-        Cursor::Auto | Cursor::Default => CursorStyle::Arrow,
-        Cursor::Pointer => CursorStyle::PointingHand,
-        Cursor::Text => CursorStyle::IBeam,
-        Cursor::VerticalText => CursorStyle::IBeamCursorForVerticalLayout,
-        Cursor::Crosshair | Cursor::Cell => CursorStyle::Crosshair,
-        Cursor::Grab => CursorStyle::OpenHand,
-        Cursor::Grabbing | Cursor::Move | Cursor::AllScroll => CursorStyle::ClosedHand,
-        Cursor::NotAllowed | Cursor::NoDrop => CursorStyle::OperationNotAllowed,
-        Cursor::Alias => CursorStyle::DragLink,
-        Cursor::Copy => CursorStyle::DragCopy,
-        Cursor::EwResize => CursorStyle::ResizeLeftRight,
-        Cursor::NsResize => CursorStyle::ResizeUpDown,
-        Cursor::NeswResize => CursorStyle::ResizeUpRightDownLeft,
-        Cursor::NwseResize => CursorStyle::ResizeUpLeftDownRight,
-        Cursor::ColResize => CursorStyle::ResizeColumn,
-        Cursor::RowResize => CursorStyle::ResizeRow,
-        Cursor::ContextMenu
-        | Cursor::Help
-        | Cursor::Progress
-        | Cursor::Wait
-        | Cursor::None
-        | Cursor::ZoomIn
-        | Cursor::ZoomOut => return None,
-    })
+const fn distribute(value: GpuiDistribute) -> AlignContent {
+    match value {
+        GpuiDistribute::Start => AlignContent::Start,
+        GpuiDistribute::End => AlignContent::End,
+        GpuiDistribute::FlexStart => AlignContent::FlexStart,
+        GpuiDistribute::FlexEnd => AlignContent::FlexEnd,
+        GpuiDistribute::Center => AlignContent::Center,
+        GpuiDistribute::Stretch => AlignContent::Stretch,
+        GpuiDistribute::SpaceBetween => AlignContent::SpaceBetween,
+        GpuiDistribute::SpaceAround => AlignContent::SpaceAround,
+        GpuiDistribute::SpaceEvenly => AlignContent::SpaceEvenly,
+    }
+}
+
+const fn overflow(value: GpuiOverflow) -> Overflow {
+    match value {
+        GpuiOverflow::Visible => Overflow::Visible,
+        GpuiOverflow::Hidden => Overflow::Hidden,
+        GpuiOverflow::Clip => Overflow::Clip,
+        GpuiOverflow::Scroll => Overflow::Scroll,
+    }
+}
+
+const fn cursor(value: GpuiCursor) -> CursorStyle {
+    match value {
+        GpuiCursor::Arrow => CursorStyle::Arrow,
+        GpuiCursor::PointingHand => CursorStyle::PointingHand,
+        GpuiCursor::IBeam => CursorStyle::IBeam,
+        GpuiCursor::IBeamVertical => CursorStyle::IBeamCursorForVerticalLayout,
+        GpuiCursor::Crosshair => CursorStyle::Crosshair,
+        GpuiCursor::OpenHand => CursorStyle::OpenHand,
+        GpuiCursor::ClosedHand => CursorStyle::ClosedHand,
+        GpuiCursor::NotAllowed => CursorStyle::OperationNotAllowed,
+        GpuiCursor::DragLink => CursorStyle::DragLink,
+        GpuiCursor::DragCopy => CursorStyle::DragCopy,
+        GpuiCursor::ResizeLeftRight => CursorStyle::ResizeLeftRight,
+        GpuiCursor::ResizeUpDown => CursorStyle::ResizeUpDown,
+        GpuiCursor::ResizeUpRightDownLeft => CursorStyle::ResizeUpRightDownLeft,
+        GpuiCursor::ResizeUpLeftDownRight => CursorStyle::ResizeUpLeftDownRight,
+        GpuiCursor::ResizeColumn => CursorStyle::ResizeColumn,
+        GpuiCursor::ResizeRow => CursorStyle::ResizeRow,
+    }
 }
 
 /// The font family GPUI should use: the first installed family in the list,
@@ -193,74 +150,69 @@ fn font_family(families: &[FontFamily], available: &HashSet<String>) -> (String,
 }
 
 /// Apply every field the style sets.
+pub(crate) fn apply<T: Styled>(
+    host: T,
+    style: &ComputedStyle,
+    fonts: &HashSet<String>,
+    bases: &Bases,
+) -> T {
+    apply_plan(host, &plan(style, FEATURES), fonts, bases)
+}
+
 #[allow(clippy::too_many_lines)]
-pub(crate) fn apply<T: Styled>(mut host: T, style: &ComputedStyle, fonts: &HashSet<String>) -> T {
+fn apply_plan<T: Styled>(
+    mut host: T,
+    style: &GpuiStyle,
+    fonts: &HashSet<String>,
+    bases: &Bases,
+) -> T {
     match style.display {
-        Some(Display::None) => host = host.hidden(),
-        Some(Display::Flex | Display::InlineFlex) => host = host.flex(),
-        Some(Display::Grid | Display::InlineGrid) => host = host.grid(),
-        Some(Display::Block | Display::Inline | Display::InlineBlock | Display::FlowRoot) => {
-            host = host.block();
-        }
-        Some(Display::Contents | Display::Other) | None => {}
+        Some(GpuiDisplay::Hidden) => host = host.hidden(),
+        Some(GpuiDisplay::Flex) => host = host.flex(),
+        Some(GpuiDisplay::Grid) => host = host.grid(),
+        Some(GpuiDisplay::Block) => host = host.block(),
+        None => {}
     }
     match style.position {
-        Some(Position::Absolute) => host = host.absolute(),
-        Some(Position::Relative | Position::Static) => host = host.relative(),
-        Some(Position::Fixed | Position::Sticky) | None => {}
+        Some(GpuiPosition::Absolute) => host = host.absolute(),
+        Some(GpuiPosition::Relative) => host = host.relative(),
+        None => {}
     }
     {
-        let inset = &mut host.style().inset;
-        for (slot, value) in [
-            (&mut inset.top, style.inset.top),
-            (&mut inset.right, style.inset.right),
-            (&mut inset.bottom, style.inset.bottom),
-            (&mut inset.left, style.inset.left),
-        ] {
-            if let Some(value) = value.and_then(length) {
-                *slot = Some(value);
-            }
-        }
-    }
-    {
-        let horizontal = content_box_extra(style, true);
-        let vertical = content_box_extra(style, false);
         let refinement = host.style();
-        for (slot, value, extra) in [
-            (&mut refinement.size.width, style.width, horizontal),
-            (&mut refinement.size.height, style.height, vertical),
-            (&mut refinement.min_size.width, style.min_width, horizontal),
-            (&mut refinement.min_size.height, style.min_height, vertical),
-            (&mut refinement.max_size.width, style.max_width, horizontal),
-            (&mut refinement.max_size.height, style.max_height, vertical),
+        for (slot, value) in [
+            (&mut refinement.inset.top, style.inset.top),
+            (&mut refinement.inset.right, style.inset.right),
+            (&mut refinement.inset.bottom, style.inset.bottom),
+            (&mut refinement.inset.left, style.inset.left),
+            (&mut refinement.size.width, style.width),
+            (&mut refinement.size.height, style.height),
+            (&mut refinement.min_size.width, style.min_width),
+            (&mut refinement.min_size.height, style.min_height),
+            (&mut refinement.max_size.width, style.max_width),
+            (&mut refinement.max_size.height, style.max_height),
+            (&mut refinement.margin.top, style.margin.top),
+            (&mut refinement.margin.right, style.margin.right),
+            (&mut refinement.margin.bottom, style.margin.bottom),
+            (&mut refinement.margin.left, style.margin.left),
         ] {
-            if let Some(GpuiSize::Length(value)) = value.and_then(|value| box_size(value, extra)) {
-                *slot = Some(value);
+            if let Some(value) = value {
+                *slot = Some(length(value, bases));
             }
         }
         if style.aspect_ratio.is_some() {
             refinement.aspect_ratio = style.aspect_ratio;
         }
-        let margin = &mut refinement.margin;
         for (slot, value) in [
-            (&mut margin.top, style.margin.top),
-            (&mut margin.right, style.margin.right),
-            (&mut margin.bottom, style.margin.bottom),
-            (&mut margin.left, style.margin.left),
+            (&mut refinement.padding.top, style.padding.top),
+            (&mut refinement.padding.right, style.padding.right),
+            (&mut refinement.padding.bottom, style.padding.bottom),
+            (&mut refinement.padding.left, style.padding.left),
+            (&mut refinement.gap.width, style.column_gap),
+            (&mut refinement.gap.height, style.row_gap),
         ] {
-            if let Some(value) = value.and_then(length) {
-                *slot = Some(value);
-            }
-        }
-        let padding = &mut refinement.padding;
-        for (slot, value) in [
-            (&mut padding.top, style.padding.top),
-            (&mut padding.right, style.padding.right),
-            (&mut padding.bottom, style.padding.bottom),
-            (&mut padding.left, style.padding.left),
-        ] {
-            if let Some(value) = value.and_then(definite) {
-                *slot = Some(value);
+            if let Some(value) = value {
+                *slot = Some(definite(value, bases));
             }
         }
         if let Some(direction) = style.flex_direction {
@@ -278,32 +230,26 @@ pub(crate) fn apply<T: Styled>(mut host: T, style: &ComputedStyle, fonts: &HashS
                 CssFlexWrap::WrapReverse => FlexWrap::WrapReverse,
             });
         }
-        if let Some(grow) = style.flex_grow {
-            refinement.flex_grow = Some(grow);
+        if style.flex_grow.is_some() {
+            refinement.flex_grow = style.flex_grow;
         }
-        if let Some(shrink) = style.flex_shrink {
-            refinement.flex_shrink = Some(shrink);
+        if style.flex_shrink.is_some() {
+            refinement.flex_shrink = style.flex_shrink;
         }
-        if let Some(Some(GpuiSize::Length(basis))) = style.flex_basis.map(size) {
-            refinement.flex_basis = Some(basis);
+        if let Some(basis) = style.flex_basis {
+            refinement.flex_basis = Some(length(basis, bases));
         }
         if let Some(value) = style.align_items {
-            refinement.align_items = align(value);
+            refinement.align_items = Some(align(value));
         }
         if let Some(value) = style.align_self {
-            refinement.align_self = align(value);
+            refinement.align_self = Some(align(value));
         }
-        if let Some(value) = style.align_content.and_then(distribute) {
-            refinement.align_content = Some(value);
+        if let Some(value) = style.align_content {
+            refinement.align_content = Some(distribute(value));
         }
-        if let Some(value) = style.justify_content.and_then(distribute) {
-            refinement.justify_content = Some(value);
-        }
-        if let Some(gap) = style.column_gap.and_then(definite) {
-            refinement.gap.width = Some(gap);
-        }
-        if let Some(gap) = style.row_gap.and_then(definite) {
-            refinement.gap.height = Some(gap);
+        if let Some(value) = style.justify_content {
+            refinement.justify_content = Some(distribute(value));
         }
         if let Some(value) = style.overflow_x {
             refinement.overflow.x = Some(overflow(value));
@@ -311,105 +257,110 @@ pub(crate) fn apply<T: Styled>(mut host: T, style: &ComputedStyle, fonts: &HashS
         if let Some(value) = style.overflow_y {
             refinement.overflow.y = Some(overflow(value));
         }
-        if let Some(visibility) = style.visibility {
-            refinement.visibility = Some(match visibility {
-                CssVisibility::Visible => Visibility::Visible,
-                CssVisibility::Hidden | CssVisibility::Collapse => Visibility::Hidden,
+        if let Some(visible) = style.visible {
+            refinement.visibility = Some(if visible {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
             });
         }
-        if let Some(opacity) = style.opacity {
-            refinement.opacity = Some(opacity);
+        if style.opacity.is_some() {
+            refinement.opacity = style.opacity;
         }
-        if let Some(value) = style.cursor.and_then(cursor) {
-            refinement.mouse_cursor = Some(value);
+        if let Some(value) = style.cursor {
+            refinement.mouse_cursor = Some(cursor(value));
         }
     }
-    host = apply_grid(host, style);
-    if let Some(background) = style.background_color {
+    host = apply_grid(host, style, bases);
+    if let Some(background) = style.background {
         host = host.bg(color(background));
     }
-    host = apply_borders(host, style);
+    host = apply_borders(host, style, bases);
     if let Some(shadows) = &style.box_shadow {
         host.style().box_shadow = Some(
             shadows
                 .iter()
                 .map(|shadow| BoxShadow {
                     color: color(shadow.color),
-                    offset: point(px(shadow.x), px(shadow.y)),
-                    blur_radius: px(shadow.blur),
-                    spread_radius: px(shadow.spread),
+                    offset: point(pixels(shadow.x, bases), pixels(shadow.y, bases)),
+                    blur_radius: pixels(shadow.blur, bases),
+                    spread_radius: pixels(shadow.spread, bases),
                     inset: shadow.inset,
                 })
                 .collect(),
         );
     }
-    apply_text(host, style, fonts)
+    apply_text(host, style, fonts, bases)
 }
 
-fn apply_borders<T: Styled>(mut host: T, style: &ComputedStyle) -> T {
-    let sides = [
-        (style.border_width.top, style.border_style.top),
-        (style.border_width.right, style.border_style.right),
-        (style.border_width.bottom, style.border_style.bottom),
-        (style.border_width.left, style.border_style.left),
-    ];
-    let mut dashed = false;
+fn apply_borders<T: Styled>(mut host: T, style: &GpuiStyle, bases: &Bases) -> T {
     {
         let widths = &mut host.style().border_widths;
-        let slots = [
-            &mut widths.top,
-            &mut widths.right,
-            &mut widths.bottom,
-            &mut widths.left,
-        ];
-        for (slot, (width, line)) in slots.into_iter().zip(sides) {
-            // A border is drawn only with a visible style; its width alone
-            // does not draw it (the initial style is `none`).
-            match (width, line) {
-                (_, Some(BorderStyle::None | BorderStyle::Hidden)) => *slot = Some(px(0.).into()),
-                (Some(width), Some(_)) => *slot = Some(px(width).into()),
-                (Some(_), None) | (None, _) => {}
+        for (slot, value) in [
+            (&mut widths.top, style.border_widths.top),
+            (&mut widths.right, style.border_widths.right),
+            (&mut widths.bottom, style.border_widths.bottom),
+            (&mut widths.left, style.border_widths.left),
+        ] {
+            if let Some(value) = value {
+                *slot = Some(absolute(value, bases));
             }
-            dashed |= matches!(line, Some(BorderStyle::Dashed | BorderStyle::Dotted));
         }
     }
-    if dashed {
+    if style.border_dashed {
         host = host.border_dashed();
     }
-    let colors = [
-        style.border_color.top,
-        style.border_color.right,
-        style.border_color.bottom,
-        style.border_color.left,
-    ];
-    if let Some(first) = colors.iter().flatten().next() {
-        host = host.border_color(color(*first));
+    if let Some(border) = style.border_color {
+        host = host.border_color(color(border));
     }
     let radii = &mut host.style().corner_radii;
     for (slot, value) in [
-        (&mut radii.top_left, style.border_radius.top_left),
-        (&mut radii.top_right, style.border_radius.top_right),
-        (&mut radii.bottom_right, style.border_radius.bottom_right),
-        (&mut radii.bottom_left, style.border_radius.bottom_left),
+        (&mut radii.top_left, style.corner_radii.top_left),
+        (&mut radii.top_right, style.corner_radii.top_right),
+        (&mut radii.bottom_right, style.corner_radii.bottom_right),
+        (&mut radii.bottom_left, style.corner_radii.bottom_left),
     ] {
-        if let Some(value) = value.and_then(absolute) {
-            *slot = Some(value);
+        match value {
+            Some(Radius::Length(value)) => *slot = Some(absolute(value, bases)),
+            // GPUI clamps a radius to half the shorter side.
+            Some(Radius::Full) => *slot = Some(px(9999.).into()),
+            None => {}
         }
     }
     host
 }
 
-fn apply_grid<T: Styled>(mut host: T, style: &ComputedStyle) -> T {
-    if let Some(tracks) = style.grid_template_columns.as_deref().and_then(grid_tracks) {
-        host = host.grid_template_columns(tracks);
+fn apply_grid<T: Styled>(mut host: T, style: &GpuiStyle, bases: &Bases) -> T {
+    match &style.grid_template_columns {
+        Some(GpuiTracks::Tracks(tracks)) => {
+            if let Some(tracks) = grid_tracks(tracks, bases) {
+                host = host.grid_template_columns(tracks);
+            }
+        }
+        Some(GpuiTracks::Count(count)) => host = host.grid_cols(*count),
+        None => {}
     }
-    if let Some(tracks) = style.grid_template_rows.as_deref().and_then(grid_tracks) {
-        host = host.grid_template_rows(tracks);
+    match &style.grid_template_rows {
+        Some(GpuiTracks::Tracks(tracks)) => {
+            if let Some(tracks) = grid_tracks(tracks, bases) {
+                host = host.grid_template_rows(tracks);
+            }
+        }
+        Some(GpuiTracks::Count(count)) => host = host.grid_rows(*count),
+        None => {}
     }
-    if let Some(sizes) = style.grid_auto_columns.as_deref().and_then(track_sizes) {
+    if let Some(sizes) = style
+        .grid_auto_columns
+        .as_deref()
+        .and_then(|sizes| track_sizes(sizes, bases))
+    {
         host = host.grid_auto_columns(sizes);
     }
-    if let Some(sizes) = style.grid_auto_rows.as_deref().and_then(track_sizes) {
+    if let Some(sizes) = style
+        .grid_auto_rows
+        .as_deref()
+        .and_then(|sizes| track_sizes(sizes, bases))
+    {
         host = host.grid_auto_rows(sizes);
     }
     if let Some(flow) = style.grid_auto_flow {
@@ -446,9 +397,11 @@ const fn placement(line: GridLine) -> gpui::GridPlacement {
     }
 }
 
-fn breadth(value: TrackBreadth) -> Option<gpui::GridTrackBreadth> {
+fn breadth(value: TrackBreadth, bases: &Bases) -> Option<gpui::GridTrackBreadth> {
     Some(match value {
-        TrackBreadth::Length(length) => gpui::GridTrackBreadth::Length(definite(length)?),
+        TrackBreadth::Length(value) => {
+            gpui::GridTrackBreadth::Length(definite(Definite::new(value)?, bases))
+        }
         TrackBreadth::Flex(fraction) => gpui::GridTrackBreadth::Fraction(fraction),
         TrackBreadth::MinContent => gpui::GridTrackBreadth::MinContent,
         TrackBreadth::MaxContent => gpui::GridTrackBreadth::MaxContent,
@@ -456,39 +409,51 @@ fn breadth(value: TrackBreadth) -> Option<gpui::GridTrackBreadth> {
     })
 }
 
-fn track_size(value: TrackSize) -> Option<gpui::GridTrackSize> {
+fn track_size(value: TrackSize, bases: &Bases) -> Option<gpui::GridTrackSize> {
     Some(match value {
-        TrackSize::Breadth(value) => gpui::GridTrackSize::Breadth(breadth(value)?),
-        TrackSize::MinMax(min, max) => gpui::GridTrackSize::MinMax(breadth(min)?, breadth(max)?),
-        TrackSize::FitContent(limit) => gpui::GridTrackSize::FitContent(definite(limit)?),
+        TrackSize::Breadth(value) => gpui::GridTrackSize::Breadth(breadth(value, bases)?),
+        TrackSize::MinMax(min, max) => {
+            gpui::GridTrackSize::MinMax(breadth(min, bases)?, breadth(max, bases)?)
+        }
+        TrackSize::FitContent(limit) => {
+            gpui::GridTrackSize::FitContent(definite(Definite::new(limit)?, bases))
+        }
     })
 }
 
-fn track_sizes(values: &[TrackSize]) -> Option<Vec<gpui::GridTrackSize>> {
-    values.iter().copied().map(track_size).collect()
+fn track_sizes(values: &[TrackSize], bases: &Bases) -> Option<Vec<gpui::GridTrackSize>> {
+    values
+        .iter()
+        .map(|value| track_size(*value, bases))
+        .collect()
 }
 
-fn grid_tracks(tracks: &[Track]) -> Option<Vec<gpui::GridTrack>> {
+fn grid_tracks(tracks: &[Track], bases: &Bases) -> Option<Vec<gpui::GridTrack>> {
     tracks
         .iter()
         .map(|track| {
             Some(match track {
-                Track::Size(size) => gpui::GridTrack::Single(track_size(*size)?),
+                Track::Size(size) => gpui::GridTrack::Single(track_size(*size, bases)?),
                 Track::Repeat { count, tracks } => gpui::GridTrack::Repeat(
                     match count {
                         RepeatCount::Count(count) => gpui::GridRepetition::Count(*count),
                         RepeatCount::AutoFill => gpui::GridRepetition::AutoFill,
                         RepeatCount::AutoFit => gpui::GridRepetition::AutoFit,
                     },
-                    track_sizes(tracks)?,
+                    track_sizes(tracks, bases)?,
                 ),
             })
         })
         .collect()
 }
 
-fn apply_text<T: Styled>(mut host: T, style: &ComputedStyle, fonts: &HashSet<String>) -> T {
-    if let Some(text) = style.color {
+fn apply_text<T: Styled>(
+    mut host: T,
+    style: &GpuiStyle,
+    fonts: &HashSet<String>,
+    bases: &Bases,
+) -> T {
+    if let Some(text) = style.text_color {
         host = host.text_color(color(text));
     }
     if let Some(families) = &style.font_family {
@@ -498,7 +463,7 @@ fn apply_text<T: Styled>(mut host: T, style: &ComputedStyle, fonts: &HashSet<Str
         text.font_fallbacks = (!fallbacks.is_empty()).then(|| FontFallbacks::from_fonts(fallbacks));
     }
     if let Some(size) = style.font_size {
-        host = host.text_size(px(size));
+        host = host.text_size(absolute(size, bases));
     }
     if let Some(weight) = style.font_weight {
         host = host.font_weight(FontWeight(weight));
@@ -510,248 +475,59 @@ fn apply_text<T: Styled>(mut host: T, style: &ComputedStyle, fonts: &HashSet<Str
             CssFontStyle::Oblique => FontStyle::Oblique,
         });
     }
-    match style.line_height {
-        Some(LineHeight::Number(factor)) => host = host.line_height(relative(factor)),
-        Some(LineHeight::Px(height)) => host = host.line_height(px(height)),
-        Some(LineHeight::Normal) | None => {}
+    if let Some(height) = style.line_height {
+        host = host.line_height(definite(height, bases));
     }
-    match style.text_align {
-        Some(TextAlign::Start | TextAlign::Left) => {
-            host.text_style().text_align = Some(GpuiTextAlign::Left);
-        }
-        Some(TextAlign::End | TextAlign::Right) => {
-            host.text_style().text_align = Some(GpuiTextAlign::Right);
-        }
-        Some(TextAlign::Center) => host.text_style().text_align = Some(GpuiTextAlign::Center),
-        Some(TextAlign::Justify) | None => {}
+    if let Some(align) = style.text_align {
+        host.text_style().text_align = Some(match align {
+            GpuiTextAlign::Left => TextAlign::Left,
+            GpuiTextAlign::Center => TextAlign::Center,
+            GpuiTextAlign::Right => TextAlign::Right,
+        });
     }
-    let no_wrap = matches!(
-        style.white_space,
-        Some(WhiteSpace::NoWrap | WhiteSpace::Pre)
-    ) || style.text_wrap == Some(TextWrap::NoWrap);
-    if no_wrap {
-        host = host.whitespace_nowrap();
-    } else if style.white_space.is_some() || style.text_wrap.is_some() {
-        host = host.whitespace_normal();
+    match style.no_wrap {
+        Some(true) => host = host.whitespace_nowrap(),
+        Some(false) => host = host.whitespace_normal(),
+        None => {}
     }
-    if style.text_overflow == Some(TextOverflow::Ellipsis) {
+    if style.text_ellipsis {
         host = host.text_ellipsis();
     }
     if let Some(clamp) = style.line_clamp {
         host.text_style().line_clamp = clamp.map(|lines| lines as usize);
     }
-    if let Some(lines) = style.text_decoration_line {
-        let wavy = style.text_decoration_style == Some(DecorationStyle::Wavy);
-        let decoration_color = style.text_decoration_color.map(color);
-        let thickness = match style.text_decoration_thickness {
-            Some(DecorationThickness::Px(thickness)) => px(thickness),
-            _ => px(1.),
-        };
+    if let Some(decorations) = style.decorations {
+        let line = |decoration: GpuiDecoration| (pixels(decoration.thickness, bases), decoration);
         let text = host.text_style();
-        text.underline = lines.underline.then_some(UnderlineStyle {
-            thickness,
-            color: decoration_color,
-            wavy,
-        });
-        text.strikethrough = lines.line_through.then_some(StrikethroughStyle {
-            thickness,
-            color: decoration_color,
-        });
+        text.underline = decorations
+            .underline
+            .map(line)
+            .map(|(thickness, line)| UnderlineStyle {
+                thickness,
+                color: line.color.map(color),
+                wavy: line.wavy,
+            });
+        text.strikethrough = decorations
+            .strikethrough
+            .map(line)
+            .map(|(thickness, line)| StrikethroughStyle {
+                thickness,
+                color: line.color.map(color),
+            });
     }
     host
 }
 
-/// Values in `style` that GPUI cannot draw, as `(property, reason)`.
-#[allow(clippy::too_many_lines)]
+/// Values in `style` that GPUI cannot draw, or draws only approximately, as
+/// `(property, reason)`.
 pub(crate) fn limits(style: &ComputedStyle) -> Vec<(&'static str, &'static str)> {
-    const MIXED: &str =
-        "GPUI lengths are either absolute or relative; calc() mixing both is not supported";
-    let mut limits = Vec::new();
-    let mut push = |property, reason| {
-        if !limits.contains(&(property, reason)) {
-            limits.push((property, reason));
-        }
-    };
-    let mixed =
-        |value: Option<LengthPercentage>| value.is_some_and(|value| definite(value).is_none());
-    let mixed_auto = |value: Option<LengthAuto>| matches!(value, Some(LengthAuto::Length(value)) if definite(value).is_none());
-    let content_size = |value: Option<Size>| {
-        matches!(
-            value,
-            Some(Size::MinContent | Size::MaxContent | Size::FitContent)
-        )
-    };
-    if matches!(style.display, Some(Display::Contents | Display::Other)) {
-        push("display", "GPUI has no contents, table or ruby display");
-    }
-    if matches!(style.position, Some(Position::Fixed | Position::Sticky)) {
-        push("position", "GPUI has no fixed or sticky positioning");
-    }
-    for (property, value) in [
-        ("width", style.width),
-        ("height", style.height),
-        ("min-width", style.min_width),
-        ("min-height", style.min_height),
-        ("max-width", style.max_width),
-        ("max-height", style.max_height),
-        ("flex-basis", style.flex_basis),
-    ] {
-        if content_size(value) {
-            push(
-                property,
-                "GPUI has no intrinsic (min-content, max-content, fit-content) sizes",
-            );
-        }
-        if matches!(value, Some(Size::Length(length)) if definite(length).is_none()) {
-            push(property, MIXED);
-        }
-    }
-    for (property, value, horizontal) in [
-        ("width", style.width, true),
-        ("height", style.height, false),
-        ("min-width", style.min_width, true),
-        ("min-height", style.min_height, false),
-        ("max-width", style.max_width, true),
-        ("max-height", style.max_height, false),
-    ] {
-        let Some(Size::Length(length)) = value else {
-            continue;
-        };
-        let extra = content_box_extra(style, horizontal);
-        if definite(length).is_some()
-            && extra.is_none_or(|extra| extra != 0.0 && length.as_px().is_none())
-        {
-            push(
-                property,
-                "GPUI sizes are border-box; a relative content-box size with padding or borders needs box-sizing: border-box",
-            );
-        }
-    }
-    for value in [
-        style.inset.top,
-        style.inset.right,
-        style.inset.bottom,
-        style.inset.left,
-    ] {
-        if mixed_auto(value) {
-            push("inset", MIXED);
-        }
-    }
-    for value in [
-        style.margin.top,
-        style.margin.right,
-        style.margin.bottom,
-        style.margin.left,
-    ] {
-        if mixed_auto(value) {
-            push("margin", MIXED);
-        }
-    }
-    for value in [
-        style.padding.top,
-        style.padding.right,
-        style.padding.bottom,
-        style.padding.left,
-    ] {
-        if mixed(value) {
-            push("padding", MIXED);
-        }
-    }
-    if mixed(style.row_gap) || mixed(style.column_gap) {
-        push("gap", MIXED);
-    }
-    if style.justify_items.is_some() || style.justify_self.is_some() {
-        push("justify-items", "GPUI has no justify-items or justify-self");
-    }
-    if matches!(style.align_items, Some(Align::LastBaseline))
-        || matches!(style.align_self, Some(Align::LastBaseline))
-    {
-        push("align-items", "GPUI has no last-baseline alignment");
-    }
-    let styles = [
-        style.border_style.top,
-        style.border_style.right,
-        style.border_style.bottom,
-        style.border_style.left,
-    ];
-    if styles.iter().flatten().any(|line| {
-        matches!(
-            line,
-            BorderStyle::Double
-                | BorderStyle::Groove
-                | BorderStyle::Ridge
-                | BorderStyle::Inset
-                | BorderStyle::Outset
-        )
-    }) {
-        push("border-style", "GPUI draws solid and dashed borders only");
-    }
-    if styles
+    let planned = plan(style, FEATURES);
+    planned
+        .limits
         .iter()
-        .flatten()
-        .any(|line| matches!(line, BorderStyle::Dotted))
-    {
-        push("border-style", "dotted borders are drawn dashed");
-    }
-    let colors = [
-        style.border_color.top,
-        style.border_color.right,
-        style.border_color.bottom,
-        style.border_color.left,
-    ];
-    let mut set = colors.iter().flatten();
-    if let Some(first) = set.next()
-        && set.any(|other| other != first)
-    {
-        push("border-color", "GPUI draws one border color for all sides");
-    }
-    for corner in [
-        style.border_radius.top_left,
-        style.border_radius.top_right,
-        style.border_radius.bottom_right,
-        style.border_radius.bottom_left,
-    ] {
-        if corner.is_some_and(|corner| corner.as_px().is_none()) {
-            push("border-radius", "GPUI corner radii are absolute lengths");
-        }
-    }
-    if matches!(style.cursor, Some(cursor) if self::cursor(cursor).is_none()) {
-        push("cursor", "GPUI has no cursor of this kind");
-    }
-    if style.letter_spacing.is_some_and(|spacing| spacing != 0.0) {
-        push("letter-spacing", "GPUI text has no letter spacing");
-    }
-    if style.word_spacing.is_some_and(|spacing| spacing != 0.0) {
-        push("word-spacing", "GPUI text has no word spacing");
-    }
-    if style.text_align == Some(TextAlign::Justify) {
-        push("text-align", "GPUI text cannot be justified");
-    }
-    if matches!(
-        style.text_wrap,
-        Some(TextWrap::Balance | TextWrap::Pretty | TextWrap::Stable)
-    ) {
-        push(
-            "text-wrap",
-            "GPUI wraps greedily; balance and pretty wrap normally",
-        );
-    }
-    if style
-        .text_decoration_line
-        .is_some_and(|lines| lines.overline)
-    {
-        push("text-decoration", "GPUI text has no overline");
-    }
-    if matches!(
-        style.text_decoration_style,
-        Some(DecorationStyle::Double | DecorationStyle::Dotted | DecorationStyle::Dashed)
-    ) {
-        push(
-            "text-decoration-style",
-            "GPUI draws solid and wavy text decorations only",
-        );
-    }
-    limits
+        .chain(&planned.approximations)
+        .map(|note| (note.property, note.reason))
+        .collect()
 }
 
 #[cfg(test)]
@@ -760,9 +536,9 @@ mod tests {
 
     use gpui::{Styled, div, px};
     use htmlswap::StyleDeclaration;
-    use htmlswap::computed::{ComputedScope, ComputedStyle, FontFamily, MediaEnvironment};
+    use htmlswap::computed::{Bases, ComputedScope, ComputedStyle, FontFamily, MediaEnvironment};
 
-    use super::{apply, font_family};
+    use super::{apply, font_family, limits};
 
     fn computed(declarations: &[(&str, &str)]) -> ComputedStyle {
         let declarations = declarations
@@ -775,7 +551,12 @@ mod tests {
     }
 
     fn top_border(declarations: &[(&str, &str)]) -> Option<gpui::AbsoluteLength> {
-        let mut host = apply(div(), &computed(declarations), &HashSet::new());
+        let mut host = apply(
+            div(),
+            &computed(declarations),
+            &HashSet::new(),
+            &Bases::default(),
+        );
         host.style().border_widths.top
     }
 
@@ -799,7 +580,12 @@ mod tests {
     #[test]
     fn content_box_sizes_include_padding_and_drawn_borders() {
         let width = |declarations: &[(&str, &str)]| {
-            let mut host = apply(div(), &computed(declarations), &HashSet::new());
+            let mut host = apply(
+                div(),
+                &computed(declarations),
+                &HashSet::new(),
+                &Bases::default(),
+            );
             host.style().size.width
         };
         let px_width = |pixels: f32| Some(gpui::Length::Definite(px(pixels).into()));
@@ -831,9 +617,10 @@ mod tests {
         );
         assert_eq!(
             width(&[("width", "50%"), ("padding", "10px")]),
-            None,
-            "GPUI cannot add padding to a relative size; diagnosed instead"
+            Some(gpui::Length::Definite(gpui::relative(0.5))),
+            "GPUI cannot add padding to a relative size: drawn, and diagnosed"
         );
+        assert!(!limits(&computed(&[("width", "50%"), ("padding", "10px")])).is_empty());
         assert_eq!(
             width(&[("width", "50%")]),
             Some(gpui::Length::Definite(gpui::relative(0.5)))

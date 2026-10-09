@@ -584,6 +584,7 @@ impl LiveHtml {
             children.into_iter().fold(div(), gpui::ParentElement::child),
             &root_style,
             &available_fonts,
+            &gpui_style::bases(window),
         );
         // A document that declares its color scheme draws its text in that
         // scheme's CanvasText unless it sets a color; otherwise text keeps
@@ -833,8 +834,12 @@ impl LiveHtml {
         };
 
         let host = self.render_host(element, &id, children, window, cx);
-        let mut host =
-            gpui_style::apply(apply_native_defaults(host, element), style, available_fonts);
+        let mut host = gpui_style::apply(
+            apply_native_defaults(host, element),
+            style,
+            available_fonts,
+            &gpui_style::bases(window),
+        );
         if computed.scope.font_features() != parent.font_features() {
             let features = computed
                 .scope
@@ -1044,6 +1049,7 @@ impl LiveHtml {
             children.into_iter().fold(div(), gpui::ParentElement::child),
             &root_style,
             available_fonts,
+            &gpui_style::bases(window),
         )
     }
 
@@ -1150,6 +1156,7 @@ impl LiveHtml {
             apply_native_defaults(host, element),
             &style,
             available_fonts,
+            &gpui_style::bases(window),
         );
         host = apply_native_state(host, element, &state);
         if !state.visible {
@@ -2489,11 +2496,12 @@ mod tests {
                 "flex",
                 "border",
                 "cursor",
-                "position",
+                // What GPUI cannot draw, then what it draws approximately.
                 "width",
-                "height",
                 "border-style",
-                "letter-spacing"
+                "letter-spacing",
+                "position",
+                "height"
             ],
             "{diagnostics:#?}"
         );

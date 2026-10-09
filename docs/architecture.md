@@ -85,6 +85,8 @@ one owner; the others call it rather than re-implementing it.
 | Before | Now | Status |
 |---|---|---|
 | `LiveHtml` parsed CSS strings every frame | Maps htmlswap's typed lowering (`gpui_style`), cached per element and state | Done |
+| `LiveHtml` and the code generator each decided how CSS maps to GPUI | htmlswap's `computed::gpui::plan` decides once (including what is approximate or unsupported); `LiveHtml` applies it and the code generator prints it | Done |
+| Lengths were folded to pixels at a fixed 16px rem and viewport | `rem` and viewport units stay symbolic until the window resolves them | Done |
 | `LiveHtml` had its own transition and animation engine | `gpui_base::motion` on the `gpui-pre` backend; end states on Zed | Done |
 | htmlswap attached dynamic pseudo-classes to the subject element | State attached to the element written on (`ElementState { ancestor }`) | Done |
 | View-transition elements inside `LiveHtml` | `gpui-view-transitions` crate on `gpui_base::motion`; `LiveHtml` keeps only CSS-to-style mapping and inert drawing of the old document | Done |

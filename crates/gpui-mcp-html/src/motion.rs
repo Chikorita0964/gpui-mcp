@@ -356,9 +356,10 @@ impl Element for Translated {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
+        let bases = crate::gpui_style::bases(window);
         let offset = point(
-            gpui::px(self.x.resolve(f32::from(bounds.size.width))),
-            gpui::px(self.y.resolve(f32::from(bounds.size.height))),
+            gpui::px(self.x.resolve(&bases, f32::from(bounds.size.width))),
+            gpui::px(self.y.resolve(&bases, f32::from(bounds.size.height))),
         );
         window.with_element_offset(offset, |window| self.child.prepaint(window, cx));
     }
