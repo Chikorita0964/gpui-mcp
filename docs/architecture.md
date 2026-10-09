@@ -91,5 +91,6 @@ one owner; the others call it rather than re-implementing it.
 | htmlswap attached dynamic pseudo-classes to the subject element | State attached to the element written on (`ElementState { ancestor }`) | Done |
 | View-transition elements inside `LiveHtml` | `gpui-view-transitions` crate on `gpui_base::motion`; `LiveHtml` keeps only CSS-to-style mapping and inert drawing of the old document | Done |
 | `gpui-mcp-html` pinned one GPUI Kit release | `gpui-base >=0.6.4, <0.8`: a Kit release for every gpui-pre the bridge supports (0.3.5–0.3.7), each tested in CI | Done |
-| htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | Add a GPUI Kit 0.7 (gpui-pre 0.3.7) target | Planned |
+| htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | `GpuiTarget::Kit` (`--gpui-kit`): `gpui-pre` 0.3 and `gpui-component` 0.7, styles from the shared plan, `:hover` transitions on `gpui_base::motion` | Done |
+| Generated GPUI Kit code animates `@keyframes` and view transitions | `gpui_base::motion::animate_keyframes`; view transitions need the app to provide its outgoing state | Next |
 | gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings | GPUI Kit on gpui-pre; themes as CSS custom properties | Planned |

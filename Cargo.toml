@@ -45,7 +45,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7e
 # and 0.7.0 pins 0.3.7, so this range has a release for every gpui-pre the
 # bridge accepts; the motion API is the same across it.
 gpui-base = { version = ">=0.6.4, <0.8", default-features = false }
-htmlswap = { git = "https://github.com/themixednuts/htmlswap", rev = "56350e31b4c67ca7b0a117c3c496cf66c2a93dbe" }
+htmlswap = { git = "https://github.com/themixednuts/htmlswap", rev = "80d36dff051050165ad8fdabc89abd288c9a72fc" }
 image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
 interprocess = { version = "2.4.2", features = ["tokio"] }
 notify = "8.2.0"
