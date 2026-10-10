@@ -1945,7 +1945,10 @@ mod annotation_tests {
 
         executor.advance_clock(Duration::from_millis(200));
         visual.run_until_parked();
-        assert!(automation.annotations().is_empty());
+        assert_eq!(
+            automation.annotations(),
+            [] as [gpui_mcp_protocol::Annotation; 0]
+        );
         assert!(automation.annotation_revision() > revision);
     }
 

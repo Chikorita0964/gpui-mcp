@@ -189,7 +189,7 @@ impl GpuiMcp {
 
         let session_id = self
             .recording_session
-            .fetch_update(
+            .try_update(
                 std::sync::atomic::Ordering::Relaxed,
                 std::sync::atomic::Ordering::Relaxed,
                 |current| current.checked_add(1),

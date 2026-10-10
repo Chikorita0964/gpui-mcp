@@ -220,7 +220,7 @@ mod tests {
         let page = log.read(10, None, 5, None);
         assert!(!page.truncated);
         let page = log.read(log.latest_id(), None, 5, None);
-        assert!(page.messages.is_empty());
+        assert_eq!(page.messages, [] as [gpui_mcp_protocol::Message; 0]);
         assert!(!page.truncated);
         Ok(())
     }

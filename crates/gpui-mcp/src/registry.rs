@@ -1400,7 +1400,7 @@ mod tests {
 
         let tree = state.tree();
         assert!(tree.nodes.is_empty());
-        assert!(tree.roots.is_empty());
+        assert_eq!(tree.roots, [] as [String; 0]);
         assert!(
             tree.diagnostics
                 .iter()

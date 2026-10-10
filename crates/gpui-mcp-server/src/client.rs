@@ -130,7 +130,7 @@ impl BridgeClient {
         };
         let request_id =
             self.next_request_id
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                     current.checked_add(1)
                 });
         let request_id = request_id

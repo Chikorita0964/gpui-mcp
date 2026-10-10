@@ -508,7 +508,7 @@ mod tests {
         let compiled = snapshot.compile()?;
 
         assert!(snapshot.html().contains("Save"));
-        assert!(compiled.diagnostics().is_empty());
+        assert_eq!(compiled.diagnostics(), []);
         Ok(())
     }
 

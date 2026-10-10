@@ -350,7 +350,10 @@ mod tests {
 
         assert!(!preview.applied);
         assert_eq!(preview.document.revision, 1);
-        assert!(!preview.diagnostics.is_empty());
+        assert_ne!(
+            preview.diagnostics,
+            [] as [gpui_mcp::LiveDocumentDiagnostic; 0]
+        );
         assert!(preview.document.source.html.contains("Save"));
         Ok(())
     }

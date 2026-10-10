@@ -620,7 +620,10 @@ mod tests {
             Some(gpui::Length::Definite(gpui::relative(0.5))),
             "GPUI cannot add padding to a relative size: drawn, and diagnosed"
         );
-        assert!(!limits(&computed(&[("width", "50%"), ("padding", "10px")])).is_empty());
+        assert_ne!(
+            limits(&computed(&[("width", "50%"), ("padding", "10px")])),
+            [] as [(&str, &str); 0]
+        );
         assert_eq!(
             width(&[("width", "50%")]),
             Some(gpui::Length::Definite(gpui::relative(0.5)))
