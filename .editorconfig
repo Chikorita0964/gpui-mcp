@@ -1,0 +1,22 @@
+# https://EditorConfig.org (oxc's settings)
+root = true
+
+[*]
+charset = utf-8
+trim_trailing_whitespace = true
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+
+[*.rs]
+indent_size = 4
+
+# This workspace's manifests indent by four.
+[*.toml]
+indent_size = 4
+
+# Test data compared byte for byte: an editor must not add or trim anything.
+[{crates/*/tests/fixtures/**,crates/*/tests/snapshots/**,visual-tests/fixtures/**}]
+trim_trailing_whitespace = unset
+insert_final_newline = unset

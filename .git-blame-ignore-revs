@@ -1,0 +1,4 @@
+# Formatting-only commits, skipped by `git blame` (git config blame.ignoreRevsFile .git-blame-ignore-revs).
+
+# style: rustfmt use_small_heuristics = "Max"
+0490a797ba6573103287386fcfb23de21ee27d54

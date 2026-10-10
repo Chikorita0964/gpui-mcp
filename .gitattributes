@@ -14,3 +14,8 @@
 *.png binary
 *.gif binary
 *.mp4 binary
+
+# Test data compared byte for byte (as oxc keeps its fixtures): always LF.
+crates/*/tests/fixtures/** text=auto eol=lf
+crates/*/tests/snapshots/** text=auto eol=lf
+visual-tests/fixtures/** text=auto eol=lf
