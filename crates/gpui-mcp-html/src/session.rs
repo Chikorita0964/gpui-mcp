@@ -36,10 +36,7 @@ impl LiveHtmlSession {
         validate_source(&source)?;
         let ui = compile_source(&source)?;
         let live = LiveHtml::new(ui, automation, hooks)?;
-        Ok(Self {
-            live: Rc::new(RefCell::new(live)),
-            source: Rc::new(RefCell::new(source)),
-        })
+        Ok(Self { live: Rc::new(RefCell::new(live)), source: Rc::new(RefCell::new(source)) })
     }
 
     /// Install application custom-element factories.
@@ -71,9 +68,7 @@ impl LiveHtmlSession {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        self.live
-            .borrow()
-            .render_for_viewport(width, height, window, cx)
+        self.live.borrow().render_for_viewport(width, height, window, cx)
     }
 
     /// Current monotonic document revision.
@@ -111,10 +106,7 @@ impl LiveHtmlSession {
         expected_revision: u64,
         source: LiveDocumentSource,
     ) -> Result<LiveDocumentPreview, BridgeError> {
-        let response = self.handle(LiveDocumentRequest::Preview {
-            expected_revision,
-            source,
-        })?;
+        let response = self.handle(LiveDocumentRequest::Preview { expected_revision, source })?;
         let LiveDocumentResponse::Preview(preview) = response else {
             return Err(BridgeError::new(
                 ErrorCode::Internal,
@@ -127,10 +119,7 @@ impl LiveHtmlSession {
     fn handle(&self, request: LiveDocumentRequest) -> Result<LiveDocumentResponse, BridgeError> {
         match request {
             LiveDocumentRequest::Get => Ok(LiveDocumentResponse::Document(self.document())),
-            LiveDocumentRequest::Preview {
-                expected_revision,
-                source,
-            } => {
+            LiveDocumentRequest::Preview { expected_revision, source } => {
                 let active_revision = self.revision();
                 if expected_revision != active_revision {
                     return Err(BridgeError::new(
@@ -170,11 +159,7 @@ impl LiveHtmlSession {
         }
         *self.source.borrow_mut() = source;
         let document = self.document();
-        LiveDocumentPreview {
-            applied: true,
-            diagnostics: document.diagnostics.clone(),
-            document,
-        }
+        LiveDocumentPreview { applied: true, diagnostics: document.diagnostics.clone(), document }
     }
 }
 
@@ -207,23 +192,15 @@ fn active_document(live: &LiveHtml, source: &LiveDocumentSource) -> LiveDocument
             message: bounded_message(&diagnostic.message),
         })
         .collect::<Vec<_>>();
-    diagnostics.extend(
-        live.diagnostics()
-            .iter()
-            .map(|diagnostic| LiveDocumentDiagnostic {
-                severity: "warning".to_owned(),
-                message: bounded_message(&format!(
-                    "{} [{}]: {}",
-                    diagnostic.feature, diagnostic.node_id, diagnostic.message
-                )),
-            }),
-    );
+    diagnostics.extend(live.diagnostics().iter().map(|diagnostic| LiveDocumentDiagnostic {
+        severity: "warning".to_owned(),
+        message: bounded_message(&format!(
+            "{} [{}]: {}",
+            diagnostic.feature, diagnostic.node_id, diagnostic.message
+        )),
+    }));
     diagnostics.truncate(MAX_LIVE_DOCUMENT_DIAGNOSTICS);
-    LiveDocument {
-        revision: live.revision(),
-        source: source.clone(),
-        diagnostics,
-    }
+    LiveDocument { revision: live.revision(), source: source.clone(), diagnostics }
 }
 
 fn diagnostics_for_compile_error(error: LiveHtmlSessionError) -> Vec<LiveDocumentDiagnostic> {
@@ -241,10 +218,7 @@ fn diagnostics_for_compile_error(error: LiveHtmlSessionError) -> Vec<LiveDocumen
 }
 
 fn error_diagnostic(message: &str) -> LiveDocumentDiagnostic {
-    LiveDocumentDiagnostic {
-        severity: "error".to_owned(),
-        message: bounded_message(message),
-    }
+    LiveDocumentDiagnostic { severity: "error".to_owned(), message: bounded_message(message) }
 }
 
 const fn severity_name(severity: Severity) -> &'static str {
@@ -350,10 +324,7 @@ mod tests {
 
         assert!(!preview.applied);
         assert_eq!(preview.document.revision, 1);
-        assert_ne!(
-            preview.diagnostics,
-            [] as [gpui_mcp::LiveDocumentDiagnostic; 0]
-        );
+        assert_ne!(preview.diagnostics, [] as [gpui_mcp::LiveDocumentDiagnostic; 0]);
         assert!(preview.document.source.html.contains("Save"));
         Ok(())
     }

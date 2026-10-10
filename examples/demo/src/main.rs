@@ -96,11 +96,7 @@ fn field(
         .py_2()
         .rounded_md()
         .border_1()
-        .border_color(if focused {
-            rgb(0x16_77_ff)
-        } else {
-            rgb(0x39_42_53)
-        })
+        .border_color(if focused { rgb(0x16_77_ff) } else { rgb(0x39_42_53) })
         .bg(rgb(0x0b_0e_14))
         .hover(|style| style.bg(rgb(0x12_16_1e)))
         .child(label)
@@ -111,8 +107,7 @@ fn field(
 impl Demo {
     fn increment(&mut self, cx: &mut Context<Self>) {
         self.count = self.count.saturating_add(1);
-        self.automation
-            .log("info", &format!("counter changed to {}", self.count));
+        self.automation.log("info", &format!("counter changed to {}", self.count));
         cx.notify();
     }
 
@@ -123,8 +118,7 @@ impl Demo {
         } else {
             self.volume.saturating_sub(1)
         };
-        self.automation
-            .log("info", &format!("volume changed to {}", self.volume));
+        self.automation.log("info", &format!("volume changed to {}", self.volume));
         cx.notify();
     }
 
@@ -145,13 +139,7 @@ impl Demo {
             .h(px(12.0))
             .rounded_md()
             .bg(rgb(0x39_42_53))
-            .child(
-                div()
-                    .h_full()
-                    .w(px(200.0 * filled))
-                    .rounded_md()
-                    .bg(rgb(0x16_77_ff)),
-            )
+            .child(div().h_full().w(px(200.0 * filled)).rounded_md().bg(rgb(0x16_77_ff)))
             .role(Role::Slider)
             .aria_label("Volume")
             .aria_numeric_value(f64::from(self.volume))
@@ -181,10 +169,7 @@ impl Demo {
     /// mirror of the annotations the agent has placed.
     fn chat_row(&self, cx: &mut Context<Self>) -> Div {
         let (count, changed_by) = self.annotations;
-        let reply = self
-            .reply
-            .clone()
-            .unwrap_or_else(|| "No reply yet".to_owned());
+        let reply = self.reply.clone().unwrap_or_else(|| "No reply yet".to_owned());
         let annotations = format!(
             "Annotations: {count}{}",
             match changed_by {
@@ -209,13 +194,7 @@ impl Demo {
                     .child("Ask agent")
                     .on_click(cx.listener(|this, _, _, cx| this.ask_agent(cx))),
             )
-            .child(
-                div()
-                    .id("chat-reply")
-                    .child(reply.clone())
-                    .role(Role::Status)
-                    .aria_label(reply),
-            )
+            .child(div().id("chat-reply").child(reply.clone()).role(Role::Status).aria_label(reply))
             .child(
                 div()
                     .id("annotation-count")
@@ -258,16 +237,8 @@ impl Demo {
                     .px_4()
                     .py_2()
                     .rounded_md()
-                    .bg(if locked {
-                        rgb(0x22_28_33)
-                    } else {
-                        rgb(0x16_77_ff)
-                    })
-                    .text_color(if locked {
-                        rgb(0x6b_74_85)
-                    } else {
-                        rgb(0xe8_ee_f7)
-                    })
+                    .bg(if locked { rgb(0x22_28_33) } else { rgb(0x16_77_ff) })
+                    .text_color(if locked { rgb(0x6b_74_85) } else { rgb(0xe8_ee_f7) })
                     .child("Locked action")
                     .role(Role::Button)
                     .aria_label("Locked action")
@@ -307,18 +278,8 @@ impl Render for Demo {
             .p_8()
             .bg(rgb(0x10_14_1c))
             .text_color(rgb(0xe8_ee_f7))
-            .child(
-                div()
-                    .id("heading")
-                    .text_2xl()
-                    .child("GPUI MCP cross-platform demo"),
-            )
-            .child(
-                div()
-                    .id("count")
-                    .text_lg()
-                    .child(format!("Count: {counter}")),
-            )
+            .child(div().id("heading").text_2xl().child("GPUI MCP cross-platform demo"))
+            .child(div().id("count").text_lg().child(format!("Count: {counter}")))
             .child(
                 div()
                     .flex()
@@ -355,16 +316,9 @@ impl Render for Demo {
             )
             .child(self.lock_row(cx))
             .child(self.chat_row(cx))
-            .child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .children(self.probes.iter().map(|probe| {
-                        probe
-                            .clone()
-                            .cached(StyleRefinement::default().w(px(200.0)).h(px(40.0)))
-                    })),
-            )
+            .child(div().flex().gap_3().children(self.probes.iter().map(|probe| {
+                probe.clone().cached(StyleRefinement::default().w(px(200.0)).h(px(40.0)))
+            })))
             .child(self.volume_row(cx))
             .role(Role::Application)
             .aria_label(TITLE)
@@ -372,10 +326,7 @@ impl Render for Demo {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .init();
+    tracing_subscriber::fmt().with_writer(std::io::stderr).with_ansi(false).init();
     gpui_platform::application().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(640.0), px(480.0)), cx);
         let opened = cx.open_window(

@@ -59,20 +59,9 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout).lines(),
-            next_id: 1,
-        })
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
     }
 
     async fn send(&mut self, message: &JsonValue) -> Result<(), String> {
@@ -116,12 +105,8 @@ impl Server {
     }
 
     async fn call(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        let result = self
-            .request(
-                "tools/call",
-                json!({ "name": tool, "arguments": arguments }),
-            )
-            .await?;
+        let result =
+            self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await?;
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             let content = result.get("content").cloned().unwrap_or(JsonValue::Null);
             return Err(format!("{tool} reported an error: {content}"));
@@ -139,9 +124,7 @@ impl Server {
             .get("content")
             .and_then(JsonValue::as_array)
             .and_then(|content| {
-                content
-                    .iter()
-                    .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+                content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
             })
             .ok_or_else(|| format!("{tool} returned no JSON payload"))?;
         serde_json::from_str(text)
@@ -155,9 +138,7 @@ impl Server {
             .get("content")
             .and_then(JsonValue::as_array)
             .and_then(|content| {
-                content
-                    .iter()
-                    .find_map(|entry| entry.get("data").and_then(JsonValue::as_str))
+                content.iter().find_map(|entry| entry.get("data").and_then(JsonValue::as_str))
             })
             .ok_or_else(|| format!("{tool} returned no image payload"))?;
         let bytes = base64::engine::general_purpose::STANDARD
@@ -206,17 +187,13 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory =
+        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
+        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 
@@ -286,17 +263,11 @@ fn differing_pixels(left: &RgbaImage, right: &RgbaImage) -> usize {
     if left.dimensions() != right.dimensions() {
         return usize::MAX;
     }
-    left.pixels()
-        .zip(right.pixels())
-        .filter(|(left, right)| !colors_match(**left, **right))
-        .count()
+    left.pixels().zip(right.pixels()).filter(|(left, right)| !colors_match(**left, **right)).count()
 }
 
 fn colors_match(left: Rgba<u8>, right: Rgba<u8>) -> bool {
-    left.0
-        .iter()
-        .zip(right.0.iter())
-        .all(|(left, right)| left.abs_diff(*right) <= 1)
+    left.0.iter().zip(right.0.iter()).all(|(left, right)| left.abs_diff(*right) <= 1)
 }
 
 /// Wait until exactly the fixture is discoverable through the private endpoint
@@ -384,17 +355,14 @@ async fn measure(server: &mut Server) -> Result<(), String> {
     // crop that refreshes on layout but not on paint still passes the second.
     // The fill changes thousands of pixels while the focus ring changes tens.
     // This keeps a late frame from the previous phase from satisfying the gate.
-    for (change, tool, minimum_changed_pixels) in [
-        ("the focus ring", "focus_element", 20),
-        ("the hover fill", "hover_element", 1_000),
-    ] {
+    for (change, tool, minimum_changed_pixels) in
+        [("the focus ring", "focus_element", 20), ("the hover fill", "hover_element", 1_000)]
+    {
         return_to_rest(server, away).await?;
         let resting_region = stable_region(server, &region).await?;
         server.call(tool, json!({ "id": "search" })).await?;
         if tool == "focus_element" {
-            let state = server
-                .call_json("get_element_state", json!({ "id": "search" }))
-                .await?;
+            let state = server.call_json("get_element_state", json!({ "id": "search" })).await?;
             assert_eq!(
                 state.get("focused").and_then(JsonValue::as_bool),
                 Some(true),
@@ -421,14 +389,10 @@ async fn measure(server: &mut Server) -> Result<(), String> {
 
 async fn stable_region(server: &mut Server, region: &JsonValue) -> Result<RgbaImage, String> {
     let started = Instant::now();
-    let mut previous = server
-        .call_image("screenshot_region", region.clone())
-        .await?;
+    let mut previous = server.call_image("screenshot_region", region.clone()).await?;
     let mut repeats = 0;
     loop {
-        let current = server
-            .call_image("screenshot_region", region.clone())
-            .await?;
+        let current = server.call_image("screenshot_region", region.clone()).await?;
         if differing_pixels(&previous, &current) == 0 {
             repeats += 1;
             if repeats == 2 {
@@ -458,18 +422,11 @@ async fn compare_changed_capture_pair(
     let changed_since = Instant::now();
     let (changed_region, expected) = loop {
         let (crop, window) = if region_first {
-            let crop = server
-                .call_image("screenshot_region", region.clone())
-                .await?;
+            let crop = server.call_image("screenshot_region", region.clone()).await?;
             (crop, server.call_image("screenshot", json!({})).await?)
         } else {
             let window = server.call_image("screenshot", json!({})).await?;
-            (
-                server
-                    .call_image("screenshot_region", region.clone())
-                    .await?,
-                window,
-            )
+            (server.call_image("screenshot_region", region.clone()).await?, window)
         };
         let expected = sub_image(&window, anchor.0, anchor.1, crop.width(), crop.height());
         if differing_pixels(parked_region, &crop) >= minimum_changed_pixels
@@ -499,11 +456,7 @@ async fn compare_changed_capture_pair(
 /// Put the measured field back in its resting state: the pointer parked off it
 /// and the keyboard focus on the fixture's other field.
 async fn return_to_rest(server: &mut Server, away: (f64, f64)) -> Result<(), String> {
-    server
-        .call("pointer_move", json!({ "x": away.0, "y": away.1 }))
-        .await?;
-    server
-        .call("focus_element", json!({ "id": "filter" }))
-        .await?;
+    server.call("pointer_move", json!({ "x": away.0, "y": away.1 })).await?;
+    server.call("focus_element", json!({ "id": "filter" })).await?;
     Ok(())
 }

@@ -44,8 +44,7 @@ impl GpuiMcp {
             return Err("bridge returned the wrong application command result".to_owned());
         };
         // The bridge refreshed the window after the command; settle what that scheduled.
-        self.settle_pending(std::time::Duration::from_secs(2))
-            .await?;
+        self.settle_pending(std::time::Duration::from_secs(2)).await?;
         Ok(object_output(json!({ "ok": true, "result": result })))
     }
 }

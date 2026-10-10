@@ -98,15 +98,10 @@ pub(crate) fn run(args: &ConsumerArgs) -> Result<()> {
     let (gpui_package, gpui_version) = recipe.gpui;
     let repository = serde_json::to_string(&args.repository)?;
     let rev = serde_json::to_string(&args.rev)?;
-    let target_dir = args
-        .target_dir
-        .as_deref()
-        .map(std::path::absolute)
-        .transpose()?;
+    let target_dir = args.target_dir.as_deref().map(std::path::absolute).transpose()?;
 
-    let consumer = tempfile::Builder::new()
-        .prefix(&format!("{}-consumer-", args.backend.name()))
-        .tempdir()?;
+    let consumer =
+        tempfile::Builder::new().prefix(&format!("{}-consumer-", args.backend.name())).tempdir()?;
     let root = consumer.path();
     fs::create_dir(root.join("src"))?;
     fs::write(
@@ -163,11 +158,7 @@ fn main() {{
         command
     };
     let status = cargo(&["check"]).status()?;
-    ensure!(
-        status.success(),
-        "cargo check failed for the {} consumer",
-        args.backend.name()
-    );
+    ensure!(status.success(), "cargo check failed for the {} consumer", args.backend.name());
     let output = cargo(&["metadata", "--format-version=1", "--locked"]).output()?;
     ensure!(
         output.status.success(),
@@ -189,20 +180,12 @@ fn main() {{
 /// that every owner links it and no other GPUI.
 fn verify(metadata: &Value, recipe: &Recipe, rev: &str) -> Result<()> {
     let (gpui_package, gpui_version) = recipe.gpui;
-    let packages = metadata["packages"]
-        .as_array()
-        .context("metadata has no packages")?;
+    let packages = metadata["packages"].as_array().context("metadata has no packages")?;
     let packages_named = |name: &str| -> Vec<&Value> {
-        packages
-            .iter()
-            .filter(|package| package["name"] == name)
-            .collect()
+        packages.iter().filter(|package| package["name"] == name).collect()
     };
     let [snapshot] = packages_named(gpui_package)[..] else {
-        bail!(
-            "expected one {gpui_package} package; found {}",
-            packages_named(gpui_package).len()
-        );
+        bail!("expected one {gpui_package} package; found {}", packages_named(gpui_package).len());
     };
     let source = snapshot["source"].as_str().unwrap_or_default();
     if snapshot["version"] != gpui_version || !source.ends_with(&format!("#{}", rev.to_lowercase()))
@@ -221,10 +204,7 @@ fn verify(metadata: &Value, recipe: &Recipe, rev: &str) -> Result<()> {
         .collect();
     for owner in recipe.owners {
         let [package] = packages_named(owner)[..] else {
-            bail!(
-                "expected one {owner} package; found {}",
-                packages_named(owner).len()
-            );
+            bail!("expected one {owner} package; found {}", packages_named(owner).len());
         };
         let id = package["id"].as_str().context("package has no id")?;
         let gpui: Vec<&str> = nodes[id]["deps"]

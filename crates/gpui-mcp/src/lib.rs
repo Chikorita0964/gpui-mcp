@@ -188,10 +188,7 @@ impl Automation {
     ) -> Result<Annotation, BridgeError> {
         let mut applied = self.set_annotations(vec![spec], None, window)?;
         applied.pop().ok_or_else(|| {
-            BridgeError::new(
-                gpui_mcp_protocol::ErrorCode::Internal,
-                "annotation was not applied",
-            )
+            BridgeError::new(gpui_mcp_protocol::ErrorCode::Internal, "annotation was not applied")
         })
     }
 
@@ -208,9 +205,7 @@ impl Automation {
         replace_group: Option<&str>,
         window: &mut gpui::Window,
     ) -> Result<Vec<Annotation>, BridgeError> {
-        let applied = self
-            .state
-            .upsert_annotations(specs, replace_group, AnnotationSource::App)?;
+        let applied = self.state.upsert_annotations(specs, replace_group, AnnotationSource::App)?;
         window.request_frame();
         Ok(applied)
     }
@@ -277,8 +272,7 @@ impl Automation {
         from: Option<MessageSender>,
         limit: usize,
     ) -> MessagePage {
-        self.state
-            .read_messages(after, from, limit, Some(MessageSender::App))
+        self.state.read_messages(after, from, limit, Some(MessageSender::App))
     }
 
     /// Most recent log entries in chronological order, filtered to `min_level`

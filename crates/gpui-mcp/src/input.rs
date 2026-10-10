@@ -35,12 +35,8 @@ pub(crate) fn validate(command: &InputCommand) -> Result<(), BridgeError> {
 pub(crate) fn validate_pointer(command: &PointerCommand) -> Result<(), BridgeError> {
     match command {
         PointerCommand::MouseMove { point, .. } => validate_point(*point),
-        PointerCommand::MouseDown {
-            point, click_count, ..
-        }
-        | PointerCommand::MouseUp {
-            point, click_count, ..
-        } => {
+        PointerCommand::MouseDown { point, click_count, .. }
+        | PointerCommand::MouseUp { point, click_count, .. } => {
             validate_point(*point)?;
             validate_click_count(*click_count)
         }
@@ -62,51 +58,45 @@ pub(crate) fn dispatch_pointer(
 ) -> Result<(), BridgeError> {
     validate_pointer(command)?;
     let event = match command {
-        PointerCommand::MouseMove {
-            point: position,
-            pressed_button,
-        } => PlatformInput::MouseMove(MouseMoveEvent {
-            position: native_point(*position),
-            pressed_button: pressed_button.map(native_button),
-            modifiers: Modifiers::default(),
-        }),
-        PointerCommand::MouseDown {
-            point: position,
-            button,
-            click_count,
-        } => PlatformInput::MouseDown(MouseDownEvent {
-            button: native_button(*button),
-            position: native_point(*position),
-            modifiers: Modifiers::default(),
-            click_count: usize::from(*click_count),
-            first_mouse: false,
-        }),
-        PointerCommand::MouseUp {
-            point: position,
-            button,
-            click_count,
-        } => PlatformInput::MouseUp(MouseUpEvent {
-            button: native_button(*button),
-            position: native_point(*position),
-            modifiers: Modifiers::default(),
-            click_count: usize::from(*click_count),
-        }),
-        PointerCommand::ScrollWheel {
-            point: position,
-            delta,
-        } => PlatformInput::ScrollWheel(ScrollWheelEvent {
-            position: native_point(*position),
-            delta: match delta {
-                PointerScrollDelta::Pixels { delta_x, delta_y } => {
-                    ScrollDelta::Pixels(point(px(*delta_x), px(*delta_y)))
-                }
-                PointerScrollDelta::Lines { delta_x, delta_y } => {
-                    ScrollDelta::Lines(point(*delta_x, *delta_y))
-                }
-            },
-            modifiers: Modifiers::default(),
-            touch_phase: TouchPhase::Moved,
-        }),
+        PointerCommand::MouseMove { point: position, pressed_button } => {
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position: native_point(*position),
+                pressed_button: pressed_button.map(native_button),
+                modifiers: Modifiers::default(),
+            })
+        }
+        PointerCommand::MouseDown { point: position, button, click_count } => {
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: native_button(*button),
+                position: native_point(*position),
+                modifiers: Modifiers::default(),
+                click_count: usize::from(*click_count),
+                first_mouse: false,
+            })
+        }
+        PointerCommand::MouseUp { point: position, button, click_count } => {
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: native_button(*button),
+                position: native_point(*position),
+                modifiers: Modifiers::default(),
+                click_count: usize::from(*click_count),
+            })
+        }
+        PointerCommand::ScrollWheel { point: position, delta } => {
+            PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position: native_point(*position),
+                delta: match delta {
+                    PointerScrollDelta::Pixels { delta_x, delta_y } => {
+                        ScrollDelta::Pixels(point(px(*delta_x), px(*delta_y)))
+                    }
+                    PointerScrollDelta::Lines { delta_x, delta_y } => {
+                        ScrollDelta::Lines(point(*delta_x, *delta_y))
+                    }
+                },
+                modifiers: Modifiers::default(),
+                touch_phase: TouchPhase::Moved,
+            })
+        }
     };
     window.dispatch_event(event, cx);
     Ok(())
@@ -116,10 +106,7 @@ pub(crate) fn dispatch_pointer(
 #[must_use]
 pub(crate) fn pointer_location(window: &Window) -> Point {
     let position = window.mouse_position();
-    Point {
-        x: f32::from(position.x),
-        y: f32::from(position.y),
-    }
+    Point { x: f32::from(position.x), y: f32::from(position.y) }
 }
 
 pub(crate) fn dispatch_keyboard(
@@ -232,10 +219,9 @@ pub(crate) fn accesskit_action(
         // value sent as `NumericValue` would leave the control untouched while the bridge
         // still acknowledged success. Selecting the payload by the *node*'s value type is
         // the alternative, and no control here consumes `NumericValue` at all.
-        SemanticAction::SetValue { value } => (
-            Action::SetValue,
-            Some(ActionData::Value(value.into_boxed_str())),
-        ),
+        SemanticAction::SetValue { value } => {
+            (Action::SetValue, Some(ActionData::Value(value.into_boxed_str())))
+        }
     }
 }
 
@@ -268,9 +254,8 @@ mod tests {
         // Values a naive parser would take for numbers are exactly the ones that break a
         // text field: gpui-component's handler drops anything but `ActionData::Value`.
         for value in ["42", "0", "1e2", "-3.5", "abc", ""] {
-            let (action, data) = accesskit_action(SemanticAction::SetValue {
-                value: value.to_owned(),
-            });
+            let (action, data) =
+                accesskit_action(SemanticAction::SetValue { value: value.to_owned() });
             assert_eq!(action, Action::SetValue);
             assert_eq!(
                 data,
@@ -302,9 +287,7 @@ mod tests {
     fn a_set_value_payload_is_bounded_like_typed_text() {
         assert!(validate_text(&"x".repeat(MAX_TEXT_BYTES)).is_ok());
         assert_eq!(
-            validate_text(&"x".repeat(MAX_TEXT_BYTES + 1))
-                .err()
-                .map(|error| error.code),
+            validate_text(&"x".repeat(MAX_TEXT_BYTES + 1)).err().map(|error| error.code),
             Some(ErrorCode::InvalidRequest),
             "an over-sized value must be refused"
         );
@@ -318,12 +301,7 @@ mod tests {
             })
             .is_ok()
         );
-        assert!(
-            validate(&InputCommand::KeySequence {
-                keystrokes: Vec::new(),
-            })
-            .is_err()
-        );
+        assert!(validate(&InputCommand::KeySequence { keystrokes: Vec::new() }).is_err());
         assert!(
             validate(&InputCommand::KeySequence {
                 keystrokes: vec!["right".to_owned(); MAX_KEY_SEQUENCE + 1],
@@ -348,17 +326,13 @@ mod tests {
         let hovered = Rc::new(Cell::new(false));
         let hovered_for_handler = hovered.clone();
         let visual = cx.add_empty_window();
-        visual.draw(
-            point(px(0.0), px(0.0)),
-            size(px(300.0), px(100.0)),
-            move |_, _| {
-                div()
-                    .id("native-hover-target")
-                    .w(px(100.0))
-                    .h(px(100.0))
-                    .on_hover(move |value, _, _| hovered_for_handler.set(*value))
-            },
-        );
+        visual.draw(point(px(0.0), px(0.0)), size(px(300.0), px(100.0)), move |_, _| {
+            div()
+                .id("native-hover-target")
+                .w(px(100.0))
+                .h(px(100.0))
+                .on_hover(move |value, _, _| hovered_for_handler.set(*value))
+        });
 
         visual.update(|window, cx| {
             assert_eq!(
@@ -386,37 +360,29 @@ mod tests {
         let drag_started_for_handler = drag_started.clone();
         let dropped_for_handler = dropped.clone();
         let visual = cx.add_empty_window();
-        visual.draw(
-            point(px(0.0), px(0.0)),
-            size(px(300.0), px(100.0)),
-            move |_, _| {
-                div()
-                    .flex()
-                    .gap(px(50.0))
-                    .child(
-                        div()
-                            .id("native-drag-source")
-                            .w(px(100.0))
-                            .h(px(100.0))
-                            .on_mouse_down(GpuiMouseButton::Left, move |_, _, _| {
-                                pressed_for_handler.set(true);
-                            })
-                            .on_drag(DragValue, move |_, _, _, cx| {
-                                drag_started_for_handler.set(true);
-                                cx.new(|_| DragPreview)
-                            }),
-                    )
-                    .child(
-                        div()
-                            .id("native-drop-target")
-                            .w(px(100.0))
-                            .h(px(100.0))
-                            .on_drop(move |_: &DragValue, _, _| {
-                                dropped_for_handler.set(true);
-                            }),
-                    )
-            },
-        );
+        visual.draw(point(px(0.0), px(0.0)), size(px(300.0), px(100.0)), move |_, _| {
+            div()
+                .flex()
+                .gap(px(50.0))
+                .child(
+                    div()
+                        .id("native-drag-source")
+                        .w(px(100.0))
+                        .h(px(100.0))
+                        .on_mouse_down(GpuiMouseButton::Left, move |_, _, _| {
+                            pressed_for_handler.set(true);
+                        })
+                        .on_drag(DragValue, move |_, _, _, cx| {
+                            drag_started_for_handler.set(true);
+                            cx.new(|_| DragPreview)
+                        }),
+                )
+                .child(div().id("native-drop-target").w(px(100.0)).h(px(100.0)).on_drop(
+                    move |_: &DragValue, _, _| {
+                        dropped_for_handler.set(true);
+                    },
+                ))
+        });
 
         visual.update(|window, cx| {
             assert_eq!(

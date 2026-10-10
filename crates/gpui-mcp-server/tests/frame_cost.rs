@@ -65,20 +65,9 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout).lines(),
-            next_id: 1,
-        })
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
     }
 
     async fn send(&mut self, message: &JsonValue) -> Result<(), String> {
@@ -122,12 +111,8 @@ impl Server {
     }
 
     async fn call(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        let result = self
-            .request(
-                "tools/call",
-                json!({ "name": tool, "arguments": arguments }),
-            )
-            .await?;
+        let result =
+            self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await?;
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             let content = result.get("content").cloned().unwrap_or(JsonValue::Null);
             return Err(format!("{tool} reported an error: {content}"));
@@ -145,9 +130,7 @@ impl Server {
             .get("content")
             .and_then(JsonValue::as_array)
             .and_then(|content| {
-                content
-                    .iter()
-                    .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+                content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
             })
             .ok_or_else(|| format!("{tool} returned no JSON payload"))?;
         serde_json::from_str(text)
@@ -168,16 +151,11 @@ impl Server {
                 .and_then(JsonValue::as_f64)
                 .ok_or_else(|| format!("the bounds of {id} carry no {name}"))
         };
-        Ok((
-            field("x")? + field("width")? / 2.0,
-            field("y")? + field("height")? / 2.0,
-        ))
+        Ok((field("x")? + field("width")? / 2.0, field("y")? + field("height")? / 2.0))
     }
 
     async fn pointer_move(&mut self, point: (f64, f64)) -> Result<(), String> {
-        self.call("pointer_move", json!({ "x": point.0, "y": point.1 }))
-            .await
-            .map(drop)
+        self.call("pointer_move", json!({ "x": point.0, "y": point.1 })).await.map(drop)
     }
 
     async fn report(&mut self) -> Result<Report, String> {
@@ -213,10 +191,7 @@ struct Report(JsonValue);
 
 impl Report {
     fn frames(&self) -> &[JsonValue] {
-        self.0
-            .get("frames")
-            .and_then(JsonValue::as_array)
-            .map_or(&[], Vec::as_slice)
+        self.0.get("frames").and_then(JsonValue::as_array).map_or(&[], Vec::as_slice)
     }
 
     /// Every view the reported frames drew, as (entity, outcome, cause).
@@ -227,10 +202,7 @@ impl Report {
             .into_iter()
             .flatten()
             .flat_map(|view| {
-                let entity = view
-                    .get("entity_id")
-                    .and_then(JsonValue::as_u64)
-                    .unwrap_or_default();
+                let entity = view.get("entity_id").and_then(JsonValue::as_u64).unwrap_or_default();
                 let type_name = view
                     .get("type_name")
                     .and_then(JsonValue::as_str)
@@ -246,14 +218,7 @@ impl Report {
                     .into_iter()
                     .map({
                         let type_name = type_name.clone();
-                        move |cause| {
-                            (
-                                entity,
-                                type_name.clone(),
-                                "rendered".to_owned(),
-                                Some(cause),
-                            )
-                        }
+                        move |cause| (entity, type_name.clone(), "rendered".to_owned(), Some(cause))
                     })
                     .chain(reused.then(|| (entity, type_name, "reused".to_owned(), None)))
             })
@@ -283,16 +248,11 @@ impl Report {
     }
 
     fn refreshed(&self) -> bool {
-        self.draws()
-            .iter()
-            .any(|(.., cause)| cause.as_deref() == Some("refresh"))
+        self.draws().iter().any(|(.., cause)| cause.as_deref() == Some("refresh"))
     }
 
     fn summary(&self) -> String {
-        self.0
-            .get("summary")
-            .map(ToString::to_string)
-            .unwrap_or_default()
+        self.0.get("summary").map(ToString::to_string).unwrap_or_default()
     }
 }
 
@@ -328,17 +288,13 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory =
+        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
+        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 
@@ -395,10 +351,8 @@ where
 fn one_region_rendered(report: &Report, hover: &str) -> Result<u64, String> {
     let rendered = report.rendered_regions();
     let reused = report.reused_regions();
-    let described = format!(
-        "{hover}: rendered {rendered:?}, reused {reused:?}; summary {}",
-        report.summary()
-    );
+    let described =
+        format!("{hover}: rendered {rendered:?}, reused {reused:?}; summary {}", report.summary());
     if report.frames().is_empty() {
         return Err(format!("{hover} drew no frame at all: {described}"));
     }
@@ -408,19 +362,13 @@ fn one_region_rendered(report: &Report, hover: &str) -> Result<u64, String> {
         ));
     }
     let [(entity, cause)] = rendered.as_slice() else {
-        return Err(format!(
-            "{hover} must render exactly one probe region: {described}"
-        ));
+        return Err(format!("{hover} must render exactly one probe region: {described}"));
     };
     if cause != "notified" {
-        return Err(format!(
-            "the hovered region must render because it was notified: {described}"
-        ));
+        return Err(format!("the hovered region must render because it was notified: {described}"));
     }
     if reused.is_empty() || reused.contains(entity) {
-        return Err(format!(
-            "the other region must replay from cache and only it: {described}"
-        ));
+        return Err(format!("the other region must replay from cache and only it: {described}"));
     }
     Ok(*entity)
 }
@@ -436,9 +384,7 @@ fn draw_times_are_reported(report: &Report) -> Result<(), String> {
             return Err(format!("a frame sample lacks its draw times: {frame}"));
         };
         if draw <= 0.0 || bridge < 0.0 || bridge > draw || (app + bridge - draw).abs() > 1e-6 {
-            return Err(format!(
-                "a frame's draw, application, and bridge times disagree: {frame}"
-            ));
+            return Err(format!("a frame's draw, application, and bridge times disagree: {frame}"));
         }
     }
     Ok(())
@@ -493,10 +439,7 @@ async fn an_injected_hover_renders_only_the_hovered_cached_region() -> Result<()
 /// fixture's window.
 #[cfg(windows)]
 async fn move_os_cursor(fixture: &Fixture, point: (f64, f64)) -> Result<(), String> {
-    let process = fixture
-        .child
-        .id()
-        .ok_or_else(|| "the fixture has exited".to_owned())?;
+    let process = fixture.child.id().ok_or_else(|| "the fixture has exited".to_owned())?;
     // Per-monitor awareness makes `ClientToScreen` and `SetCursorPos` agree in
     // physical pixels; GPUI's logical pixels scale by the window's DPI.
     let script = format!(
@@ -534,10 +477,7 @@ if (-not [GpuiMcpCursor]::SetCursorPos($x, $y)) {{ throw 'SetCursorPos failed' }
     if output.status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "could not move the cursor: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ))
+        Err(format!("could not move the cursor: {}", String::from_utf8_lossy(&output.stderr)))
     }
 }
 

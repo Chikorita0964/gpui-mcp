@@ -27,10 +27,7 @@ use htmlswap::computed::{
 
 /// What this renderer's GPUI draws: both backends carry the grid and
 /// inset-shadow patches.
-const FEATURES: Features = Features {
-    grid_tracks: true,
-    inset_shadows: true,
-};
+const FEATURES: Features = Features { grid_tracks: true, inset_shadows: true };
 
 /// The GPUI color for a computed color.
 pub(crate) fn color(color: Rgba) -> gpui::Hsla {
@@ -258,11 +255,8 @@ fn apply_plan<T: Styled>(
             refinement.overflow.y = Some(overflow(value));
         }
         if let Some(visible) = style.visible {
-            refinement.visibility = Some(if visible {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            });
+            refinement.visibility =
+                Some(if visible { Visibility::Visible } else { Visibility::Hidden });
         }
         if style.opacity.is_some() {
             refinement.opacity = style.opacity;
@@ -349,17 +343,12 @@ fn apply_grid<T: Styled>(mut host: T, style: &GpuiStyle, bases: &Bases) -> T {
         Some(GpuiTracks::Count(count)) => host = host.grid_rows(*count),
         None => {}
     }
-    if let Some(sizes) = style
-        .grid_auto_columns
-        .as_deref()
-        .and_then(|sizes| track_sizes(sizes, bases))
+    if let Some(sizes) =
+        style.grid_auto_columns.as_deref().and_then(|sizes| track_sizes(sizes, bases))
     {
         host = host.grid_auto_columns(sizes);
     }
-    if let Some(sizes) = style
-        .grid_auto_rows
-        .as_deref()
-        .and_then(|sizes| track_sizes(sizes, bases))
+    if let Some(sizes) = style.grid_auto_rows.as_deref().and_then(|sizes| track_sizes(sizes, bases))
     {
         host = host.grid_auto_rows(sizes);
     }
@@ -422,10 +411,7 @@ fn track_size(value: TrackSize, bases: &Bases) -> Option<gpui::GridTrackSize> {
 }
 
 fn track_sizes(values: &[TrackSize], bases: &Bases) -> Option<Vec<gpui::GridTrackSize>> {
-    values
-        .iter()
-        .map(|value| track_size(*value, bases))
-        .collect()
+    values.iter().map(|value| track_size(*value, bases)).collect()
 }
 
 fn grid_tracks(tracks: &[Track], bases: &Bases) -> Option<Vec<gpui::GridTrack>> {
@@ -499,21 +485,14 @@ fn apply_text<T: Styled>(
     if let Some(decorations) = style.decorations {
         let line = |decoration: GpuiDecoration| (pixels(decoration.thickness, bases), decoration);
         let text = host.text_style();
-        text.underline = decorations
-            .underline
-            .map(line)
-            .map(|(thickness, line)| UnderlineStyle {
-                thickness,
-                color: line.color.map(color),
-                wavy: line.wavy,
-            });
-        text.strikethrough = decorations
-            .strikethrough
-            .map(line)
-            .map(|(thickness, line)| StrikethroughStyle {
-                thickness,
-                color: line.color.map(color),
-            });
+        text.underline = decorations.underline.map(line).map(|(thickness, line)| UnderlineStyle {
+            thickness,
+            color: line.color.map(color),
+            wavy: line.wavy,
+        });
+        text.strikethrough = decorations.strikethrough.map(line).map(|(thickness, line)| {
+            StrikethroughStyle { thickness, color: line.color.map(color) }
+        });
     }
     host
 }
@@ -551,12 +530,7 @@ mod tests {
     }
 
     fn top_border(declarations: &[(&str, &str)]) -> Option<gpui::AbsoluteLength> {
-        let mut host = apply(
-            div(),
-            &computed(declarations),
-            &HashSet::new(),
-            &Bases::default(),
-        );
+        let mut host = apply(div(), &computed(declarations), &HashSet::new(), &Bases::default());
         host.style().border_widths.top
     }
 
@@ -580,39 +554,23 @@ mod tests {
     #[test]
     fn content_box_sizes_include_padding_and_drawn_borders() {
         let width = |declarations: &[(&str, &str)]| {
-            let mut host = apply(
-                div(),
-                &computed(declarations),
-                &HashSet::new(),
-                &Bases::default(),
-            );
+            let mut host =
+                apply(div(), &computed(declarations), &HashSet::new(), &Bases::default());
             host.style().size.width
         };
         let px_width = |pixels: f32| Some(gpui::Length::Definite(px(pixels).into()));
 
         assert_eq!(
-            width(&[
-                ("width", "100px"),
-                ("padding", "10px"),
-                ("border", "2px solid")
-            ]),
+            width(&[("width", "100px"), ("padding", "10px"), ("border", "2px solid")]),
             px_width(124.0)
         );
         assert_eq!(
-            width(&[
-                ("width", "100px"),
-                ("padding", "10px"),
-                ("border-width", "2px")
-            ]),
+            width(&[("width", "100px"), ("padding", "10px"), ("border-width", "2px")]),
             px_width(120.0),
             "a border without a style is not drawn and takes no space"
         );
         assert_eq!(
-            width(&[
-                ("box-sizing", "border-box"),
-                ("width", "100px"),
-                ("padding", "10px")
-            ]),
+            width(&[("box-sizing", "border-box"), ("width", "100px"), ("padding", "10px")]),
             px_width(100.0)
         );
         assert_eq!(
@@ -624,19 +582,14 @@ mod tests {
             limits(&computed(&[("width", "50%"), ("padding", "10px")])),
             [] as [(&str, &str); 0]
         );
-        assert_eq!(
-            width(&[("width", "50%")]),
-            Some(gpui::Length::Definite(gpui::relative(0.5)))
-        );
+        assert_eq!(width(&[("width", "50%")]), Some(gpui::Length::Definite(gpui::relative(0.5))));
     }
 
     #[test]
     fn font_family_picks_the_first_installed_family_and_keeps_case() {
         let available = HashSet::from(["segoe ui".to_owned()]);
         let families = |css: &str| -> Vec<FontFamily> {
-            computed(&[("font-family", css)])
-                .font_family
-                .unwrap_or_default()
+            computed(&[("font-family", css)]).font_family.unwrap_or_default()
         };
 
         assert_eq!(

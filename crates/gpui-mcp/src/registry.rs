@@ -191,10 +191,8 @@ impl SharedState {
     pub(crate) fn begin_frame(&self) {
         let now = Instant::now();
         {
-            let mut timings = self
-                .timings
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut timings =
+                self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let interval = timings
                 .previous_frame
                 .replace(now)
@@ -211,10 +209,7 @@ impl SharedState {
             });
         }
 
-        let mut intake = self
-            .intake
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut intake = self.intake.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if intake.awaiting {
             intake.incomplete = true;
         }
@@ -225,30 +220,19 @@ impl SharedState {
     pub(crate) fn observe_semantics(&self, frame: &Arc<AccessibilityFrame>) {
         let now = Instant::now();
         {
-            let mut timings = self
-                .timings
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut timings =
+                self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(current) = timings.current.as_mut() {
                 current.prepaint = Some(now.saturating_duration_since(current.started));
             }
         }
 
         let replaced = {
-            let mut intake = self
-                .intake
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut intake = self.intake.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             intake.awaiting = false;
-            let carried = intake
-                .pending
-                .as_ref()
-                .is_some_and(|pending| pending.incomplete);
+            let carried = intake.pending.as_ref().is_some_and(|pending| pending.incomplete);
             let incomplete = std::mem::take(&mut intake.incomplete) || carried;
-            intake.pending.replace(PendingSemantics {
-                frame: frame.clone(),
-                incomplete,
-            })
+            intake.pending.replace(PendingSemantics { frame: frame.clone(), incomplete })
         };
         // Release the lock before an unread frame is freed.
         drop(replaced);
@@ -256,10 +240,7 @@ impl SharedState {
     }
 
     pub(crate) fn begin_root_paint(&self) {
-        let mut timings = self
-            .timings
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut timings = self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(current) = timings.current.as_mut() {
             current.root_paint_started = Some(Instant::now());
         }
@@ -267,10 +248,7 @@ impl SharedState {
 
     pub(crate) fn finish_root_paint(&self) {
         let now = Instant::now();
-        let mut timings = self
-            .timings
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut timings = self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(current) = timings.current.as_mut()
             && let Some(started) = current.root_paint_started.take()
         {
@@ -301,20 +279,14 @@ impl SharedState {
         }
 
         let stats = {
-            let mut timings = self
-                .timings
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut timings =
+                self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let current = timings.current.take();
             timings.frame_count = timings.frame_count.saturating_add(1);
-            let prepaint = current
-                .as_ref()
-                .and_then(|current| current.prepaint)
-                .unwrap_or_default();
-            let root_paint = current
-                .as_ref()
-                .and_then(|current| current.root_paint)
-                .unwrap_or_default();
+            let prepaint =
+                current.as_ref().and_then(|current| current.prepaint).unwrap_or_default();
+            let root_paint =
+                current.as_ref().and_then(|current| current.root_paint).unwrap_or_default();
             push_sample(&mut timings.prepaint, prepaint);
             push_sample(&mut timings.root_paint, root_paint);
             push_sample(&mut timings.draw, draw);
@@ -342,10 +314,8 @@ impl SharedState {
     /// Start a measurement window at the last completed frame.
     pub(crate) fn mark_frames(&self) -> FrameStats {
         let stats = {
-            let mut timings = self
-                .timings
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut timings =
+                self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             timings.mark = timings.frame_count;
             timings.clear_samples();
             frame_stats_from_timings(&timings)
@@ -362,10 +332,7 @@ impl SharedState {
         frame_limit: usize,
     ) -> FrameReport {
         let (after_frame_count, latest_frame_count, records) = {
-            let timings = self
-                .timings
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let timings = self.timings.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let after = after_frame_count.unwrap_or(timings.mark);
             let records = timings
                 .history
@@ -379,38 +346,23 @@ impl SharedState {
     }
 
     pub(crate) fn set_window_geometry(&self, content_bounds: Rect, scale_factor: f32) {
-        let geometry = WindowGeometry {
-            content_bounds,
-            scale_factor,
-        };
+        let geometry = WindowGeometry { content_bounds, scale_factor };
         if !geometry.is_valid() {
             return;
         }
-        *self
-            .window_geometry
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(geometry);
+        *self.window_geometry.write().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(geometry);
     }
 
     pub(crate) fn window_geometry(&self) -> Option<WindowGeometry> {
-        *self
-            .window_geometry
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        *self.window_geometry.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Convert the newest handed-over accessibility frame, if it has not been.
     fn convert_pending(&self) {
-        let _converting = self
-            .converting
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let pending = self
-            .intake
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .pending
-            .take();
+        let _converting = self.converting.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let pending =
+            self.intake.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pending.take();
         let Some(pending) = pending else {
             return;
         };
@@ -435,10 +387,7 @@ impl SharedState {
         }
         let (roots, nodes, diagnostics) = builder.finish();
 
-        let mut tree = self
-            .tree
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut tree = self.tree.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         let changed = tree.roots != roots || tree.nodes != nodes || tree.diagnostics != diagnostics;
         if changed {
             tree.generation = tree.generation.saturating_add(1);
@@ -450,18 +399,12 @@ impl SharedState {
 
     pub(crate) fn tree(&self) -> UiTree {
         self.convert_pending();
-        self.tree
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.tree.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
     pub(crate) fn tree_generation(&self) -> u64 {
         self.convert_pending();
-        self.tree
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .generation
+        self.tree.read().unwrap_or_else(std::sync::PoisonError::into_inner).generation
     }
 
     pub(crate) async fn wait_for_tree(
@@ -543,10 +486,7 @@ impl SharedState {
         change: impl FnOnce(&mut AnnotationStore) -> R,
         changed: impl FnOnce(&R) -> bool,
     ) -> R {
-        let mut store = self
-            .annotations
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut store = self.annotations.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let result = change(&mut store);
         if changed(&result) {
             self.annotation_count.store(store.len(), Ordering::Release);
@@ -585,10 +525,7 @@ impl SharedState {
     }
 
     pub(crate) fn annotations(&self) -> Vec<Annotation> {
-        self.annotations
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .list()
+        self.annotations.lock().unwrap_or_else(std::sync::PoisonError::into_inner).list()
     }
 
     pub(crate) fn subscribe_annotations(&self) -> watch::Receiver<AnnotationChange> {
@@ -620,10 +557,7 @@ impl SharedState {
     /// Keep the frame for resolving annotation targets, or release a kept one.
     pub(crate) fn keep_overlay_frame(&self, frame: Option<&Arc<AccessibilityFrame>>) {
         let replaced = std::mem::replace(
-            &mut *self
-                .overlay_frame
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            &mut *self.overlay_frame.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
             frame.cloned(),
         );
         drop(replaced);
@@ -634,11 +568,7 @@ impl SharedState {
     pub(crate) fn annotation_paint(
         &self,
         now: Instant,
-    ) -> (
-        Vec<PaintItem>,
-        Option<Arc<AccessibilityFrame>>,
-        Option<Instant>,
-    ) {
+    ) -> (Vec<PaintItem>, Option<Arc<AccessibilityFrame>>, Option<Instant>) {
         let (items, next_expiry, _) = self.with_annotations(
             AnnotationSource::Bridge,
             |store| {
@@ -647,11 +577,8 @@ impl SharedState {
             },
             |(_, _, pruned)| *pruned,
         );
-        let frame = self
-            .overlay_frame
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let frame =
+            self.overlay_frame.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         (items, frame, next_expiry)
     }
 
@@ -664,10 +591,8 @@ impl SharedState {
 
     /// Claim the expiry frame for `deadline`, unless an earlier one is scheduled.
     pub(crate) fn claim_expiry_timer(&self, deadline: Instant) -> bool {
-        let mut scheduled = self
-            .expiry_timer
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut scheduled =
+            self.expiry_timer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if scheduled.is_some_and(|current| current <= deadline) {
             return false;
         }
@@ -676,10 +601,8 @@ impl SharedState {
     }
 
     pub(crate) fn expiry_timer_fired(&self, deadline: Instant) {
-        let mut scheduled = self
-            .expiry_timer
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut scheduled =
+            self.expiry_timer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if *scheduled == Some(deadline) {
             *scheduled = None;
         }
@@ -690,11 +613,11 @@ impl SharedState {
         from: MessageSender,
         message: NewMessage,
     ) -> Result<Message, BridgeError> {
-        let posted = self
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .post(from, message, unix_ms())?;
+        let posted = self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).post(
+            from,
+            message,
+            unix_ms(),
+        )?;
         self.message_events.send_replace(posted.id);
         Ok(posted)
     }
@@ -726,8 +649,7 @@ impl SharedState {
     }
 
     pub(crate) fn set_accepts_agent_messages(&self, accepts: bool) {
-        self.accepts_agent_messages
-            .store(accepts, Ordering::Release);
+        self.accepts_agent_messages.store(accepts, Ordering::Release);
     }
 
     pub(crate) fn accepts_agent_messages(&self) -> bool {
@@ -779,10 +701,7 @@ impl SharedState {
         let timestamp_ms = unix_ms();
         let mut sanitized = message.replace(['\r', '\n'], " ");
         sanitized.truncate(sanitized.floor_char_boundary(4096));
-        let mut logs = self
-            .logs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut logs = self.logs.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if logs.len() == 512 {
             logs.pop_front();
         }
@@ -811,10 +730,7 @@ impl SharedState {
     }
 
     pub(crate) fn clear_logs(&self) {
-        self.logs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
+        self.logs.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     }
 }
 
@@ -853,13 +769,7 @@ impl TreeBuilder {
         true
     }
 
-    fn finish(
-        mut self,
-    ) -> (
-        Vec<String>,
-        BTreeMap<String, UiNode>,
-        Vec<SemanticDiagnostic>,
-    ) {
+    fn finish(mut self) -> (Vec<String>, BTreeMap<String, UiNode>, Vec<SemanticDiagnostic>) {
         discard_invalid_relationships(&mut self);
         let roots = build_relationships(&mut self);
         (roots, self.nodes, self.diagnostics)
@@ -886,10 +796,7 @@ fn validate_node(node: &UiNode) -> Result<(), &'static str> {
     if let Some(parent) = &node.parent {
         validate_id(parent)?;
     }
-    for text in [node.label.as_deref(), node.description.as_deref()]
-        .into_iter()
-        .flatten()
-    {
+    for text in [node.label.as_deref(), node.description.as_deref()].into_iter().flatten() {
         if text.len() > MAX_LABEL_BYTES || text.chars().any(char::is_control) {
             return Err("semantic label or description is invalid or exceeds 4 KiB");
         }
@@ -903,11 +810,7 @@ fn validate_node(node: &UiNode) -> Result<(), &'static str> {
     }) {
         return Err("semantic bounds are invalid or exceed the coordinate limit");
     }
-    if node
-        .actions
-        .iter()
-        .enumerate()
-        .any(|(index, action)| node.actions[..index].contains(action))
+    if node.actions.iter().enumerate().any(|(index, action)| node.actions[..index].contains(action))
     {
         return Err("semantic actions contain a duplicate");
     }
@@ -1006,10 +909,7 @@ fn discard_invalid_relationships(builder: &mut TreeBuilder) {
             }
             positions.insert(current.clone(), path.len());
             path.push(current.clone());
-            let Some(parent) = builder
-                .nodes
-                .get(&current)
-                .and_then(|node| node.parent.clone())
+            let Some(parent) = builder.nodes.get(&current).and_then(|node| node.parent.clone())
             else {
                 break;
             };
@@ -1053,12 +953,7 @@ fn build_relationships(builder: &mut TreeBuilder) -> Vec<String> {
     let relationships: Vec<_> = builder
         .order
         .iter()
-        .filter_map(|id| {
-            builder
-                .nodes
-                .get(id)
-                .map(|node| (id.clone(), node.parent.clone()))
-        })
+        .filter_map(|id| builder.nodes.get(id).map(|node| (id.clone(), node.parent.clone())))
         .collect();
     let mut roots = Vec::new();
     for (child, parent) in relationships {
@@ -1115,10 +1010,7 @@ fn timing_summary(samples: &VecDeque<Duration>) -> (f64, f64) {
     }
     let total_ms = samples.iter().map(Duration::as_secs_f64).sum::<f64>() * 1000.0;
     let average_ms = total_ms / samples.len() as f64;
-    let max_ms = samples
-        .iter()
-        .map(|duration| duration.as_secs_f64() * 1000.0)
-        .fold(0.0, f64::max);
+    let max_ms = samples.iter().map(|duration| duration.as_secs_f64() * 1000.0).fold(0.0, f64::max);
     (average_ms, max_ms)
 }
 
@@ -1127,11 +1019,7 @@ fn milliseconds(duration: Duration) -> f64 {
 }
 
 /// Mean and nearest-rank percentiles of `values`.
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn distribution(mut values: Vec<f64>) -> Distribution {
     if values.is_empty() {
         return Distribution::default();
@@ -1155,11 +1043,7 @@ fn view_draw(view: &ViewRecord) -> ViewDraw {
     ViewDraw {
         entity_id: view.entity_id,
         type_name: view.type_name.to_owned(),
-        outcome: if view.cause.is_some() {
-            ViewOutcome::Rendered
-        } else {
-            ViewOutcome::Reused
-        },
+        outcome: if view.cause.is_some() { ViewOutcome::Rendered } else { ViewOutcome::Reused },
         cause: view.cause,
     }
 }
@@ -1192,11 +1076,9 @@ fn build_report(
 ) -> FrameReport {
     // Every completed frame is retained in order, so a gap between the mark
     // and the oldest retained frame means frames were evicted.
-    let truncated = records
-        .first()
-        .map_or(latest_frame_count > after_frame_count, |first| {
-            first.frame_count > after_frame_count.saturating_add(1)
-        });
+    let truncated = records.first().map_or(latest_frame_count > after_frame_count, |first| {
+        first.frame_count > after_frame_count.saturating_add(1)
+    });
 
     let samples = records.iter().map(frame_sample).collect::<Vec<_>>();
     let summary = FrameSummary {
@@ -1206,30 +1088,16 @@ fn build_report(
         prepaint_ms: distribution(samples.iter().map(|sample| sample.prepaint_ms).collect()),
         root_paint_ms: distribution(samples.iter().map(|sample| sample.root_paint_ms).collect()),
         bridge_ms: distribution(samples.iter().map(|sample| sample.bridge_ms).collect()),
-        interval_ms: distribution(
-            samples
-                .iter()
-                .filter_map(|sample| sample.interval_ms)
-                .collect(),
-        ),
-        views_rendered: samples
-            .iter()
-            .map(|sample| u64::from(sample.views_rendered))
-            .sum(),
-        views_reused: samples
-            .iter()
-            .map(|sample| u64::from(sample.views_reused))
-            .sum(),
+        interval_ms: distribution(samples.iter().filter_map(|sample| sample.interval_ms).collect()),
+        views_rendered: samples.iter().map(|sample| u64::from(sample.views_rendered)).sum(),
+        views_reused: samples.iter().map(|sample| u64::from(sample.views_reused)).sum(),
     };
 
     let mut positions = HashMap::<u64, usize>::new();
     let mut views = Vec::<ViewActivity>::new();
     for view in records.iter().flat_map(|record| record.views.iter()) {
         let position = *positions.entry(view.entity_id).or_insert_with(|| {
-            views.push(ViewActivity {
-                entity_id: view.entity_id,
-                ..ViewActivity::default()
-            });
+            views.push(ViewActivity { entity_id: view.entity_id, ..ViewActivity::default() });
             views.len() - 1
         });
         let activity = &mut views[position];
@@ -1299,10 +1167,7 @@ pub(crate) struct AnnotationChange {
 
 impl Default for AnnotationChange {
     fn default() -> Self {
-        Self {
-            revision: 0,
-            source: AnnotationSource::Bridge,
-        }
+        Self { revision: 0, source: AnnotationSource::Bridge }
     }
 }
 
@@ -1363,11 +1228,7 @@ mod tests {
     }
 
     fn view(entity_id: u64, cause: Option<ViewRenderCause>) -> ViewRecord {
-        ViewRecord {
-            entity_id,
-            type_name: if entity_id == 1 { "Root" } else { "Panel" },
-            cause,
-        }
+        ViewRecord { entity_id, type_name: if entity_id == 1 { "Root" } else { "Panel" }, cause }
     }
 
     #[test]
@@ -1390,11 +1251,7 @@ mod tests {
     fn missing_parents_and_cycles_are_rejected_without_rewriting_the_graph() {
         let state = SharedState::new();
         state.publish_nodes(
-            [
-                node("missing", Some("absent")),
-                node("a", Some("b")),
-                node("b", Some("a")),
-            ],
+            [node("missing", Some("absent")), node("a", Some("b")), node("b", Some("a"))],
             false,
         );
 
@@ -1448,10 +1305,8 @@ mod tests {
         state.publish_nodes([node("published", None)], false);
         state.semantic_frames.send_modify(|count| *count += 1);
 
-        let tree = waiter
-            .await
-            .map_err(|error| error.to_string())?
-            .map_err(|error| error.message)?;
+        let tree =
+            waiter.await.map_err(|error| error.to_string())?.map_err(|error| error.message)?;
         assert_eq!(tree.generation, 1);
         assert!(tree.nodes.contains_key("published"));
         Ok(())
@@ -1471,10 +1326,8 @@ mod tests {
 
         draw_frame(&state, 2, &[]);
 
-        let observed_frame = waiter
-            .await
-            .map_err(|error| error.to_string())?
-            .map_err(|error| error.message)?;
+        let observed_frame =
+            waiter.await.map_err(|error| error.to_string())?.map_err(|error| error.message)?;
         assert_eq!(observed_frame.frame_count, 2);
         Ok(())
     }
@@ -1517,10 +1370,7 @@ mod tests {
 
         let marked = state.mark_frames();
         assert_eq!(marked.mark_frame_count, 2);
-        assert!(
-            marked.draw_average_ms.abs() < f64::EPSILON,
-            "a mark resets the rolling averages"
-        );
+        assert!(marked.draw_average_ms.abs() < f64::EPSILON, "a mark resets the rolling averages");
 
         for draw_ms in [2, 4, 6, 8] {
             draw_frame(
@@ -1547,11 +1397,7 @@ mod tests {
         assert!((report.summary.draw_ms.p95 - 8.0).abs() < 1e-9);
         assert!((report.summary.app_draw_ms.max - 7.0).abs() < 1e-9);
         assert_eq!(
-            report
-                .frames
-                .iter()
-                .map(|frame| frame.frame_count)
-                .collect::<Vec<_>>(),
+            report.frames.iter().map(|frame| frame.frame_count).collect::<Vec<_>>(),
             [5, 6],
             "the frame limit keeps the most recent samples"
         );

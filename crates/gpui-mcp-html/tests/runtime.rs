@@ -407,9 +407,7 @@ fn build_hooks(state: &TestState) -> Option<HookRegistry> {
             move |_, _| StateValue::Text(title_reader.borrow().clone()),
             move |value, window, _| {
                 let StateValue::Text(value) = value else {
-                    return HookOutcome::Rejected {
-                        reason: "title requires text".to_owned(),
-                    };
+                    return HookOutcome::Rejected { reason: "title requires text".to_owned() };
                 };
                 *title_writer.borrow_mut() = value;
                 window.refresh();
@@ -513,11 +511,7 @@ fn build_fixture() -> Option<Fixture> {
     .with_components(components);
     assert!(live.diagnostics().is_empty(), "{:?}", live.diagnostics());
 
-    Some(Fixture {
-        live,
-        automation,
-        state,
-    })
+    Some(Fixture { live, automation, state })
 }
 
 fn assert_initial_tree(tree: &UiTree, state: &TestState) {
@@ -525,56 +519,35 @@ fn assert_initial_tree(tree: &UiTree, state: &TestState) {
     assert_eq!(tree.nodes["html-root"].parent, None);
     assert_eq!(tree.nodes["workspace"].parent.as_deref(), Some("html-root"));
     assert_eq!(
-        tree.nodes["workspace"]
-            .metadata
-            .get("authored_id")
-            .map(String::as_str),
+        tree.nodes["workspace"].metadata.get("authored_id").map(String::as_str),
         Some("workspace")
     );
     assert_eq!(tree.nodes["heading"].role, Role::Text);
     assert_eq!(
-        tree.nodes["heading"]
-            .text
-            .as_ref()
-            .map(|text| text.text.as_str()),
+        tree.nodes["heading"].text.as_ref().map(|text| text.text.as_str()),
         Some("Runtime harness")
     );
     assert_eq!(tree.nodes["title"].role, Role::TextInput);
     assert_eq!(
         tree.nodes["title"].value.as_ref(),
-        Some(&ValueInfo {
-            value: "Draft title".to_owned(),
-            ..ValueInfo::default()
-        })
+        Some(&ValueInfo { value: "Draft title".to_owned(), ..ValueInfo::default() })
     );
     assert_eq!(tree.nodes["save"].label.as_deref(), Some("Save"));
     assert_eq!(tree.nodes["secret"].role, Role::TextInput);
     assert_eq!(
-        tree.nodes["secret"]
-            .text
-            .as_ref()
-            .map(|text| (text.text.as_str(), text.redacted)),
+        tree.nodes["secret"].text.as_ref().map(|text| (text.text.as_str(), text.redacted)),
         Some(("", true))
     );
     assert!(tree.nodes["secret"].value.is_none());
     assert_eq!(tree.nodes["published"].role, Role::Checkbox);
     assert_eq!(tree.nodes["published"].state.checked, Some(false));
     assert!(tree.nodes["published"].actions.contains(&NodeAction::Click));
-    assert_eq!(
-        tree.nodes["status"]
-            .text
-            .as_ref()
-            .map(|text| text.text.as_str()),
-        Some("Ready")
-    );
+    assert_eq!(tree.nodes["status"].text.as_ref().map(|text| text.text.as_str()), Some("Ready"));
     assert!(tree.nodes["save"].actions.contains(&NodeAction::Click));
     assert!(tree.nodes.values().all(|node| node.bounds.is_some()));
     assert!(state.component_renders.get() > 0);
     assert!(
-        tree.nodes["html-root"]
-            .bounds
-            .as_ref()
-            .is_some_and(|bounds| bounds.width >= 640.0),
+        tree.nodes["html-root"].bounds.as_ref().is_some_and(|bounds| bounds.width >= 640.0),
         "HTML root should have styled GPUI layout bounds"
     );
     assert!(
@@ -588,27 +561,14 @@ fn assert_initial_tree(tree: &UiTree, state: &TestState) {
 }
 
 fn dispatch_actions(automation: &Automation, window: &mut Window, cx: &mut App) {
-    let click = TestInput::Click {
-        button: MouseButton::Left,
-        count: 1,
-    };
-    let invalid_published = TestInput::SetValue {
-        value: "yes".to_owned(),
-    };
-    let publish = TestInput::SetValue {
-        value: "true".to_owned(),
-    };
+    let click = TestInput::Click { button: MouseButton::Left, count: 1 };
+    let invalid_published = TestInput::SetValue { value: "yes".to_owned() };
+    let publish = TestInput::SetValue { value: "true".to_owned() };
     let mut dispatch =
         |node_id, action| dispatch_test_input(automation, node_id, action, window, cx);
     assert_eq!(dispatch("save", &click), Ok(HookOutcome::Handled));
     assert_eq!(
-        dispatch(
-            "save",
-            &TestInput::Click {
-                button: MouseButton::Left,
-                count: 2,
-            }
-        ),
+        dispatch("save", &TestInput::Click { button: MouseButton::Left, count: 2 }),
         Ok(HookOutcome::Handled)
     );
     assert_eq!(
@@ -618,18 +578,12 @@ fn dispatch_actions(automation: &Automation, window: &mut Window, cx: &mut App) 
         })
     );
     assert_eq!(dispatch("published", &publish), Ok(HookOutcome::Handled));
-    assert_eq!(
-        dispatch("title", &TestInput::Focus),
-        Ok(HookOutcome::Handled)
-    );
+    assert_eq!(dispatch("title", &TestInput::Focus), Ok(HookOutcome::Handled));
 }
 
 fn assert_updated_tree(tree: &UiTree, old_generation: u64) {
     assert_eq!(
-        tree.nodes["title"]
-            .value
-            .as_ref()
-            .map(|value| value.value.as_str()),
+        tree.nodes["title"].value.as_ref().map(|value| value.value.as_str()),
         Some("Published title")
     );
     assert!(tree.generation > old_generation);
@@ -642,11 +596,7 @@ fn html_renders_to_gpui_and_uses_real_input(cx: &mut TestAppContext) {
     let Some(fixture) = build_fixture() else {
         return;
     };
-    let Fixture {
-        live,
-        automation,
-        state,
-    } = fixture;
+    let Fixture { live, automation, state } = fixture;
     let (view, visual) = cx.add_window_view(|_, _| RuntimeView { live });
     visual.run_until_parked();
 
@@ -679,19 +629,13 @@ fn complex_layout_and_interactive_states_round_trip(cx: &mut TestAppContext) {
     ) else {
         return;
     };
-    assert!(
-        complex.diagnostics().is_empty(),
-        "{:?}",
-        complex.diagnostics()
-    );
+    assert!(complex.diagnostics().is_empty(), "{:?}", complex.diagnostics());
     let complex_live = expect_ok(
         LiveHtml::new(complex, Automation::for_test(), HookRegistry::new()),
         "complex layout should connect",
     );
     assert!(
-        complex_live
-            .as_ref()
-            .is_some_and(|live| live.diagnostics().is_empty()),
+        complex_live.as_ref().is_some_and(|live| live.diagnostics().is_empty()),
         "complex grid declarations should be supported"
     );
 
@@ -725,16 +669,8 @@ fn complex_layout_and_interactive_states_round_trip(cx: &mut TestAppContext) {
         .map(|node| node.id.clone());
     assert!(disclosure_control.is_some());
     let disclosure_control = disclosure_control.unwrap_or_default();
-    assert!(
-        initial.nodes["hover-card"]
-            .actions
-            .contains(&NodeAction::Hover)
-    );
-    assert!(
-        initial.nodes["focus-card"]
-            .actions
-            .contains(&NodeAction::Focus)
-    );
+    assert!(initial.nodes["hover-card"].actions.contains(&NodeAction::Hover));
+    assert!(initial.nodes["focus-card"].actions.contains(&NodeAction::Focus));
 
     visual.update(|window, cx| {
         assert_eq!(
@@ -749,10 +685,7 @@ fn complex_layout_and_interactive_states_round_trip(cx: &mut TestAppContext) {
             dispatch_test_input(
                 &automation,
                 &disclosure_control,
-                &TestInput::Click {
-                    button: MouseButton::Left,
-                    count: 1,
-                },
+                &TestInput::Click { button: MouseButton::Left, count: 1 },
                 window,
                 cx,
             ),
@@ -797,10 +730,7 @@ fn disclosure_only_toggles_from_its_summary(cx: &mut TestAppContext) {
     assert_eq!(initial.nodes["folder"].state.expanded, Some(true));
     let file = initial.nodes["file"].bounds.unwrap_or_default();
     visual.simulate_click(
-        point(
-            px(file.x + file.width / 2.0),
-            px(file.y + file.height / 2.0),
-        ),
+        point(px(file.x + file.width / 2.0), px(file.y + file.height / 2.0)),
         Modifiers::default(),
     );
     visual.run_until_parked();
@@ -809,14 +739,9 @@ fn disclosure_only_toggles_from_its_summary(cx: &mut TestAppContext) {
     assert_eq!(after_file_click.nodes["folder"].state.expanded, Some(true));
     assert!(after_file_click.nodes.contains_key("file"));
 
-    let summary = after_file_click.nodes["folder-summary"]
-        .bounds
-        .unwrap_or_default();
+    let summary = after_file_click.nodes["folder-summary"].bounds.unwrap_or_default();
     visual.simulate_click(
-        point(
-            px(summary.x + summary.width / 2.0),
-            px(summary.y + summary.height / 2.0),
-        ),
+        point(px(summary.x + summary.width / 2.0), px(summary.y + summary.height / 2.0)),
         Modifiers::default(),
     );
     visual.run_until_parked();
@@ -851,11 +776,7 @@ fn overflow_elements_expose_and_handle_semantic_scroll(cx: &mut TestAppContext) 
     visual.run_until_parked();
 
     let initial = automation.snapshot();
-    assert!(
-        initial.nodes["scroller"]
-            .actions
-            .contains(&NodeAction::Scroll)
-    );
+    assert!(initial.nodes["scroller"].actions.contains(&NodeAction::Scroll));
     let initial_bottom = initial.nodes["scroll-bottom"].bounds.unwrap_or_default();
     assert!(initial.nodes["scroll-bottom"].bounds.is_some());
     let initial_bottom_y = initial_bottom.y;
@@ -865,10 +786,7 @@ fn overflow_elements_expose_and_handle_semantic_scroll(cx: &mut TestAppContext) 
             dispatch_test_input(
                 &automation,
                 "scroller",
-                &TestInput::Scroll {
-                    delta_x: 0.0,
-                    delta_y: 80.0,
-                },
+                &TestInput::Scroll { delta_x: 0.0, delta_y: 80.0 },
                 window,
                 cx,
             ),
@@ -917,18 +835,9 @@ fn percentage_height_and_flex_content_track_window_resizes(cx: &mut TestAppConte
         let bounds = |id: &str| tree.nodes.get(id).and_then(|node| node.bounds);
 
         assert_eq!(bounds("html-root").map(|rect| rect.height), Some(height));
-        assert_eq!(
-            bounds("responsive-shell").map(|rect| rect.height),
-            Some(height)
-        );
-        assert_eq!(
-            bounds("flex-content").map(|rect| rect.height),
-            Some(height - 60.0)
-        );
-        assert_eq!(
-            bounds("fixed-footer").map(|rect| rect.y),
-            Some(height - 20.0)
-        );
+        assert_eq!(bounds("responsive-shell").map(|rect| rect.height), Some(height));
+        assert_eq!(bounds("flex-content").map(|rect| rect.height), Some(height - 60.0));
+        assert_eq!(bounds("fixed-footer").map(|rect| rect.y), Some(height - 20.0));
     }
 }
 
@@ -947,10 +856,9 @@ fn embedded_component_height_tracks_its_flex_host(cx: &mut TestAppContext) {
     ) else {
         return;
     };
-    let Some(namespace) = expect_ok(
-        SemanticNamespace::new("embedded-project"),
-        "semantic namespace should validate",
-    ) else {
+    let Some(namespace) =
+        expect_ok(SemanticNamespace::new("embedded-project"), "semantic namespace should validate")
+    else {
         return;
     };
     let Some(inner) = expect_ok(
@@ -962,9 +870,7 @@ fn embedded_component_height_tracks_its_flex_host(cx: &mut TestAppContext) {
     };
     let mut components = ComponentRegistry::new();
     let Some(()) = expect_ok(
-        components.register("studio-canvas", move |_, _, window, cx| {
-            inner.render(window, cx)
-        }),
+        components.register("studio-canvas", move |_, _, window, cx| inner.render(window, cx)),
         "embedded canvas should register",
     ) else {
         return;
@@ -997,14 +903,8 @@ fn embedded_component_height_tracks_its_flex_host(cx: &mut TestAppContext) {
         let bounds = |id: &str| tree.nodes.get(id).and_then(|node| node.bounds);
         let expected_canvas_height = height - 60.0;
 
-        assert_eq!(
-            bounds("embedded-shell").map(|rect| rect.height),
-            Some(height)
-        );
-        assert_eq!(
-            bounds("embedded-canvas").map(|rect| rect.height),
-            Some(expected_canvas_height)
-        );
+        assert_eq!(bounds("embedded-shell").map(|rect| rect.height), Some(height));
+        assert_eq!(bounds("embedded-canvas").map(|rect| rect.height), Some(expected_canvas_height));
         assert_eq!(
             bounds("embedded-project--html-root").map(|rect| rect.height),
             Some(expected_canvas_height)
@@ -1017,10 +917,7 @@ fn embedded_component_height_tracks_its_flex_host(cx: &mut TestAppContext) {
 }
 
 fn assert_close(actual: f32, expected: f32, what: &str) {
-    assert!(
-        (actual - expected).abs() < 0.5,
-        "{what}: expected {expected}, got {actual}"
-    );
+    assert!((actual - expected).abs() < 0.5, "{what}: expected {expected}, got {actual}");
 }
 
 #[gpui::test]
@@ -1081,17 +978,9 @@ fn css_grid_track_lists_lay_out_like_css(cx: &mut TestAppContext) {
 
     // repeat(auto-fill, 50px) in 200px makes four columns, so the fifth card wraps.
     let first = bounds("card-0");
-    assert_close(
-        bounds("card-3").x - first.x,
-        150.0,
-        "fourth auto-fill column",
-    );
+    assert_close(bounds("card-3").x - first.x, 150.0, "fourth auto-fill column");
     assert_close(bounds("card-4").x, first.x, "wrapped card column");
-    assert_close(
-        bounds("card-4").y - first.y,
-        15.0,
-        "one 10px row plus a 5px row gap",
-    );
+    assert_close(bounds("card-4").y - first.y, 15.0, "one 10px row plus a 5px row gap");
 }
 
 #[gpui::test]
@@ -1121,10 +1010,7 @@ fn rendered_elements_map_back_to_their_markup(cx: &mut TestAppContext) {
     let tree = automation.snapshot();
 
     let markup = |node: &gpui_mcp_html::SourceNode| {
-        node.span
-            .clone()
-            .map(|span| &html[span])
-            .unwrap_or_default()
+        node.span.clone().map(|span| &html[span]).unwrap_or_default()
     };
     let by_tag = |tag: &str| map.nodes().iter().find(|node| node.tag == tag);
 
@@ -1132,10 +1018,7 @@ fn rendered_elements_map_back_to_their_markup(cx: &mut TestAppContext) {
     let paragraph = by_tag("p");
     assert_eq!(paragraph.map(markup), Some("<p>Intro</p>"));
     assert_eq!(paragraph.and_then(|p| p.authored_id.clone()), None);
-    assert_eq!(
-        paragraph.map(|p| (p.line, p.column)),
-        Some((Some(2), Some(3)))
-    );
+    assert_eq!(paragraph.map(|p| (p.line, p.column)), Some((Some(2), Some(3))));
     assert!(paragraph.is_some_and(|p| p.element_id.as_str().starts_with("html-node-")));
 
     let button = by_tag("button");
@@ -1153,10 +1036,7 @@ fn rendered_elements_map_back_to_their_markup(cx: &mut TestAppContext) {
     for node in map.nodes() {
         let rendered = tree.nodes.get(&node.semantic_id);
         assert!(rendered.is_some(), "{} was not rendered", node.semantic_id);
-        let span = node
-            .span
-            .clone()
-            .map(|span| format!("{}..{}", span.start, span.end));
+        let span = node.span.clone().map(|span| format!("{}..{}", span.start, span.end));
         assert_eq!(
             rendered.and_then(|rendered| rendered.metadata.get("source_span").cloned()),
             span,
@@ -1167,10 +1047,7 @@ fn rendered_elements_map_back_to_their_markup(cx: &mut TestAppContext) {
 
     // An offset inside the button's text resolves to the button, not <main>.
     let offset = html.find("Go<").unwrap_or_default();
-    assert_eq!(
-        map.at_offset(offset).map(|node| node.tag.as_str()),
-        Some("button")
-    );
+    assert_eq!(map.at_offset(offset).map(|node| node.tag.as_str()), Some("button"));
 }
 
 /// Draw the frame GPUI's animation loop would draw next, `advance` later.
@@ -1212,11 +1089,9 @@ fn css_transitions_interpolate_interaction_changes(cx: &mut TestAppContext) {
     let css = "body { width: 600px; height: 400px; }
 .box { width: 100px; height: 20px; transition: width 1s linear, translate 1s linear; }
 .box:hover { width: 200px; translate: 100px 0; }";
-    let Some((automation, visual)) = mount(
-        r#"<main id="page"><div id="box" class="box">Box</div></main>"#,
-        css,
-        cx,
-    ) else {
+    let Some((automation, visual)) =
+        mount(r#"<main id="page"><div id="box" class="box">Box</div></main>"#, css, cx)
+    else {
         return;
     };
     let start = bounds_of(&automation, "box");
@@ -1232,11 +1107,7 @@ fn css_transitions_interpolate_interaction_changes(cx: &mut TestAppContext) {
     next_frame(visual, ms(500));
     let half = bounds_of(&automation, "box");
     assert_close(half.width, 150.0, "width half-way through the transition");
-    assert_close(
-        half.x - start.x,
-        50.0,
-        "translate half-way, without moving layout",
-    );
+    assert_close(half.x - start.x, 50.0, "translate half-way, without moving layout");
 
     // Leaving half-way reverses from the value on screen, over half the
     // duration (the reversing shortening factor, CSS Transitions 1 §3).
@@ -1270,11 +1141,7 @@ fn starting_style_and_keyframes_animate_on_first_render(cx: &mut TestAppContext)
     ) else {
         return;
     };
-    assert_close(
-        bounds_of(&automation, "grow").width,
-        0.0,
-        "entry starts from @starting-style",
-    );
+    assert_close(bounds_of(&automation, "grow").width, 0.0, "entry starts from @starting-style");
     assert_close(
         bounds_of(&automation, "pulse").width,
         0.0,
@@ -1283,18 +1150,10 @@ fn starting_style_and_keyframes_animate_on_first_render(cx: &mut TestAppContext)
 
     let ms = std::time::Duration::from_millis;
     next_frame(visual, ms(250));
-    assert_close(
-        bounds_of(&automation, "grow").width,
-        25.0,
-        "entry transition",
-    );
+    assert_close(bounds_of(&automation, "grow").width, 25.0, "entry transition");
     assert_close(bounds_of(&automation, "pulse").width, 50.0, "keyframes");
     next_frame(visual, ms(1000));
-    assert_close(
-        bounds_of(&automation, "grow").width,
-        100.0,
-        "entry finished",
-    );
+    assert_close(bounds_of(&automation, "grow").width, 100.0, "entry finished");
     assert_close(
         bounds_of(&automation, "pulse").width,
         100.0,
@@ -1323,17 +1182,8 @@ fn without_gpui_kit_view_transitions_apply_end_states(cx: &mut TestAppContext) {
         cx.notify();
     });
     visual.run_until_parked();
-    assert_close(
-        bounds_of(&automation, "hero").x - start.x,
-        200.0,
-        "the new box at once",
-    );
-    assert!(
-        !automation
-            .snapshot()
-            .nodes
-            .contains_key("html-view-transition-old")
-    );
+    assert_close(bounds_of(&automation, "hero").x - start.x, 200.0, "the new box at once");
+    assert!(!automation.snapshot().nodes.contains_key("html-view-transition-old"));
 }
 
 /// Without GPUI Kit's motion runtime, animated properties take their end
@@ -1365,17 +1215,9 @@ fn without_gpui_kit_motion_applies_end_states(cx: &mut TestAppContext) {
         Modifiers::default(),
     );
     visual.run_until_parked();
-    assert_close(
-        bounds_of(&automation, "box").width,
-        200.0,
-        "hover applies at once",
-    );
+    assert_close(bounds_of(&automation, "box").width, 200.0, "hover applies at once");
     next_frame(visual, std::time::Duration::from_millis(500));
-    assert_close(
-        bounds_of(&automation, "box").width,
-        200.0,
-        "nothing animates",
-    );
+    assert_close(bounds_of(&automation, "box").width, 200.0, "nothing animates");
 }
 
 fn compile_motion(html: &str, css: &str) -> Option<HtmlUi> {
@@ -1389,11 +1231,7 @@ fn mount_view<'a>(
     html: &str,
     css: &str,
     cx: &'a mut TestAppContext,
-) -> Option<(
-    Automation,
-    gpui::Entity<RuntimeView>,
-    &'a mut gpui::VisualTestContext,
-)> {
+) -> Option<(Automation, gpui::Entity<RuntimeView>, &'a mut gpui::VisualTestContext)> {
     cx.update(gpui_mcp_html::init);
     let ui = compile_motion(html, css)?;
     let automation = Automation::for_test();
@@ -1409,11 +1247,7 @@ fn mount_view<'a>(
 const HERO_HTML: &str = r#"<main id="page"><div id="hero" class="hero">Hero</div></main>"#;
 
 fn hero_css(navigation: bool, margin: f32, group: &str) -> String {
-    let navigation = if navigation {
-        "@view-transition { navigation: auto; }"
-    } else {
-        ""
-    };
+    let navigation = if navigation { "@view-transition { navigation: auto; }" } else { "" };
     format!(
         "{navigation}
 body {{ width: 600px; height: 400px; }}
@@ -1439,16 +1273,9 @@ fn navigation_view_transitions_move_named_elements(cx: &mut TestAppContext) {
         cx.notify();
     });
     visual.run_until_parked();
-    assert_close(
-        bounds_of(&automation, "hero").x,
-        start.x,
-        "the group starts at the old box",
-    );
+    assert_close(bounds_of(&automation, "hero").x, start.x, "the group starts at the old box");
     assert!(
-        automation
-            .snapshot()
-            .nodes
-            .contains_key("html-view-transition-old"),
+        automation.snapshot().nodes.contains_key("html-view-transition-old"),
         "the old image is drawn while the transition runs"
     );
 
@@ -1461,17 +1288,10 @@ fn navigation_view_transitions_move_named_elements(cx: &mut TestAppContext) {
     );
     next_frame(visual, ms(600));
     next_frame(visual, ms(16));
-    assert_close(
-        bounds_of(&automation, "hero").x - start.x,
-        200.0,
-        "the new box",
-    );
+    assert_close(bounds_of(&automation, "hero").x - start.x, 200.0, "the new box");
     assert!(!view.read_with(visual, |view, _| view.live.view_transition_running()));
     assert!(
-        !automation
-            .snapshot()
-            .nodes
-            .contains_key("html-view-transition-old"),
+        !automation.snapshot().nodes.contains_key("html-view-transition-old"),
         "the old image is gone once the transition ends"
     );
 
@@ -1562,10 +1382,7 @@ fn duplicate_and_missing_names_do_not_break_transitions(cx: &mut TestAppContext)
         return;
     };
     view.update_in(visual, |view, window, cx| {
-        assert!(
-            view.live
-                .start_view_transition(Vec::<&str>::new(), window, cx)
-        );
+        assert!(view.live.start_view_transition(Vec::<&str>::new(), window, cx));
         assert!(view.live.reload(next).is_ok());
         cx.notify();
     });

@@ -2,9 +2,7 @@ use gpui::Window;
 use raw_window_handle::RawWindowHandle;
 
 pub(crate) fn id(window: &Window) -> Option<u32> {
-    let handle = raw_window_handle::HasWindowHandle::window_handle(window)
-        .ok()?
-        .as_raw();
+    let handle = raw_window_handle::HasWindowHandle::window_handle(window).ok()?.as_raw();
     match handle {
         RawWindowHandle::Win32(handle) => u32::try_from(handle.hwnd.get()).ok(),
         RawWindowHandle::Xlib(handle) => {

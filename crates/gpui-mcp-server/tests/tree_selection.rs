@@ -101,20 +101,9 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout).lines(),
-            next_id: 1,
-        })
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
     }
 
     /// The MCP handshake, then wait until the fixture is discoverable.
@@ -191,11 +180,7 @@ impl Server {
         tool: &str,
         arguments: JsonValue,
     ) -> Result<(JsonValue, usize), String> {
-        self.request_measured(
-            "tools/call",
-            json!({ "name": tool, "arguments": arguments }),
-        )
-        .await
+        self.request_measured("tools/call", json!({ "name": tool, "arguments": arguments })).await
     }
 
     /// The structured payload of a tool that answers with JSON, with the byte
@@ -211,11 +196,7 @@ impl Server {
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             return Err(format!("{tool} reported an error: {}", reply_text(&result)));
         }
-        Ok(Measured {
-            payload: payload(tool, &result)?,
-            reply_bytes,
-            elapsed_ms,
-        })
+        Ok(Measured { payload: payload(tool, &result)?, reply_bytes, elapsed_ms })
     }
 
     /// The structured payload of a tool that answers with JSON.
@@ -301,17 +282,13 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory =
+        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
+        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 
@@ -376,9 +353,7 @@ fn payload(tool: &str, result: &JsonValue) -> Result<JsonValue, String> {
         .get("content")
         .and_then(JsonValue::as_array)
         .and_then(|content| {
-            content
-                .iter()
-                .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+            content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
         })
         .ok_or_else(|| format!("{tool} returned no JSON payload: {result}"))?;
     serde_json::from_str(text).map_err(|error| format!("{tool} returned unreadable JSON: {error}"))
@@ -398,11 +373,7 @@ fn reply_text(result: &JsonValue) -> String {
                 .collect()
         })
         .unwrap_or_default();
-    if text.is_empty() {
-        result.to_string()
-    } else {
-        text.join("\n")
-    }
+    if text.is_empty() { result.to_string() } else { text.join("\n") }
 }
 
 /// The nodes map of a tree reply.
@@ -421,13 +392,7 @@ fn ids(tree: &JsonValue) -> Result<BTreeSet<String>, String> {
 fn roots(tree: &JsonValue) -> Result<Vec<String>, String> {
     tree.get("roots")
         .and_then(JsonValue::as_array)
-        .map(|roots| {
-            roots
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
+        .map(|roots| roots.iter().filter_map(JsonValue::as_str).map(str::to_owned).collect())
         .ok_or_else(|| format!("the tree reply carries no roots list: {tree}"))
 }
 
@@ -447,13 +412,7 @@ fn children_of(tree: &JsonValue, id: &str) -> Result<Vec<String>, String> {
     node(tree, id)?
         .get("children")
         .and_then(JsonValue::as_array)
-        .map(|children| {
-            children
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
+        .map(|children| children.iter().filter_map(JsonValue::as_str).map(str::to_owned).collect())
         .ok_or_else(|| format!("the node {id} carries no children list"))
 }
 
@@ -577,14 +536,8 @@ async fn root_selects_one_node_and_its_subtree() -> Result<(), String> {
 
         // A named node with no descendants: the reply is exactly that node, so a
         // call that ignores `root` and answers with the whole tree fails here.
-        let leaf = server
-            .call_json("get_ui_tree", json!({ "root": LEAF }))
-            .await?;
-        assert_eq!(
-            roots(&leaf)?,
-            vec![LEAF.to_owned()],
-            "roots must name the requested node"
-        );
+        let leaf = server.call_json("get_ui_tree", json!({ "root": LEAF })).await?;
+        assert_eq!(roots(&leaf)?, vec![LEAF.to_owned()], "roots must name the requested node");
         assert_eq!(
             ids(&leaf)?,
             ids_within_depth(&whole, LEAF, None)?,
@@ -598,19 +551,13 @@ async fn root_selects_one_node_and_its_subtree() -> Result<(), String> {
 
         // A named node with a descendant: the reply carries the descendant, and
         // nothing of the sibling's subtree.
-        let branch = server
-            .call_json("get_ui_tree", json!({ "root": BRANCH }))
-            .await?;
+        let branch = server.call_json("get_ui_tree", json!({ "root": BRANCH })).await?;
         let expected = ids_within_depth(&whole, BRANCH, None)?;
         assert!(
             expected.contains(BRANCH_CHILD),
             "the fixture's {BRANCH} publishes {BRANCH_CHILD}, so the subtree must include it"
         );
-        assert_eq!(
-            ids(&branch)?,
-            expected,
-            "{BRANCH} must return exactly its own subtree"
-        );
+        assert_eq!(ids(&branch)?, expected, "{BRANCH} must return exactly its own subtree");
         assert_eq!(roots(&branch)?, vec![BRANCH.to_owned()]);
         assert!(
             !ids(&branch)?.contains(SIBLING),
@@ -804,9 +751,7 @@ async fn an_unknown_root_is_an_error_naming_the_requested_id() -> Result<(), Str
         return Ok(());
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        let error = server
-            .call_error("get_ui_tree", json!({ "root": UNKNOWN_ROOT }))
-            .await?;
+        let error = server.call_error("get_ui_tree", json!({ "root": UNKNOWN_ROOT })).await?;
         assert!(
             error.contains(UNKNOWN_ROOT),
             "the error must name the requested id {UNKNOWN_ROOT}: {error}"

@@ -62,13 +62,7 @@ impl ProjectPaths {
         let html = open_project_file(&ui_dir.join(HTML_FILE), &root)?;
         let css = open_project_file(&ui_dir.join(CSS_FILE), &root)?;
         let bindings = open_project_file(&ui_dir.join(BINDINGS_FILE), &root)?;
-        Ok(Self {
-            root,
-            ui_dir,
-            html,
-            css,
-            bindings,
-        })
+        Ok(Self { root, ui_dir, html, css, bindings })
     }
 
     /// Canonical project root.
@@ -94,9 +88,7 @@ impl ProjectPaths {
     }
 
     fn all_files() -> BTreeSet<ProjectFile> {
-        [ProjectFile::Html, ProjectFile::Css, ProjectFile::Bindings]
-            .into_iter()
-            .collect()
+        [ProjectFile::Html, ProjectFile::Css, ProjectFile::Bindings].into_iter().collect()
     }
 
     fn classify(&self, path: &Path) -> Option<ProjectFile> {
@@ -161,11 +153,7 @@ impl ProjectSnapshot {
     /// Convert this disk snapshot to the same complete bundle used by MCP preview.
     #[must_use]
     pub fn into_document(self) -> LiveDocumentSource {
-        LiveDocumentSource {
-            html: self.html,
-            css: self.css,
-            bindings_ron: self.bindings_ron,
-        }
+        LiveDocumentSource { html: self.html, css: self.css, bindings_ron: self.bindings_ron }
     }
 }
 
@@ -227,15 +215,8 @@ impl ProjectWatcher {
             }
         })
         .map_err(ProjectError::Watch)?;
-        watcher
-            .watch(paths.ui_dir(), RecursiveMode::NonRecursive)
-            .map_err(ProjectError::Watch)?;
-        Ok(Self {
-            paths,
-            receiver,
-            overflowed,
-            _watcher: watcher,
-        })
+        watcher.watch(paths.ui_dir(), RecursiveMode::NonRecursive).map_err(ProjectError::Watch)?;
+        Ok(Self { paths, receiver, overflowed, _watcher: watcher })
     }
 
     /// Canonical project paths being watched.
@@ -255,11 +236,7 @@ impl ProjectWatcher {
     /// Returns a backend error delivered by the filesystem watcher.
     pub fn poll(&self) -> Result<Option<ProjectChange>, ProjectError> {
         let rescan = self.overflowed.swap(false, Ordering::AcqRel);
-        let mut files = if rescan {
-            ProjectPaths::all_files()
-        } else {
-            BTreeSet::new()
-        };
+        let mut files = if rescan { ProjectPaths::all_files() } else { BTreeSet::new() };
         loop {
             match self.receiver.try_recv() {
                 // Linux's inotify backend reports opens and non-writing closes,
@@ -275,22 +252,13 @@ impl ProjectWatcher {
                         )
                     ) => {}
                 Ok(Ok(event)) => {
-                    files.extend(
-                        event
-                            .paths
-                            .iter()
-                            .filter_map(|path| self.paths.classify(path)),
-                    );
+                    files.extend(event.paths.iter().filter_map(|path| self.paths.classify(path)));
                 }
                 Ok(Err(error)) => return Err(ProjectError::Watch(error)),
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
         }
-        if files.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(ProjectChange { files, rescan }))
-        }
+        if files.is_empty() { Ok(None) } else { Ok(Some(ProjectChange { files, rescan })) }
     }
 
     /// Compile and atomically apply a changed source bundle, if one is queued.
@@ -393,31 +361,18 @@ fn canonicalize_contained(
 ) -> Result<PathBuf, ProjectError> {
     let canonical = canonicalize(operation, path)?;
     if !canonical.starts_with(root) {
-        return Err(ProjectError::OutsideRoot {
-            path: canonical,
-            root: root.to_owned(),
-        });
+        return Err(ProjectError::OutsideRoot { path: canonical, root: root.to_owned() });
     }
     Ok(canonical)
 }
 
 fn ensure_directory(path: &Path) -> Result<(), ProjectError> {
-    if path.is_dir() {
-        Ok(())
-    } else {
-        Err(ProjectError::NotDirectory {
-            path: path.to_owned(),
-        })
-    }
+    if path.is_dir() { Ok(()) } else { Err(ProjectError::NotDirectory { path: path.to_owned() }) }
 }
 
 fn open_project_file(path: &Path, root: &Path) -> Result<PathBuf, ProjectError> {
     let canonical = canonicalize_contained("canonicalize project file", path, root)?;
-    if canonical.is_file() {
-        Ok(canonical)
-    } else {
-        Err(ProjectError::NotFile { path: canonical })
-    }
+    if canonical.is_file() { Ok(canonical) } else { Err(ProjectError::NotFile { path: canonical }) }
 }
 
 fn read_project_file(
@@ -428,10 +383,7 @@ fn read_project_file(
     let configured = paths.file(file);
     let canonical = canonicalize_contained("canonicalize project file", configured, paths.root())?;
     if !paths_equal(&canonical, configured) {
-        return Err(ProjectError::OutsideRoot {
-            path: canonical,
-            root: paths.root().to_owned(),
-        });
+        return Err(ProjectError::OutsideRoot { path: canonical, root: paths.root().to_owned() });
     }
     let metadata = fs::metadata(&canonical).map_err(|source| ProjectError::Io {
         operation: "read project file metadata",
@@ -442,11 +394,7 @@ fn read_project_file(
         return Err(ProjectError::NotFile { path: canonical });
     }
     if metadata.len() > maximum {
-        return Err(ProjectError::TooLarge {
-            path: canonical,
-            found: metadata.len(),
-            maximum,
-        });
+        return Err(ProjectError::TooLarge { path: canonical, found: metadata.len(), maximum });
     }
     let source = fs::read_to_string(&canonical).map_err(|source| ProjectError::Io {
         operation: "read UTF-8 project file",
@@ -455,19 +403,14 @@ fn read_project_file(
     })?;
     let found = u64::try_from(source.len()).unwrap_or(u64::MAX);
     if found > maximum {
-        return Err(ProjectError::TooLarge {
-            path: canonical,
-            found,
-            maximum,
-        });
+        return Err(ProjectError::TooLarge { path: canonical, found, maximum });
     }
     Ok(source)
 }
 
 #[cfg(windows)]
 fn paths_equal(left: &Path, right: &Path) -> bool {
-    left.to_string_lossy()
-        .eq_ignore_ascii_case(&right.to_string_lossy())
+    left.to_string_lossy().eq_ignore_ascii_case(&right.to_string_lossy())
 }
 
 #[cfg(not(windows))]
@@ -493,10 +436,7 @@ mod tests {
         fs::create_dir(&ui)?;
         fs::write(ui.join("app.html"), "<button id='save'>Save</button>")?;
         fs::write(ui.join("app.css"), "#save { color: red; }")?;
-        fs::write(
-            ui.join("app.bindings.ron"),
-            BindingDocument::new().to_ron_pretty()?,
-        )?;
+        fs::write(ui.join("app.bindings.ron"), BindingDocument::new().to_ron_pretty()?)?;
         let paths = ProjectPaths::open(root.path())?;
         Ok((root, paths))
     }
@@ -546,10 +486,7 @@ mod tests {
         let initial = ProjectSnapshot::load(&paths)?.compile()?;
         let mut live = LiveHtml::new(initial, Automation::for_test(), HookRegistry::new())?;
         let watcher = ProjectWatcher::new(paths.clone())?;
-        fs::write(
-            paths.file(ProjectFile::Html),
-            "<button id='save'>Updated</button>",
-        )?;
+        fs::write(paths.file(ProjectFile::Html), "<button id='save'>Updated</button>")?;
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut reload = None;
         while reload.is_none() && Instant::now() < deadline {

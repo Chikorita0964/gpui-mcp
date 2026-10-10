@@ -237,29 +237,18 @@ fn build_live(window: &mut Window, cx: &App) -> Result<AppView, String> {
     let bridge = BridgeHandle::install(
         window,
         cx,
-        BridgeConfig::new(
-            AppId::new(APP_ID).map_err(|error| error.to_string())?,
-            TITLE,
-        ),
+        BridgeConfig::new(AppId::new(APP_ID).map_err(|error| error.to_string())?, TITLE),
     )
     .map_err(|error| error.to_string())?;
     let paths = ProjectPaths::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")))
         .map_err(|error| error.to_string())?;
-    let source = ProjectSnapshot::load(&paths)
-        .map_err(|error| error.to_string())?
-        .into_document();
+    let source = ProjectSnapshot::load(&paths).map_err(|error| error.to_string())?.into_document();
     let hooks = runtime_hooks(&RuntimeState::default())?;
     let session = LiveHtmlSession::compile(source, bridge.automation(), hooks)
         .map_err(|error| error.to_string())?;
-    session
-        .serve_mcp(&bridge)
-        .map_err(|error| error.to_string())?;
+    session.serve_mcp(&bridge).map_err(|error| error.to_string())?;
     let watcher = ProjectWatcher::new(paths).map_err(|error| error.to_string())?;
-    Ok(AppView {
-        session,
-        watcher,
-        _bridge: bridge,
-    })
+    Ok(AppView { session, watcher, _bridge: bridge })
 }
 
 fn main() {
@@ -282,9 +271,7 @@ fn main() {
                 window
                     .spawn(cx, async move |cx| {
                         loop {
-                            cx.background_executor()
-                                .timer(Duration::from_millis(50))
-                                .await;
+                            cx.background_executor().timer(Duration::from_millis(50)).await;
                             if weak_view
                                 .update(cx, |view, cx| {
                                     view.poll_project();

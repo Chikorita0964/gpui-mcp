@@ -195,24 +195,9 @@ macro_rules! nonzero_id {
     };
 }
 
-nonzero_id!(
-    ProcessId,
-    u32,
-    NonZeroU32,
-    "operating-system process identifier"
-);
-nonzero_id!(
-    InstanceId,
-    u64,
-    NonZeroU64,
-    "bridge-lifetime instance identifier"
-);
-nonzero_id!(
-    NativeWindowId,
-    u32,
-    NonZeroU32,
-    "operating-system window identifier"
-);
+nonzero_id!(ProcessId, u32, NonZeroU32, "operating-system process identifier");
+nonzero_id!(InstanceId, u64, NonZeroU64, "bridge-lifetime instance identifier");
+nonzero_id!(NativeWindowId, u32, NonZeroU32, "operating-system window identifier");
 nonzero_id!(RequestId, u64, NonZeroU64, "wire request identifier");
 
 /// Resolve the private cross-process runtime root used by every workspace binary.
@@ -227,10 +212,7 @@ nonzero_id!(RequestId, u64, NonZeroU64, "wire request identifier");
 pub fn runtime_root() -> Result<PathBuf, RuntimePathError> {
     let base = BaseDirs::new().ok_or(RuntimePathError::Unavailable)?;
     #[cfg(target_os = "linux")]
-    let root = base
-        .runtime_dir()
-        .ok_or(RuntimePathError::Unavailable)?
-        .to_path_buf();
+    let root = base.runtime_dir().ok_or(RuntimePathError::Unavailable)?.to_path_buf();
     #[cfg(not(target_os = "linux"))]
     let root = base.data_local_dir().to_path_buf();
     Ok(root.join("gpui-mcp"))
@@ -289,10 +271,7 @@ impl Rect {
     /// Returns the center of this rectangle.
     #[must_use]
     pub fn center(self) -> Point {
-        Point {
-            x: self.x + self.width / 2.0,
-            y: self.y + self.height / 2.0,
-        }
+        Point { x: self.x + self.width / 2.0, y: self.y + self.height / 2.0 }
     }
 
     /// Returns whether this rectangle contains the supplied point.
@@ -1046,10 +1025,7 @@ impl LiveDocumentSource {
     /// Combined UTF-8 source byte length.
     #[must_use]
     pub fn byte_len(&self) -> usize {
-        self.html
-            .len()
-            .saturating_add(self.css.len())
-            .saturating_add(self.bindings_ron.len())
+        self.html.len().saturating_add(self.css.len()).saturating_add(self.bindings_ron.len())
     }
 }
 
@@ -1095,9 +1071,7 @@ impl Capabilities {
     /// Create a capability set from an iterator.
     #[must_use]
     pub fn new(capabilities: impl IntoIterator<Item = Capability>) -> Self {
-        Self {
-            available: capabilities.into_iter().collect(),
-        }
+        Self { available: capabilities.into_iter().collect() }
     }
 
     /// Return whether one feature is available.
@@ -1410,10 +1384,7 @@ impl BridgeError {
     /// Construct a new sanitized error.
     #[must_use]
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-        }
+        Self { code, message: message.into() }
     }
 }
 
@@ -1434,23 +1405,13 @@ impl WireResponse {
     /// Construct a successful response.
     #[must_use]
     pub fn success(request_id: RequestId, result: BridgeResult) -> Self {
-        Self {
-            protocol_version: PROTOCOL_VERSION,
-            request_id,
-            result: Some(result),
-            error: None,
-        }
+        Self { protocol_version: PROTOCOL_VERSION, request_id, result: Some(result), error: None }
     }
 
     /// Construct an error response.
     #[must_use]
     pub fn failure(request_id: RequestId, error: BridgeError) -> Self {
-        Self {
-            protocol_version: PROTOCOL_VERSION,
-            request_id,
-            result: None,
-            error: Some(error),
-        }
+        Self { protocol_version: PROTOCOL_VERSION, request_id, result: None, error: Some(error) }
     }
 }
 
@@ -1464,33 +1425,9 @@ mod tests {
 
     #[test]
     fn rectangle_validation_rejects_non_finite_and_negative_values() {
-        assert!(
-            Rect {
-                x: 0.0,
-                y: 1.0,
-                width: 2.0,
-                height: 3.0,
-            }
-            .is_valid()
-        );
-        assert!(
-            !Rect {
-                x: f32::NAN,
-                y: 0.0,
-                width: 1.0,
-                height: 1.0,
-            }
-            .is_valid()
-        );
-        assert!(
-            !Rect {
-                x: 0.0,
-                y: 0.0,
-                width: -1.0,
-                height: 1.0,
-            }
-            .is_valid()
-        );
+        assert!(Rect { x: 0.0, y: 1.0, width: 2.0, height: 3.0 }.is_valid());
+        assert!(!Rect { x: f32::NAN, y: 0.0, width: 1.0, height: 1.0 }.is_valid());
+        assert!(!Rect { x: 0.0, y: 0.0, width: -1.0, height: 1.0 }.is_valid());
     }
 
     #[test]
@@ -1507,10 +1444,7 @@ mod tests {
             state.read_only = Some(expected);
             let json = serde_json::to_value(&state)?;
             assert_eq!(json["read_only"], expected);
-            assert_eq!(
-                serde_json::from_value::<super::NodeState>(json)?.read_only,
-                Some(expected)
-            );
+            assert_eq!(serde_json::from_value::<super::NodeState>(json)?.read_only, Some(expected));
         }
         Ok(())
     }
@@ -1530,13 +1464,7 @@ mod tests {
     #[test]
     fn point_validation_rejects_infinity() {
         assert!(Point { x: 1.0, y: 2.0 }.is_valid());
-        assert!(
-            !Point {
-                x: f32::INFINITY,
-                y: 2.0,
-            }
-            .is_valid()
-        );
+        assert!(!Point { x: f32::INFINITY, y: 2.0 }.is_valid());
     }
 
     #[test]
@@ -1547,9 +1475,7 @@ mod tests {
             app_name: "App".to_owned(),
             instance_id: InstanceId::new(1).ok_or("instance ID must be nonzero")?,
             pid: ProcessId::new(2).ok_or("process ID must be nonzero")?,
-            endpoint: LocalEndpoint::Namespaced {
-                name: "test".to_owned(),
-            },
+            endpoint: LocalEndpoint::Namespaced { name: "test".to_owned() },
             token: "secret".to_owned(),
             native_window_id: NativeWindowId::new(3),
             capabilities: Capabilities::default(),
@@ -1589,9 +1515,7 @@ mod tests {
             let value = serde_json::to_value(&action)?;
             assert_eq!(serde_json::from_value::<SemanticAction>(value)?, action);
         }
-        let set_value = SemanticAction::SetValue {
-            value: "42".to_owned(),
-        };
+        let set_value = SemanticAction::SetValue { value: "42".to_owned() };
         let value = serde_json::to_value(&set_value)?;
         assert_eq!(serde_json::from_value::<SemanticAction>(value)?, set_value);
         Ok(())
@@ -1605,9 +1529,7 @@ mod tests {
             serde_json::json!({ "action": "increment" })
         );
         assert_eq!(
-            serde_json::to_value(SemanticAction::SetValue {
-                value: "42".to_owned()
-            })?,
+            serde_json::to_value(SemanticAction::SetValue { value: "42".to_owned() })?,
             serde_json::json!({ "action": "set_value", "value": "42" })
         );
         assert!(serde_json::from_value::<SemanticAction>(serde_json::json!({})).is_err());
@@ -1640,14 +1562,8 @@ mod tests {
 
     #[test]
     fn node_action_wire_names_are_snake_case() -> Result<(), Box<dyn std::error::Error>> {
-        assert_eq!(
-            serde_json::to_value(NodeAction::Step)?,
-            serde_json::json!("step")
-        );
-        assert_eq!(
-            serde_json::to_value(NodeAction::Expand)?,
-            serde_json::json!("expand")
-        );
+        assert_eq!(serde_json::to_value(NodeAction::Step)?, serde_json::json!("step"));
+        assert_eq!(serde_json::to_value(NodeAction::Expand)?, serde_json::json!("expand"));
         Ok(())
     }
 }

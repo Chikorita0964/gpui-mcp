@@ -39,12 +39,7 @@ impl GpuiMcp {
     async fn ping(&self) -> Result<Json<Value>, String> {
         let client = self.client().await?;
         let result = client.call(Operation::Ping).await?;
-        let BridgeResult::Pong {
-            app_id,
-            pid,
-            protocol_version,
-        } = result
-        else {
+        let BridgeResult::Pong { app_id, pid, protocol_version } = result else {
             return Err("bridge returned the wrong result for ping".to_owned());
         };
         Ok(object_output(json!({

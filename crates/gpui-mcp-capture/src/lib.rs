@@ -49,9 +49,7 @@ impl CaptureOptions {
         if !(MIN_STABILITY_DEADLINE..=MAX_STABILITY_DEADLINE).contains(&deadline) {
             return Err(CaptureFailure::InvalidStabilityDeadline);
         }
-        Ok(Self {
-            settle_deadline: deadline,
-        })
+        Ok(Self { settle_deadline: deadline })
     }
 
     /// Return the configured compositor freshness deadline.
@@ -63,9 +61,7 @@ impl CaptureOptions {
 
 impl Default for CaptureOptions {
     fn default() -> Self {
-        Self {
-            settle_deadline: DEFAULT_SETTLE_DEADLINE,
-        }
+        Self { settle_deadline: DEFAULT_SETTLE_DEADLINE }
     }
 }
 
@@ -84,9 +80,7 @@ impl ScreenshotOptions {
         Self {
             area,
             geometry,
-            capture: CaptureOptions {
-                settle_deadline: DEFAULT_SETTLE_DEADLINE,
-            },
+            capture: CaptureOptions { settle_deadline: DEFAULT_SETTLE_DEADLINE },
         }
     }
 
@@ -156,9 +150,7 @@ impl LiveFrameStream {
         if !(1..=30).contains(&frames_per_second) {
             return Err(CaptureFailure::InvalidFrameRate);
         }
-        Ok(Self {
-            inner: platform_stream::PlatformFrameStream::open(target, frames_per_second)?,
-        })
+        Ok(Self { inner: platform_stream::PlatformFrameStream::open(target, frames_per_second)? })
     }
 
     /// Wait for the next native frame up to `deadline`.
@@ -270,11 +262,7 @@ impl std::error::Error for CaptureFailure {}
 // GPUI regions are floating-point logical pixels while image crops use u32
 // physical pixels. Values are validated, clamped, and images are capped before
 // these intentional conversions.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss
-)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 pub fn screenshot(
     window: CaptureTarget,
     options: ScreenshotOptions,
@@ -287,19 +275,10 @@ pub fn screenshot(
 
     if let ScreenshotTarget::Region { rect } = options.area {
         let geometry = options.geometry.ok_or(CaptureFailure::MissingGeometry)?;
-        let mapping = region_mapping(
-            image.width(),
-            image.height(),
-            native_origin,
-            reported_size,
-            geometry,
-        )?;
-        let left = (mapping.offset_x + rect.x * mapping.scale_x)
-            .floor()
-            .max(0.0) as u32;
-        let top = (mapping.offset_y + rect.y * mapping.scale_y)
-            .floor()
-            .max(0.0) as u32;
+        let mapping =
+            region_mapping(image.width(), image.height(), native_origin, reported_size, geometry)?;
+        let left = (mapping.offset_x + rect.x * mapping.scale_x).floor().max(0.0) as u32;
+        let top = (mapping.offset_y + rect.y * mapping.scale_y).floor().max(0.0) as u32;
         let right = (mapping.offset_x + (rect.x + rect.width) * mapping.scale_x)
             .ceil()
             .clamp(0.0, image.width() as f32) as u32;
@@ -346,9 +325,7 @@ pub fn frame(
     target: CaptureTarget,
     options: CaptureOptions,
 ) -> Result<NativeFrame, CaptureFailure> {
-    capture_frame(target, |capture| {
-        capture_after_compositor_settle(capture, options)
-    })
+    capture_frame(target, |capture| capture_after_compositor_settle(capture, options))
 }
 
 /// Capture the newest available native RGBA frame without screenshot settling.
@@ -402,17 +379,10 @@ fn capture_frame(
         .and_then(|width| native_window.height().map(|height| (width, height)))
         .map_err(|_| CaptureFailure::CaptureUnavailable)?;
     let image = settle(&mut || {
-        native_window
-            .capture_image()
-            .map_err(|_| CaptureFailure::CaptureUnavailable)
+        native_window.capture_image().map_err(|_| CaptureFailure::CaptureUnavailable)
     })?;
     validate_image_dimensions(&image)?;
-    Ok(NativeFrame {
-        image,
-        origin,
-        scale_factor,
-        reported_size,
-    })
+    Ok(NativeFrame { image, origin, scale_factor, reported_size })
 }
 
 #[cfg(target_os = "windows")]
@@ -445,10 +415,7 @@ mod platform_stream {
         type Error = String;
 
         fn new(context: Context<Self::Flags>) -> Result<Self, Self::Error> {
-            Ok(Self {
-                frames: context.flags,
-                scratch: Vec::new(),
-            })
+            Ok(Self { frames: context.flags, scratch: Vec::new() })
         }
 
         fn on_frame_arrived(
@@ -458,10 +425,8 @@ mod platform_stream {
         ) -> Result<(), Self::Error> {
             let width = frame.width();
             let height = frame.height();
-            let result = frame
-                .buffer()
-                .map_err(|_| CaptureFailure::CaptureUnavailable)
-                .and_then(|buffer| {
+            let result =
+                frame.buffer().map_err(|_| CaptureFailure::CaptureUnavailable).and_then(|buffer| {
                     RgbaImage::from_raw(
                         width,
                         height,
@@ -479,9 +444,7 @@ mod platform_stream {
         }
 
         fn on_closed(&mut self) -> Result<(), Self::Error> {
-            let _ = self
-                .frames
-                .try_send(Err(CaptureFailure::CaptureUnavailable));
+            let _ = self.frames.try_send(Err(CaptureFailure::CaptureUnavailable));
             Ok(())
         }
     }
@@ -526,24 +489,19 @@ mod platform_stream {
             );
             let control = FrameHandler::start_free_threaded(settings)
                 .map_err(|_| CaptureFailure::CaptureUnavailable)?;
-            Ok(Self {
-                frames,
-                control: Some(control),
-            })
+            Ok(Self { frames, control: Some(control) })
         }
 
         pub(super) fn next_frame(
             &mut self,
             deadline: Duration,
         ) -> Result<RgbaImage, CaptureFailure> {
-            self.frames
-                .recv_timeout(deadline)
-                .map_err(|error| match error {
-                    std::sync::mpsc::RecvTimeoutError::Timeout => CaptureFailure::FrameTimeout,
-                    std::sync::mpsc::RecvTimeoutError::Disconnected => {
-                        CaptureFailure::CaptureUnavailable
-                    }
-                })?
+            self.frames.recv_timeout(deadline).map_err(|error| match error {
+                std::sync::mpsc::RecvTimeoutError::Timeout => CaptureFailure::FrameTimeout,
+                std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                    CaptureFailure::CaptureUnavailable
+                }
+            })?
         }
     }
 
@@ -627,12 +585,8 @@ fn region_mapping(
     // used to size that image before it is compared against GPUI's own geometry.
     let native_to_image_x = image_width as f32 / reported_width as f32;
     let native_to_image_y = image_height as f32 / reported_height as f32;
-    let offset_x = bounds
-        .x
-        .mul_add(scale, -(native_origin.0 as f32 * native_to_image_x));
-    let offset_y = bounds
-        .y
-        .mul_add(scale, -(native_origin.1 as f32 * native_to_image_y));
+    let offset_x = bounds.x.mul_add(scale, -(native_origin.0 as f32 * native_to_image_x));
+    let offset_y = bounds.y.mul_add(scale, -(native_origin.1 as f32 * native_to_image_y));
     if !offset_x.is_finite()
         || !offset_y.is_finite()
         || offset_x < 0.0
@@ -660,12 +614,7 @@ fn region_mapping(
     // ratio. The ratio carries the window's trailing decoration inset, and using
     // it stretches every region by that inset over the width of the window, so a
     // crop picks up a column and a row that are outside the requested rectangle.
-    Ok(RegionMapping {
-        offset_x,
-        offset_y,
-        scale_x: scale,
-        scale_y: scale,
-    })
+    Ok(RegionMapping { offset_x, offset_y, scale_x: scale, scale_y: scale })
 }
 
 fn capture_after_compositor_settle<T>(
@@ -760,11 +709,7 @@ fn find_native_window(
             return Ok(window);
         }
     }
-    Err(CaptureFailure::TargetNotFound {
-        window_count,
-        pid_matches,
-        window_matches,
-    })
+    Err(CaptureFailure::TargetNotFound { window_count, pid_matches, window_matches })
 }
 
 #[cfg(test)]
@@ -783,16 +728,8 @@ mod tests {
     #[test]
     fn rejects_empty_and_non_finite_regions_before_native_access() {
         for rect in [
-            Rect {
-                width: 0.0,
-                height: 10.0,
-                ..Rect::default()
-            },
-            Rect {
-                width: f32::NAN,
-                height: 10.0,
-                ..Rect::default()
-            },
+            Rect { width: 0.0, height: 10.0, ..Rect::default() },
+            Rect { width: f32::NAN, height: 10.0, ..Rect::default() },
         ] {
             assert_eq!(
                 validate_target(ScreenshotTarget::Region { rect }),
@@ -812,11 +749,7 @@ mod tests {
                 let call = calls.get();
                 calls.set(call.saturating_add(1));
                 Ok::<_, CaptureFailure>(
-                    frames
-                        .get(call)
-                        .copied()
-                        .or_else(|| frames.last().copied())
-                        .unwrap_or(2),
+                    frames.get(call).copied().or_else(|| frames.last().copied()).unwrap_or(2),
                 )
             },
             CaptureOptions::new(Duration::from_millis(100))?,
@@ -978,22 +911,12 @@ mod tests {
                 (100, 100),
                 (1_442, 933),
                 CaptureGeometry {
-                    content_bounds: Rect {
-                        x: 101.0,
-                        y: 132.0,
-                        width: 1_440.0,
-                        height: 900.0,
-                    },
+                    content_bounds: Rect { x: 101.0, y: 132.0, width: 1_440.0, height: 900.0 },
                     viewport_size: (1_440.0, 900.0),
                     scale_factor: 1.0,
                 },
             ),
-            Ok(RegionMapping {
-                offset_x: 1.0,
-                offset_y: 32.0,
-                scale_x: 1.0,
-                scale_y: 1.0,
-            })
+            Ok(RegionMapping { offset_x: 1.0, offset_y: 32.0, scale_x: 1.0, scale_y: 1.0 })
         );
     }
 
@@ -1010,12 +933,7 @@ mod tests {
             (100, 100),
             (642, 452),
             CaptureGeometry {
-                content_bounds: Rect {
-                    x: 101.0,
-                    y: 131.0,
-                    width: 640.0,
-                    height: 420.0,
-                },
+                content_bounds: Rect { x: 101.0, y: 131.0, width: 640.0, height: 420.0 },
                 viewport_size: (640.0, 420.0),
                 scale_factor: 1.0,
             },
@@ -1023,12 +941,7 @@ mod tests {
 
         assert_eq!(
             mapping,
-            RegionMapping {
-                offset_x: 1.0,
-                offset_y: 31.0,
-                scale_x: 1.0,
-                scale_y: 1.0,
-            }
+            RegionMapping { offset_x: 1.0, offset_y: 31.0, scale_x: 1.0, scale_y: 1.0 }
         );
         // A 104-pixel-wide region at x=32 ends at the 137th image column, not the
         // 138th that the leftover ratio would have reached.
@@ -1052,12 +965,7 @@ mod tests {
             (500, 300),
             (1_440, 960),
             CaptureGeometry {
-                content_bounds: Rect {
-                    x: 500.0,
-                    y: 300.0,
-                    width: 1_440.0,
-                    height: 960.0,
-                },
+                content_bounds: Rect { x: 500.0, y: 300.0, width: 1_440.0, height: 960.0 },
                 viewport_size: (1_440.0, 960.0),
                 scale_factor: 1.5,
             },
@@ -1065,12 +973,7 @@ mod tests {
 
         assert_eq!(
             mapping,
-            RegionMapping {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                scale_x: 1.5,
-                scale_y: 1.5,
-            }
+            RegionMapping { offset_x: 0.0, offset_y: 0.0, scale_x: 1.5, scale_y: 1.5 }
         );
         Ok(())
     }
@@ -1084,12 +987,7 @@ mod tests {
                 (100, 132),
                 (1_435, 932),
                 CaptureGeometry {
-                    content_bounds: Rect {
-                        x: 100.0,
-                        y: 100.0,
-                        width: 1_435.0,
-                        height: 900.0,
-                    },
+                    content_bounds: Rect { x: 100.0, y: 100.0, width: 1_435.0, height: 900.0 },
                     viewport_size: (1_440.0, 900.0),
                     scale_factor: 1.0,
                 },

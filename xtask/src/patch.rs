@@ -44,11 +44,8 @@ pub(crate) fn apply(files: &mut Files, patch: &str) -> Result<()> {
         };
         let mut shift: isize = 0;
         for (index, hunk) in file.hunks.iter().enumerate() {
-            let named = if hunk.old.is_empty() {
-                hunk.old_start
-            } else {
-                hunk.old_start.saturating_sub(1)
-            };
+            let named =
+                if hunk.old.is_empty() { hunk.old_start } else { hunk.old_start.saturating_sub(1) };
             let expected = named.saturating_add_signed(shift);
             let at = find(&lines, &hunk.old, expected)
                 .with_context(|| format!("{display}: hunk {} does not apply", index + 1))?;
@@ -98,10 +95,7 @@ fn parse(patch: &str) -> Result<Vec<FilePatch>> {
             current.get_or_insert_with(empty).created = true;
         } else if line.starts_with("--- ") {
             // A patch without `diff --git` lines starts each file here.
-            if current
-                .as_ref()
-                .is_some_and(|file| !file.path.as_os_str().is_empty())
-            {
+            if current.as_ref().is_some_and(|file| !file.path.as_os_str().is_empty()) {
                 files.extend(current.take());
             }
         } else if let Some(target) = line.strip_prefix("+++ ") {
@@ -115,15 +109,10 @@ fn parse(patch: &str) -> Result<Vec<FilePatch>> {
         {
             bail!("unsupported patch line: {line}");
         } else if let Some(header) = line.strip_prefix("@@ ") {
-            let file = current
-                .as_mut()
-                .with_context(|| format!("hunk before any file header: {line}"))?;
+            let file =
+                current.as_mut().with_context(|| format!("hunk before any file header: {line}"))?;
             let (old_start, old_count, new_count) = parse_header(header)?;
-            let mut hunk = Hunk {
-                old_start,
-                old: Vec::new(),
-                new: Vec::new(),
-            };
+            let mut hunk = Hunk { old_start, old: Vec::new(), new: Vec::new() };
             while hunk.old.len() < old_count || hunk.new.len() < new_count {
                 let body = lines.next().context("patch ends inside a hunk")?;
                 let (kind, text) = match body.chars().next() {
@@ -159,11 +148,7 @@ fn parse(patch: &str) -> Result<Vec<FilePatch>> {
 }
 
 fn empty() -> FilePatch {
-    FilePatch {
-        path: PathBuf::new(),
-        created: false,
-        hunks: Vec::new(),
-    }
+    FilePatch { path: PathBuf::new(), created: false, hunks: Vec::new() }
 }
 
 /// Apply a `\ No newline at end of file` marker to the line before it.

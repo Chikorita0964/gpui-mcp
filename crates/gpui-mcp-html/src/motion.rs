@@ -44,14 +44,8 @@ pub(crate) struct Output {
 
 /// Whether an element's styles involve motion at all.
 pub(crate) fn has_motion(computed: &Computed) -> bool {
-    computed
-        .transitions
-        .iter()
-        .any(htmlswap::motion::Transition::is_active)
-        || computed
-            .animations
-            .iter()
-            .any(|animation| animation.name.is_some())
+    computed.transitions.iter().any(htmlswap::motion::Transition::is_active)
+        || computed.animations.iter().any(|animation| animation.name.is_some())
 }
 
 #[cfg(feature = "gpui-pre")]
@@ -188,10 +182,7 @@ mod kit {
             let frames = frames(source, animation.easing, inputs.compute_keyframe);
             let timing = timing(animation);
             for property in AnimatableProperty::ALL {
-                if frames
-                    .iter()
-                    .all(|(_, style, _)| property.get(style).is_none())
-                {
+                if frames.iter().all(|(_, style, _)| property.get(style).is_none()) {
                     continue;
                 }
                 let underlying = property
@@ -289,10 +280,7 @@ mod kit {
             .collect::<Vec<_>>();
         if list.first().is_none_or(|frame| frame.offset > 0.0) {
             let ease = frames.first().map_or(Easing::Linear, |frame| frame.2);
-            list.insert(
-                0,
-                Keyframe::new(0.0, value(underlying?)?).ease(easing(ease)),
-            );
+            list.insert(0, Keyframe::new(0.0, value(underlying?)?).ease(easing(ease)));
         }
         if list.last().is_none_or(|frame| frame.offset < 1.0) {
             list.push(Keyframe::new(1.0, value(underlying?)?));

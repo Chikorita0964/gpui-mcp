@@ -80,11 +80,7 @@ pub struct HookEvent {
 
 impl HookEvent {
     pub(crate) fn new(element_id: ElementId, event: UiEvent, value: Option<StateValue>) -> Self {
-        Self {
-            element_id,
-            event,
-            value,
-        }
+        Self { element_id, event, value }
     }
 
     /// Exact standard-HTML target ID.
@@ -137,9 +133,7 @@ impl HookRegistry {
         hook: impl Fn(&HookEvent, &mut Window, &mut App) -> HookOutcome + 'static,
     ) -> Result<(), HookRegistryError> {
         if self.events.contains_key(&id) {
-            return Err(HookRegistryError::DuplicateEvent {
-                id: id.as_str().to_owned(),
-            });
+            return Err(HookRegistryError::DuplicateEvent { id: id.as_str().to_owned() });
         }
         self.events.insert(id, Rc::new(hook));
         Ok(())
@@ -179,9 +173,7 @@ impl HookRegistry {
         writer: Option<StateWriter>,
     ) -> Result<(), HookRegistryError> {
         if self.states.contains_key(&id) {
-            return Err(HookRegistryError::DuplicateState {
-                id: id.as_str().to_owned(),
-            });
+            return Err(HookRegistryError::DuplicateState { id: id.as_str().to_owned() });
         }
         self.states.insert(id, StateHook { reader, writer });
         Ok(())
@@ -238,9 +230,7 @@ impl HookRegistry {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<StateValue> {
-        self.states
-            .get(source)
-            .map(|state| (state.reader)(window, cx))
+        self.states.get(source).map(|state| (state.reader)(window, cx))
     }
 
     pub(crate) fn write(
@@ -250,19 +240,14 @@ impl HookRegistry {
         window: &mut Window,
         cx: &mut App,
     ) -> HookOutcome {
-        self.states
-            .get(source)
-            .and_then(|state| state.writer.as_ref())
-            .map_or_else(
-                || Self::missing_hook_outcome("state binding is read-only"),
-                |writer| writer(value, window, cx),
-            )
+        self.states.get(source).and_then(|state| state.writer.as_ref()).map_or_else(
+            || Self::missing_hook_outcome("state binding is read-only"),
+            |writer| writer(value, window, cx),
+        )
     }
 
     fn missing_hook_outcome(reason: &str) -> HookOutcome {
-        HookOutcome::Rejected {
-            reason: reason.to_owned(),
-        }
+        HookOutcome::Rejected { reason: reason.to_owned() }
     }
 }
 

@@ -31,9 +31,7 @@ impl MessageLog {
         message: NewMessage,
         timestamp_ms: u64,
     ) -> Result<Message, BridgeError> {
-        message
-            .validate()
-            .map_err(|reason| BridgeError::new(ErrorCode::InvalidRequest, reason))?;
+        message.validate().map_err(|reason| BridgeError::new(ErrorCode::InvalidRequest, reason))?;
         if self.unread(from) >= MAX_UNREAD_MESSAGES {
             return Err(BridgeError::new(
                 ErrorCode::Busy,
@@ -70,10 +68,7 @@ impl MessageLog {
             MessageSender::App => self.read_by_agent,
             MessageSender::Agent => self.read_by_app,
         };
-        self.messages
-            .iter()
-            .filter(|message| message.from == from && message.id > read)
-            .count()
+        self.messages.iter().filter(|message| message.from == from && message.id > read).count()
     }
 
     /// Record that `reader` has read the other side's messages up to `id`.
@@ -144,15 +139,10 @@ mod tests {
     #[test]
     fn ids_are_monotonic_and_pages_resume_by_id() -> Result<(), ErrorCode> {
         let mut log = MessageLog::default();
-        let first = log
-            .post(MessageSender::App, NewMessage::text("hello"), 1)
-            .map_err(|e| e.code)?;
+        let first =
+            log.post(MessageSender::App, NewMessage::text("hello"), 1).map_err(|e| e.code)?;
         let reply = log
-            .post(
-                MessageSender::Agent,
-                NewMessage::text("hi").reply_to(first.id),
-                2,
-            )
+            .post(MessageSender::Agent, NewMessage::text("hi").reply_to(first.id), 2)
             .map_err(|e| e.code)?;
         assert_eq!((first.id, reply.id), (1, 2));
         assert_eq!(first.kind, "chat");
@@ -181,13 +171,11 @@ mod tests {
                 .map_err(|e| e.code)?;
         }
         assert_eq!(
-            log.post(MessageSender::App, NewMessage::text("one more"), 0)
-                .map_err(|e| e.code),
+            log.post(MessageSender::App, NewMessage::text("one more"), 0).map_err(|e| e.code),
             Err(ErrorCode::Busy)
         );
         // The other direction is unaffected.
-        log.post(MessageSender::Agent, NewMessage::text("reply"), 0)
-            .map_err(|e| e.code)?;
+        log.post(MessageSender::Agent, NewMessage::text("reply"), 0).map_err(|e| e.code)?;
 
         // Reading without marking leaves the backlog in place.
         let page = log.read(0, Some(MessageSender::App), 10, None);
@@ -195,8 +183,7 @@ mod tests {
         // The agent reading ten frees ten slots.
         let page = log.read(0, Some(MessageSender::App), 10, Some(MessageSender::Agent));
         assert_eq!(page.unread_from_app, 54);
-        log.post(MessageSender::App, NewMessage::text("fits now"), 0)
-            .map_err(|e| e.code)?;
+        log.post(MessageSender::App, NewMessage::text("fits now"), 0).map_err(|e| e.code)?;
         Ok(())
     }
 
@@ -204,13 +191,8 @@ mod tests {
     fn old_messages_are_dropped_and_reported() -> Result<(), ErrorCode> {
         let mut log = MessageLog::default();
         for index in 0..(MAX_RETAINED_MESSAGES + 10) {
-            let from = if index % 2 == 0 {
-                MessageSender::App
-            } else {
-                MessageSender::Agent
-            };
-            log.post(from, NewMessage::text("x"), 0)
-                .map_err(|e| e.code)?;
+            let from = if index % 2 == 0 { MessageSender::App } else { MessageSender::Agent };
+            log.post(from, NewMessage::text("x"), 0).map_err(|e| e.code)?;
             log.mark_read(MessageSender::Agent, u64::MAX);
             log.mark_read(MessageSender::App, u64::MAX);
         }

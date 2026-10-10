@@ -190,10 +190,7 @@ struct Host<Request, Response> {
 
 impl<Request, Response> Host<Request, Response> {
     fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            handler: RefCell::new(None),
-        }
+        Self { name, handler: RefCell::new(None) }
     }
 
     fn register(&self, handler: Handler<Request, Response>) -> Result<(), HostError> {
@@ -251,10 +248,7 @@ struct ListenerSlot<T> {
 
 impl<T> ListenerSlot<T> {
     fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            listener: RefCell::new(None),
-        }
+        Self { name, listener: RefCell::new(None) }
     }
 
     fn register(&self, listener: Listener<T>) -> Result<(), HostError> {
@@ -420,9 +414,8 @@ impl BridgeHandle {
         let listener_state = state;
         let listener_token = token.clone();
         let operation_timeout = config.operation_timeout;
-        let network_thread = thread::Builder::new()
-            .name("gpui-mcp-listener".to_owned())
-            .spawn(move || {
+        let network_thread =
+            thread::Builder::new().name("gpui-mcp-listener".to_owned()).spawn(move || {
                 runtime.block_on(run_listener(
                     listener,
                     command_tx,
@@ -551,8 +544,7 @@ impl BridgeHandle {
         capability: Capability,
         host: &Host<Request, Response>,
     ) -> Result<(), HostError> {
-        self.publish_capability(capability, host.name)
-            .inspect_err(|_| host.clear())
+        self.publish_capability(capability, host.name).inspect_err(|_| host.clear())
     }
 
     fn publish_capability(
@@ -754,10 +746,7 @@ fn spawn_message_listener(
                     );
                     for message in &page.messages {
                         delivered = message.id;
-                        if cx
-                            .update(|window, cx| handler(message, window, cx))
-                            .is_err()
-                        {
+                        if cx.update(|window, cx| handler(message, window, cx)).is_err() {
                             return;
                         }
                         state.mark_messages_read(MessageSender::App, message.id);
@@ -822,9 +811,9 @@ fn handle_ui_operation(
         })),
         // Marked between draws, so no frame straddles the mark.
         Operation::MarkFrames => Ok(BridgeResult::FrameStats(state.mark_frames())),
-        Operation::GetPointerLocation => Ok(BridgeResult::PointerLocation(
-            input::pointer_location(window),
-        )),
+        Operation::GetPointerLocation => {
+            Ok(BridgeResult::PointerLocation(input::pointer_location(window)))
+        }
         // Highlights are painted by the observer's overlay pass, which runs after the scene on
         // every frame whether or not views replay from cache, so a frame is all they need.
         Operation::ClearHighlights => {
@@ -838,15 +827,9 @@ fn handle_ui_operation(
             };
             validate_live_document_result(document).map(BridgeResult::LiveDocument)
         }
-        Operation::PreviewLiveDocument {
-            expected_revision,
-            source,
-        } => {
+        Operation::PreviewLiveDocument { expected_revision, source } => {
             let response = document_host.handle(
-                LiveDocumentRequest::Preview {
-                    expected_revision,
-                    source,
-                },
+                LiveDocumentRequest::Preview { expected_revision, source },
                 window,
                 cx,
             )?;
@@ -891,10 +874,7 @@ fn handle_ui_operation(
         }
         Operation::ExecuteApplicationCommand { name, arguments } => {
             let response = command_host.handle(
-                ApplicationCommandRequest::Execute {
-                    name: name.clone(),
-                    arguments,
-                },
+                ApplicationCommandRequest::Execute { name: name.clone(), arguments },
                 window,
                 cx,
             )?;
@@ -909,10 +889,9 @@ fn handle_ui_operation(
             window.refresh();
             Ok(BridgeResult::ApplicationCommand(result))
         }
-        _ => Err(BridgeError::new(
-            ErrorCode::Internal,
-            "operation was routed to the wrong executor",
-        )),
+        _ => {
+            Err(BridgeError::new(ErrorCode::Internal, "operation was routed to the wrong executor"))
+        }
     }
 }
 
@@ -1036,21 +1015,14 @@ async fn handle_connection(
 ) -> Result<(), io::Error> {
     let mut first_request = true;
     loop {
-        let read_timeout = if first_request {
-            IO_TIMEOUT
-        } else {
-            CONNECTION_IDLE_TIMEOUT
-        };
+        let read_timeout = if first_request { IO_TIMEOUT } else { CONNECTION_IDLE_TIMEOUT };
         let Some(request) = read_request(&mut stream, read_timeout).await? else {
             return Ok(());
         };
         first_request = false;
         let response = process_request(request, context.clone()).await;
         let close_after_response = response.error.as_ref().is_some_and(|error| {
-            matches!(
-                error.code,
-                ErrorCode::Unauthorized | ErrorCode::ProtocolMismatch
-            )
+            matches!(error.code, ErrorCode::Unauthorized | ErrorCode::ProtocolMismatch)
         });
         write_response(&mut stream, &response).await?;
         if close_after_response {
@@ -1081,10 +1053,7 @@ async fn read_request(
     }
     let length = u32::from_be_bytes(length_bytes) as usize;
     if length == 0 || length > MAX_REQUEST_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "request frame size is invalid",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "request frame size is invalid"));
     }
     let mut payload = vec![0_u8; length];
     timeout(IO_TIMEOUT, stream.read_exact(&mut payload))
@@ -1125,32 +1094,24 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             protocol_version: PROTOCOL_VERSION,
         }),
         Operation::GetTree => Ok(BridgeResult::Tree(context.state.tree())),
-        Operation::WaitForTree {
-            after_generation,
-            timeout_ms,
-        } => context
+        Operation::WaitForTree { after_generation, timeout_ms } => context
             .state
             .wait_for_tree(after_generation, Duration::from_millis(timeout_ms))
             .await
             .map(BridgeResult::Tree),
-        Operation::WaitForFrame {
-            after_frame_count,
-            timeout_ms,
-        } => context
+        Operation::WaitForFrame { after_frame_count, timeout_ms } => context
             .state
             .wait_for_frame(after_frame_count, Duration::from_millis(timeout_ms))
             .await
             .map(BridgeResult::FrameStats),
-        Operation::GetWindowGeometry => context
-            .state
-            .window_geometry()
-            .map(BridgeResult::WindowGeometry)
-            .ok_or_else(|| {
+        Operation::GetWindowGeometry => {
+            context.state.window_geometry().map(BridgeResult::WindowGeometry).ok_or_else(|| {
                 BridgeError::new(
                     ErrorCode::NotFound,
                     "GPUI window geometry is not available before the first completed root frame",
                 )
-            }),
+            })
+        }
         Operation::SetHighlights { highlights } => {
             context.state.set_highlights(highlights);
             request_ui_refresh(&context.command_tx, context.operation_timeout).await
@@ -1159,31 +1120,23 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             context.state.set_highlights(Vec::new());
             request_ui_refresh(&context.command_tx, context.operation_timeout).await
         }
-        Operation::UpsertAnnotations {
-            annotations,
-            replace_group,
-        } => match context.state.upsert_annotations(
-            annotations,
-            replace_group.as_deref(),
-            AnnotationSource::Agent,
-        ) {
+        Operation::UpsertAnnotations { annotations, replace_group } => match context
+            .state
+            .upsert_annotations(annotations, replace_group.as_deref(), AnnotationSource::Agent)
+        {
             Ok(applied) => request_ui_refresh(&context.command_tx, context.operation_timeout)
                 .await
                 .map(|_| BridgeResult::Annotations(applied)),
             Err(error) => Err(error),
         },
         Operation::RemoveAnnotations { ids } => {
-            context
-                .state
-                .remove_annotations(&ids, AnnotationSource::Agent);
+            context.state.remove_annotations(&ids, AnnotationSource::Agent);
             request_ui_refresh(&context.command_tx, context.operation_timeout)
                 .await
                 .map(|_| BridgeResult::Annotations(context.state.annotations()))
         }
         Operation::ClearAnnotations { group } => {
-            context
-                .state
-                .clear_annotations(group.as_deref(), AnnotationSource::Agent);
+            context.state.clear_annotations(group.as_deref(), AnnotationSource::Agent);
             request_ui_refresh(&context.command_tx, context.operation_timeout)
                 .await
                 .map(|_| BridgeResult::Annotations(context.state.annotations()))
@@ -1191,10 +1144,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         Operation::ListAnnotations => Ok(BridgeResult::Annotations(context.state.annotations())),
         Operation::SendMessage { message } => {
             if context.state.accepts_agent_messages() {
-                context
-                    .state
-                    .post_message(MessageSender::Agent, message)
-                    .map(BridgeResult::Message)
+                context.state.post_message(MessageSender::Agent, message).map(BridgeResult::Message)
             } else {
                 Err(BridgeError::new(
                     ErrorCode::Unsupported,
@@ -1202,13 +1152,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
                 ))
             }
         }
-        Operation::ReadMessages {
-            after,
-            from,
-            limit,
-            wait_ms,
-            mark_read,
-        } => {
+        Operation::ReadMessages { after, from, limit, wait_ms, mark_read } => {
             let reader = mark_read.then_some(MessageSender::Agent);
             let limit = usize::from(limit);
             let page = if wait_ms == 0 {
@@ -1222,14 +1166,11 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             Ok(BridgeResult::Messages(page))
         }
         Operation::GetFrameStats => Ok(BridgeResult::FrameStats(context.state.frame_stats())),
-        Operation::GetFrameReport {
-            after_frame_count,
-            frame_limit,
-        } => Ok(BridgeResult::FrameReport(
-            context
-                .state
-                .frame_report(after_frame_count, usize::from(frame_limit)),
-        )),
+        Operation::GetFrameReport { after_frame_count, frame_limit } => {
+            Ok(BridgeResult::FrameReport(
+                context.state.frame_report(after_frame_count, usize::from(frame_limit)),
+            ))
+        }
         Operation::GetPointerLocation => {
             dispatch_to_ui(
                 Operation::GetPointerLocation,
@@ -1238,9 +1179,9 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             )
             .await
         }
-        Operation::GetLogs { limit, min_level } => Ok(BridgeResult::Logs(
-            context.state.logs(limit, min_level.as_deref()),
-        )),
+        Operation::GetLogs { limit, min_level } => {
+            Ok(BridgeResult::Logs(context.state.logs(limit, min_level.as_deref())))
+        }
         Operation::ClearLogs => {
             context.state.clear_logs();
             Ok(BridgeResult::Ack)
@@ -1274,10 +1215,7 @@ async fn request_ui_refresh(
 ) -> Result<BridgeResult, BridgeError> {
     let (response_tx, response_rx) = oneshot::channel();
     command_tx
-        .try_send(UiCommand {
-            operation: Operation::ClearHighlights,
-            response: response_tx,
-        })
+        .try_send(UiCommand { operation: Operation::ClearHighlights, response: response_tx })
         .map_err(|_| BridgeError::new(ErrorCode::Busy, "UI command queue is full"))?;
     timeout(operation_timeout, response_rx)
         .await
@@ -1292,10 +1230,7 @@ async fn dispatch_to_ui(
 ) -> Result<BridgeResult, BridgeError> {
     let (response_tx, response_rx) = oneshot::channel();
     command_tx
-        .try_send(UiCommand {
-            operation,
-            response: response_tx,
-        })
+        .try_send(UiCommand { operation, response: response_tx })
         .map_err(|_| BridgeError::new(ErrorCode::Busy, "UI command queue is full"))?;
     timeout(operation_timeout, response_rx)
         .await
@@ -1338,15 +1273,10 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
         Operation::GetFrameReport { frame_limit, .. }
             if *frame_limit == 0 || usize::from(*frame_limit) > MAX_FRAME_SAMPLES =>
         {
-            Err(invalid(
-                "frame report limit must be between 1 and 512 frames",
-            ))
+            Err(invalid("frame report limit must be between 1 and 512 frames"))
         }
         Operation::SetHighlights { highlights } => validate_highlights(highlights),
-        Operation::UpsertAnnotations {
-            annotations,
-            replace_group,
-        } => {
+        Operation::UpsertAnnotations { annotations, replace_group } => {
             if annotations.len() > MAX_ANNOTATIONS {
                 return Err(invalid("no more than 128 annotations are allowed"));
             }
@@ -1356,15 +1286,11 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
             {
                 return Err(invalid("annotation group is invalid"));
             }
-            annotations
-                .iter()
-                .try_for_each(|annotation| annotation.validate().map_err(invalid))
+            annotations.iter().try_for_each(|annotation| annotation.validate().map_err(invalid))
         }
         Operation::RemoveAnnotations { ids } => {
             if ids.len() > MAX_ANNOTATIONS
-                || ids
-                    .iter()
-                    .any(|id| !gpui_mcp_protocol::is_valid_annotation_name(id))
+                || ids.iter().any(|id| !gpui_mcp_protocol::is_valid_annotation_name(id))
             {
                 return Err(invalid("annotation ids are invalid"));
             }
@@ -1390,19 +1316,13 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
                 return Err(invalid("log limit cannot exceed 512"));
             }
             if let Some(level) = min_level
-                && !matches!(
-                    level.as_str(),
-                    "trace" | "debug" | "info" | "warn" | "error"
-                )
+                && !matches!(level.as_str(), "trace" | "debug" | "info" | "warn" | "error")
             {
                 return Err(invalid("minimum log level is invalid"));
             }
             Ok(())
         }
-        Operation::PreviewLiveDocument {
-            expected_revision,
-            source,
-        } => {
+        Operation::PreviewLiveDocument { expected_revision, source } => {
             if *expected_revision == 0 {
                 return Err(invalid("expected live document revision must be nonzero"));
             }
@@ -1411,12 +1331,10 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
         Operation::ReadContextResource { uri } => validate_context_resource_uri(uri),
         Operation::ExecuteApplicationCommand { name, arguments } => {
             validate_application_command_name(name)?;
-            if serde_json::to_vec(arguments).map_or(true, |value| {
-                value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES
-            }) {
-                return Err(invalid(
-                    "application command arguments are invalid or too large",
-                ));
+            if serde_json::to_vec(arguments)
+                .map_or(true, |value| value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES)
+            {
+                return Err(invalid("application command arguments are invalid or too large"));
             }
             Ok(())
         }
@@ -1463,9 +1381,7 @@ fn validate_context_resource_descriptor(
         || descriptor.mime_type.is_empty()
         || descriptor.mime_type.len() > 128
         || descriptor.mime_type.chars().any(char::is_control)
-        || descriptor
-            .size
-            .is_some_and(|size| size > MAX_CONTEXT_RESOURCE_BYTES as u64)
+        || descriptor.size.is_some_and(|size| size > MAX_CONTEXT_RESOURCE_BYTES as u64)
     {
         return Err(invalid_host_result("resource"));
     }
@@ -1491,10 +1407,7 @@ fn validate_context_resource_list(
 fn validate_context_resource(resource: ContextResource) -> Result<ContextResource, BridgeError> {
     validate_context_resource_descriptor(&resource.descriptor)?;
     if resource.text.len() > MAX_CONTEXT_RESOURCE_BYTES
-        || resource
-            .descriptor
-            .size
-            .is_some_and(|size| size != resource.text.len() as u64)
+        || resource.descriptor.size.is_some_and(|size| size != resource.text.len() as u64)
     {
         return Err(invalid_host_result("resource"));
     }
@@ -1531,9 +1444,9 @@ fn validate_application_command_result(
     result: ApplicationCommandResult,
 ) -> Result<ApplicationCommandResult, BridgeError> {
     validate_application_command_name(&result.name).map_err(|_| invalid_host_result("command"))?;
-    if serde_json::to_vec(&result.output).map_or(true, |value| {
-        value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES
-    }) {
+    if serde_json::to_vec(&result.output)
+        .map_or(true, |value| value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES)
+    {
         return Err(invalid_host_result("command"));
     }
     Ok(result)
@@ -1579,10 +1492,7 @@ fn validate_live_document_preview(
 }
 
 fn invalid_host_result(host: &str) -> BridgeError {
-    BridgeError::new(
-        ErrorCode::Internal,
-        format!("{host} host returned an invalid result"),
-    )
+    BridgeError::new(ErrorCode::Internal, format!("{host} host returned an invalid result"))
 }
 
 fn validate_highlights(highlights: &[Highlight]) -> Result<(), BridgeError> {
@@ -1597,11 +1507,7 @@ fn validate_highlights(highlights: &[Highlight]) -> Result<(), BridgeError> {
         if color.len() != 8 || !color.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(invalid("highlight color must use #RRGGBBAA"));
         }
-        if highlight
-            .label
-            .as_ref()
-            .is_some_and(|label| label.len() > 128)
-        {
+        if highlight.label.as_ref().is_some_and(|label| label.len() > 128) {
             return Err(invalid("highlight label exceeds 128 bytes"));
         }
     }
@@ -1647,9 +1553,7 @@ fn make_local_endpoint(
     #[cfg(windows)]
     {
         let _ = endpoint_dir;
-        LocalEndpoint::Namespaced {
-            name: format!("gpui-mcp-{app_id}-{pid}-{instance_id:016x}"),
-        }
+        LocalEndpoint::Namespaced { name: format!("gpui-mcp-{app_id}-{pid}-{instance_id:016x}") }
     }
 }
 
@@ -1680,18 +1584,12 @@ fn create_listener(endpoint: &LocalEndpoint) -> io::Result<LocalSocketListener> 
     };
 
     let listener = options.create_tokio()?;
-    #[cfg(all(
-        unix,
-        not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))
-    ))]
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))))]
     secure_socket_permissions(endpoint)?;
     Ok(listener)
 }
 
-#[cfg(all(
-    unix,
-    not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))
-))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))))]
 fn secure_socket_permissions(endpoint: &LocalEndpoint) -> io::Result<()> {
     if let LocalEndpoint::Filesystem { path } = endpoint {
         use std::os::unix::fs::PermissionsExt as _;
@@ -1847,16 +1745,12 @@ mod tests {
                 .id("root")
                 .role(Role::Application)
                 .size_full()
-                .child(
-                    div()
-                        .id("volume")
-                        .role(Role::Slider)
-                        .w(px(200.))
-                        .h(px(24.))
-                        .on_a11y_action(AccessibleAction::Increment, move |_, _, _| {
-                            steps.set(steps.get() + 1);
-                        }),
-                )
+                .child(div().id("volume").role(Role::Slider).w(px(200.)).h(px(24.)).on_a11y_action(
+                    AccessibleAction::Increment,
+                    move |_, _, _| {
+                        steps.set(steps.get() + 1);
+                    },
+                ))
                 .child(div().id("status").child("Ready"))
         }
     }
@@ -1873,9 +1767,7 @@ mod tests {
         let automation_for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);
-            ActionFixture {
-                steps: steps_by_view,
-            }
+            ActionFixture { steps: steps_by_view }
         });
         visual.run_until_parked();
 
@@ -1900,10 +1792,7 @@ mod tests {
         let ack = visual.update(|window, cx| {
             super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)
         });
-        assert!(
-            ack.is_ok(),
-            "the node registered an Increment listener, so the action is handled"
-        );
+        assert!(ack.is_ok(), "the node registered an Increment listener, so the action is handled");
         visual.run_until_parked();
         assert_eq!(steps.get(), 1, "the node's own listener ran");
 

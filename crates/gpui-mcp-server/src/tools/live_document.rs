@@ -100,8 +100,7 @@ impl GpuiMcp {
         };
         let frame_wait_started = Instant::now();
         if preview.applied {
-            self.wait_for_frame(frame_count, std::time::Duration::from_secs(2))
-                .await?;
+            self.wait_for_frame(frame_count, std::time::Duration::from_secs(2)).await?;
         }
         let frame_wait_ms = frame_wait_started.elapsed().as_secs_f64() * 1_000.0;
         let ok = preview.applied;
@@ -145,40 +144,23 @@ mod tests {
 
     #[test]
     fn live_document_summary_reports_each_source_byte_count() {
-        let document = LiveDocument {
-            revision: 7,
-            source: source(),
-            diagnostics: Vec::new(),
-        };
+        let document = LiveDocument { revision: 7, source: source(), diagnostics: Vec::new() };
         let summary = live_document_summary(&document);
         assert_eq!(summary["revision"], json!(7));
-        assert_eq!(
-            summary["byte_counts"]["html"],
-            json!(document.source.html.len())
-        );
-        assert_eq!(
-            summary["byte_counts"]["css"],
-            json!(document.source.css.len())
-        );
+        assert_eq!(summary["byte_counts"]["html"], json!(document.source.html.len()));
+        assert_eq!(summary["byte_counts"]["css"], json!(document.source.css.len()));
         assert_eq!(
             summary["byte_counts"]["bindings_ron"],
             json!(document.source.bindings_ron.len())
         );
-        assert!(
-            summary.get("document").is_none(),
-            "the sources are not part of the compact reply"
-        );
+        assert!(summary.get("document").is_none(), "the sources are not part of the compact reply");
     }
 
     #[test]
     fn preview_summary_counts_errors_and_not_warnings() {
         let preview = LiveDocumentPreview {
             applied: false,
-            document: LiveDocument {
-                revision: 7,
-                source: source(),
-                diagnostics: Vec::new(),
-            },
+            document: LiveDocument { revision: 7, source: source(), diagnostics: Vec::new() },
             diagnostics: vec![
                 LiveDocumentDiagnostic {
                     severity: "warning".to_owned(),

@@ -70,9 +70,7 @@ impl AnnotationArgs {
             id: self.id,
             target,
             label: self.label,
-            color: self
-                .color
-                .unwrap_or_else(|| DEFAULT_ANNOTATION_COLOR.to_owned()),
+            color: self.color.unwrap_or_else(|| DEFAULT_ANNOTATION_COLOR.to_owned()),
             style: self.style,
             group: self.group,
             ttl_ms: self.ttl_ms,
@@ -99,17 +97,10 @@ impl GpuiMcp {
             .into_iter()
             .map(AnnotationArgs::into_spec)
             .collect::<Result<Vec<_>, _>>()?;
-        let applied = self
-            .upsert_annotations(annotations, args.replace_group)
-            .await?;
-        let ids: Vec<_> = applied
-            .into_iter()
-            .map(|annotation| annotation.id)
-            .collect();
+        let applied = self.upsert_annotations(annotations, args.replace_group).await?;
+        let ids: Vec<_> = applied.into_iter().map(|annotation| annotation.id).collect();
         let annotations = self.list_annotations_settled().await?;
-        Ok(object_output(
-            json!({ "applied": ids, "annotations": annotations }),
-        ))
+        Ok(object_output(json!({ "applied": ids, "annotations": annotations })))
     }
 
     #[tool(description = "Remove annotations by id, by group, or all of them with all=true")]
@@ -121,13 +112,11 @@ impl GpuiMcp {
             return Err("name ids, a group, or set all=true".to_owned());
         }
         if !args.ids.is_empty() {
-            self.annotation_call(Operation::RemoveAnnotations { ids: args.ids })
-                .await?;
+            self.annotation_call(Operation::RemoveAnnotations { ids: args.ids }).await?;
         }
         if args.group.is_some() || args.all {
             let group = if args.all { None } else { args.group };
-            self.annotation_call(Operation::ClearAnnotations { group })
-                .await?;
+            self.annotation_call(Operation::ClearAnnotations { group }).await?;
         }
         let annotations = self.list_annotations_settled().await?;
         Ok(object_output(json!({ "annotations": annotations })))
@@ -169,8 +158,7 @@ impl GpuiMcp {
                 Ok(spec)
             })
             .collect::<Result<Vec<_>, String>>()?;
-        self.upsert_annotations(annotations, Some(HIGHLIGHT_GROUP.to_owned()))
-            .await?;
+        self.upsert_annotations(annotations, Some(HIGHLIGHT_GROUP.to_owned())).await?;
         Ok(super::ack_json("highlighted"))
     }
 
@@ -199,10 +187,7 @@ impl GpuiMcp {
         replace_group: Option<String>,
     ) -> Result<Vec<Annotation>, String> {
         let applied = self
-            .annotation_call(Operation::UpsertAnnotations {
-                annotations,
-                replace_group,
-            })
+            .annotation_call(Operation::UpsertAnnotations { annotations, replace_group })
             .await?;
         self.settle_pending(Duration::from_secs(2)).await?;
         Ok(applied)
@@ -256,11 +241,7 @@ mod tests {
             .into_spec()
             .is_err()
         );
-        assert!(
-            args(json!({ "node_id": "save", "color": "blue" }))?
-                .into_spec()
-                .is_err()
-        );
+        assert!(args(json!({ "node_id": "save", "color": "blue" }))?.into_spec().is_err());
         Ok(())
     }
 

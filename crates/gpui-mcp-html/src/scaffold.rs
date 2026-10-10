@@ -89,9 +89,8 @@ impl ProjectSpec {
     /// Pin the generated project to one exact public repository commit.
     #[must_use]
     pub fn git_revision(mut self, revision: impl Into<String>) -> Self {
-        self.dependencies = ProjectDependencies::PublicRepository {
-            revision: Some(revision.into()),
-        };
+        self.dependencies =
+            ProjectDependencies::PublicRepository { revision: Some(revision.into()) };
         self
     }
 
@@ -125,26 +124,19 @@ impl ProjectSpec {
 pub fn generate(options: &ProjectSpec) -> Result<PathBuf, ScaffoldError> {
     validate_package_name(&options.name)?;
     if options.destination.exists() {
-        return Err(ScaffoldError::DestinationExists {
-            path: options.destination.clone(),
-        });
+        return Err(ScaffoldError::DestinationExists { path: options.destination.clone() });
     }
     let dependencies = match &options.dependencies {
         ProjectDependencies::PublicRepository { revision } => {
             if let Some(revision) = revision {
                 validate_repository_revision(revision)?;
             }
-            ManifestDependencies::PublicRepository {
-                revision: revision.as_deref(),
-            }
+            ManifestDependencies::PublicRepository { revision: revision.as_deref() }
         }
         ProjectDependencies::LocalWorkspace(path) => {
             let workspace = path
                 .canonicalize()
-                .map_err(|source| ScaffoldError::Workspace {
-                    path: path.clone(),
-                    source,
-                })?;
+                .map_err(|source| ScaffoldError::Workspace { path: path.clone(), source })?;
             validate_workspace(&workspace)?;
             ManifestDependencies::LocalWorkspace(cargo_path(&workspace)?)
         }
@@ -152,9 +144,7 @@ pub fn generate(options: &ProjectSpec) -> Result<PathBuf, ScaffoldError> {
     let destination = absolute_destination(&options.destination)?;
     let parent = destination
         .parent()
-        .ok_or_else(|| ScaffoldError::InvalidDestination {
-            path: destination.clone(),
-        })?;
+        .ok_or_else(|| ScaffoldError::InvalidDestination { path: destination.clone() })?;
     fs::create_dir_all(parent).map_err(|source| ScaffoldError::Io {
         operation: "create destination parent",
         path: parent.to_owned(),
@@ -168,28 +158,18 @@ pub fn generate(options: &ProjectSpec) -> Result<PathBuf, ScaffoldError> {
     let file_name = destination
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| ScaffoldError::InvalidDestination {
-            path: destination.clone(),
-        })?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    let staging = parent.join(format!(
-        ".{file_name}.gpui-mcp-generate-{}-{nonce}",
-        std::process::id()
-    ));
+        .ok_or_else(|| ScaffoldError::InvalidDestination { path: destination.clone() })?;
+    let nonce =
+        SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |duration| duration.as_nanos());
+    let staging =
+        parent.join(format!(".{file_name}.gpui-mcp-generate-{}-{nonce}", std::process::id()));
     let mut guard = StagingGuard::new(staging.clone());
     fs::create_dir(&staging).map_err(|source| ScaffoldError::Io {
         operation: "create staging directory",
         path: staging.clone(),
         source,
     })?;
-    create_project_files(
-        &staging,
-        &options.name,
-        &dependencies,
-        options.window_decorations,
-    )?;
+    create_project_files(&staging, &options.name, &dependencies, options.window_decorations)?;
     fs::rename(&staging, &destination).map_err(|source| ScaffoldError::Io {
         operation: "publish scaffolded project",
         path: destination.clone(),
@@ -482,18 +462,14 @@ button {
 
 fn validate_package_name(name: &str) -> Result<(), ScaffoldError> {
     let mut characters = name.chars();
-    let valid = characters
-        .next()
-        .is_some_and(|character| character.is_ascii_lowercase())
+    let valid = characters.next().is_some_and(|character| character.is_ascii_lowercase())
         && characters.all(|character| {
             character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
         });
     if valid && name.len() <= 64 {
         Ok(())
     } else {
-        Err(ScaffoldError::InvalidPackageName {
-            name: name.to_owned(),
-        })
+        Err(ScaffoldError::InvalidPackageName { name: name.to_owned() })
     }
 }
 
@@ -536,13 +512,13 @@ fn absolute_destination(destination: &Path) -> Result<PathBuf, ScaffoldError> {
     if destination.is_absolute() {
         Ok(destination.to_owned())
     } else {
-        std::env::current_dir()
-            .map(|current| current.join(destination))
-            .map_err(|source| ScaffoldError::Io {
+        std::env::current_dir().map(|current| current.join(destination)).map_err(|source| {
+            ScaffoldError::Io {
                 operation: "resolve current directory",
                 path: destination.to_owned(),
                 source,
-            })
+            }
+        })
     }
 }
 
@@ -724,10 +700,7 @@ mod tests {
             &ProjectSpec::new("unpinned-app", destination).git_revision("main\"\nmalicious = true"),
         );
 
-        assert!(matches!(
-            result,
-            Err(super::ScaffoldError::InvalidRepositoryRevision)
-        ));
+        assert!(matches!(result, Err(super::ScaffoldError::InvalidRepositoryRevision)));
         Ok(())
     }
 }

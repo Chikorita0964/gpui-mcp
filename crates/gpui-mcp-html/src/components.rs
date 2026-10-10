@@ -16,11 +16,7 @@ pub struct ComponentNode {
 
 impl ComponentNode {
     pub(crate) fn new(id: String, tag: String, attributes: BTreeMap<String, String>) -> Self {
-        Self {
-            id,
-            tag,
-            attributes,
-        }
+        Self { id, tag, attributes }
     }
 
     /// Stable standard-HTML ID, or a deterministic generated preview ID.
@@ -89,9 +85,7 @@ impl ComponentRegistry {
 
 fn is_custom_element_name(tag: &str) -> bool {
     let mut characters = tag.chars();
-    characters
-        .next()
-        .is_some_and(|character| character.is_ascii_lowercase())
+    characters.next().is_some_and(|character| character.is_ascii_lowercase())
         && tag.contains('-')
         && !matches!(
             tag,

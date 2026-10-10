@@ -24,12 +24,7 @@ pub(crate) fn declares_name(element: &htmlswap::RenderElement) -> bool {
         .stylesheet_declarations
         .iter()
         .chain(&element.styles)
-        .chain(
-            element
-                .style_variants
-                .iter()
-                .flat_map(|variant| &variant.declarations),
-        )
+        .chain(element.style_variants.iter().flat_map(|variant| &variant.declarations))
         .any(|declaration| declaration.property.as_str() == "view-transition-name")
 }
 
@@ -239,10 +234,8 @@ mod kit {
                     let Some(ui) = incoming.borrow().clone() else {
                         return NameStyle::default();
                     };
-                    let environment = Environment {
-                        media: media.get(),
-                        view_transition_types: Some(types),
-                    };
+                    let environment =
+                        Environment { media: media.get(), view_transition_types: Some(types) };
                     let holds = |condition: &RenderStyleCondition| {
                         cascade::condition_holds(condition, &environment)
                     };
@@ -295,9 +288,9 @@ mod kit {
             ) -> Option<AnyElement>,
         ) -> AnyElement {
             self.inner.stage(root, |old, part| match part {
-                OldPart::Root { named } => draw_old(old, None, &|path| {
-                    named.iter().any(|captured| captured.key == path)
-                }),
+                OldPart::Root { named } => {
+                    draw_old(old, None, &|path| named.iter().any(|captured| captured.key == path))
+                }
                 OldPart::Named(captured) => draw_old(old, Some(&captured.key), &|_| false),
             })
         }
@@ -314,17 +307,11 @@ mod kit {
         media: &dyn Fn(&RenderStyleCondition) -> bool,
     ) -> NameStyle {
         let compact = |values: &[SharedString]| {
-            values
-                .iter()
-                .map(|value| CompactString::from(value.as_ref()))
-                .collect::<Vec<_>>()
+            values.iter().map(|value| CompactString::from(value.as_ref())).collect::<Vec<_>>()
         };
         let (classes, types) = (compact(classes), compact(types));
-        let declarations = |part| {
-            motion
-                .view_transition
-                .declarations_for(part, name, &classes, &types, media)
-        };
+        let declarations =
+            |part| motion.view_transition.declarations_for(part, name, &classes, &types, media);
         let group_ua = user_agent(GROUP);
         let group =
             animations(std::iter::once(&group_ua).chain(declarations(ViewTransitionPart::Group)))
@@ -341,10 +328,7 @@ mod kit {
                 style.group = Some(timing(group).ease(easing(group.easing)));
                 style
             }
-            None => NameStyle {
-                group: None,
-                ..NameStyle::default()
-            },
+            None => NameStyle { group: None, ..NameStyle::default() },
         };
         // The image pair inherits the group's timing, as the pseudo-elements
         // do in browsers; author rules then replace the default fades.
@@ -354,15 +338,9 @@ mod kit {
             (ViewTransitionPart::New, FADE_IN, &mut style.new),
         ] {
             let default = user_agent(ua_name);
-            let authored = animations(
-                std::iter::once(&default)
-                    .chain(&inherited)
-                    .chain(declarations(part)),
-            );
-            if authored
-                .iter()
-                .all(|animation| animation.name.as_deref() == Some(ua_name))
-            {
+            let authored =
+                animations(std::iter::once(&default).chain(&inherited).chain(declarations(part)));
+            if authored.iter().all(|animation| animation.name.as_deref() == Some(ua_name)) {
                 continue;
             }
             list.clear();
@@ -381,10 +359,7 @@ mod kit {
     fn user_agent(name: &str) -> StyleDeclaration {
         StyleDeclaration::new(
             "animation",
-            format!(
-                "{}ms ease both {name}",
-                gpui_view_transitions::DEFAULT_DURATION.as_millis()
-            ),
+            format!("{}ms ease both {name}", gpui_view_transitions::DEFAULT_DURATION.as_millis()),
             false,
             None,
         )
@@ -423,9 +398,7 @@ mod kit {
         };
         let mut image = ImageAnimation::new(timing(animation), fill);
         let sets = |property: AnimatableProperty| {
-            frames
-                .iter()
-                .any(|(_, style, _)| property.get(style).is_some())
+            frames.iter().any(|(_, style, _)| property.get(style).is_some())
         };
         if sets(AnimatableProperty::Opacity)
             && let Some(opacity) = keyframes(
@@ -441,16 +414,10 @@ mod kit {
             && let Some(translate) = keyframes(
                 &frames,
                 AnimatableProperty::Translate,
-                Some(AnimatedValue::Translate(
-                    LengthPercentage::ZERO,
-                    LengthPercentage::ZERO,
-                )),
+                Some(AnimatedValue::Translate(LengthPercentage::ZERO, LengthPercentage::ZERO)),
                 |value| {
                     let (x, y) = value.translate()?;
-                    Some(Translate {
-                        x: offset(x),
-                        y: offset(y),
-                    })
+                    Some(Translate { x: offset(x), y: offset(y) })
                 },
             )
         {
@@ -460,10 +427,7 @@ mod kit {
     }
 
     const fn offset(length: LengthPercentage) -> Offset {
-        Offset {
-            px: length.px,
-            fraction: length.fraction,
-        }
+        Offset { px: length.px, fraction: length.fraction }
     }
 
     /// Longhands that hand the group's timing down to its image pair.

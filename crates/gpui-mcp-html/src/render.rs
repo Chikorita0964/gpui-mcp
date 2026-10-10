@@ -49,13 +49,7 @@ struct ElementState {
 
 impl Default for ElementState {
     fn default() -> Self {
-        Self {
-            visible: true,
-            enabled: true,
-            checked: None,
-            selected: None,
-            expanded: None,
-        }
+        Self { visible: true, enabled: true, checked: None, selected: None, expanded: None }
     }
 }
 
@@ -141,9 +135,7 @@ impl SemanticNamespace {
         let value = value.into();
         let valid_length = !value.is_empty() && value.len() <= 64;
         let mut characters = value.chars();
-        let valid_start = characters
-            .next()
-            .is_some_and(|character| character.is_ascii_lowercase());
+        let valid_start = characters.next().is_some_and(|character| character.is_ascii_lowercase());
         let valid_rest = characters.all(|character| {
             character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
         });
@@ -322,10 +314,7 @@ impl LiveHtml {
             color_scheme: None,
             pointer_hovered: Rc::default(),
             pressed: Rc::default(),
-            frame: Cell::new(FrameContext {
-                reduce_motion: false,
-                moving: false,
-            }),
+            frame: Cell::new(FrameContext { reduce_motion: false, moving: false }),
             transitions,
             named_elements,
         })
@@ -382,10 +371,7 @@ impl LiveHtml {
     /// Returns an error without changing the active document when a candidate
     /// binding references an unavailable hook or the revision counter is exhausted.
     pub fn reload(&mut self, ui: HtmlUi) -> Result<ReloadReport, ReloadError> {
-        let revision = self
-            .revision
-            .checked_add(1)
-            .ok_or(ReloadError::RevisionExhausted)?;
+        let revision = self.revision.checked_add(1).ok_or(ReloadError::RevisionExhausted)?;
         self.hooks.validate(ui.bindings())?;
         let bindings = index_bindings(ui.bindings().bindings.iter());
         let diagnostics = collect_render_diagnostics(ui.plan());
@@ -407,21 +393,13 @@ impl LiveHtml {
         }
 
         let previous_focus_handles = self.focus_handles.borrow().len();
-        self.focus_handles
-            .borrow_mut()
-            .retain(|element_id, _| element_ids.contains(element_id));
-        self.scroll_handles
-            .borrow_mut()
-            .retain(|element_id, _| element_ids.contains(element_id));
+        self.focus_handles.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
+        self.scroll_handles.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
         let retained_focus_handles = self.focus_handles.borrow().len();
-        self.text_inputs
-            .borrow_mut()
-            .retain(|element_id, _| element_ids.contains(element_id));
+        self.text_inputs.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
 
         let previous_disclosures = self.disclosures.borrow().len();
-        self.disclosures
-            .borrow_mut()
-            .retain(|element_id, _| element_ids.contains(element_id));
+        self.disclosures.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
         let retained_disclosures = self.disclosures.borrow().len();
 
         let hovered_element_retained = self
@@ -434,9 +412,7 @@ impl LiveHtml {
         }
 
         self.styles.borrow_mut().elements.clear();
-        self.pointer_hovered
-            .borrow_mut()
-            .retain(|element_id| element_ids.contains(element_id));
+        self.pointer_hovered.borrow_mut().retain(|element_id| element_ids.contains(element_id));
         let previous_revision = self.revision;
         self.ui = Rc::new(ui);
         self.transitions.set_document(self.ui.clone());
@@ -480,17 +456,12 @@ impl LiveHtml {
             .bindings
             .iter()
             .map(|(element_id, bindings)| {
-                (
-                    element_id.clone(),
-                    read_properties(bindings, &self.hooks, window, cx),
-                )
+                (element_id.clone(), read_properties(bindings, &self.hooks, window, cx))
             })
             .filter(|(_, values)| !values.is_empty())
             .collect();
-        let types = types
-            .into_iter()
-            .map(|kind| SharedString::from(kind.as_ref().to_owned()))
-            .collect();
+        let types =
+            types.into_iter().map(|kind| SharedString::from(kind.as_ref().to_owned())).collect();
         let started = self.begin_view_transition(types, Some(properties));
         if started {
             window.refresh();
@@ -575,10 +546,7 @@ impl LiveHtml {
         self.automation.attach(window);
         self.viewport_override.set(viewport);
         let now = cx.background_executor().now();
-        self.frame.set(FrameContext {
-            reduce_motion: cx.reduce_motion(),
-            moving: false,
-        });
+        self.frame.set(FrameContext { reduce_motion: cx.reduce_motion(), moving: false });
         self.drawn.borrow_mut().begin();
         // A running transition's types match `:active-view-transition-type()`.
         let types = self.transitions.types();
@@ -937,16 +905,10 @@ impl LiveHtml {
         if !state.visible {
             host = host.hidden();
         }
-        let translate = style
-            .translate
-            .filter(|translate| !motion::is_zero(*translate));
+        let translate = style.translate.filter(|translate| !motion::is_zero(*translate));
         let scroll_axes = ScrollAxes::of(style);
         let scroll_handle = scroll_axes.any().then(|| {
-            self.scroll_handles
-                .borrow_mut()
-                .entry(element_id.clone())
-                .or_default()
-                .clone()
+            self.scroll_handles.borrow_mut().entry(element_id.clone()).or_default().clone()
         });
         let toggle = semantic_toggle(element, state, bindings);
         let mut host = install_pointer_hooks(
@@ -1027,11 +989,7 @@ impl LiveHtml {
             host = host.aria_level(level.into());
         }
         if let Some(checked) = state.checked {
-            host = host.aria_toggled(if checked {
-                Toggled::True
-            } else {
-                Toggled::False
-            });
+            host = host.aria_toggled(if checked { Toggled::True } else { Toggled::False });
         }
         if let Some(selected) = state.selected {
             host = host.aria_selected(selected);
@@ -1055,10 +1013,7 @@ impl LiveHtml {
             host = host.aria_description(title);
             let tooltip_text = SharedString::from(title.to_owned());
             host = host.tooltip(move |_window, cx| {
-                cx.new(|_| TitleTooltip {
-                    text: tooltip_text.clone(),
-                })
-                .into()
+                cx.new(|_| TitleTooltip { text: tooltip_text.clone() }).into()
             });
         }
         if let Some(text) = element_text(element, property_values, bindings) {
@@ -1108,13 +1063,7 @@ impl LiveHtml {
         let root_scope = initial.document_root(root_declarations.iter().copied());
         let root_style = cascade::typed(&root_scope, &initial, &root_declarations);
         self.scopes.borrow_mut().push(root_scope);
-        let inert = Inert {
-            old,
-            keep: None,
-            is_named,
-            environment,
-            fonts: available_fonts,
-        };
+        let inert = Inert { old, keep: None, is_named, environment, fonts: available_fonts };
         let mut path = Vec::new();
         let children = old_plan
             .nodes
@@ -1177,13 +1126,7 @@ impl LiveHtml {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        let Inert {
-            old,
-            keep,
-            is_named,
-            environment: viewport,
-            fonts: available_fonts,
-        } = *inert;
+        let Inert { old, keep, is_named, environment: viewport, fonts: available_fonts } = *inert;
         let element_id = ElementId::new(
             attribute(element, "id").map_or_else(|| generated_id(path), str::to_owned),
         );
@@ -1204,9 +1147,7 @@ impl LiveHtml {
         let declarations = cascade::declarations(element, &viewport, Interaction::default(), &[]);
         let scope = parent.child(declarations.iter().copied());
         let style = cascade::typed(&scope, &parent, &declarations);
-        let text = properties
-            .get(&UiProperty::Text)
-            .or_else(|| properties.get(&UiProperty::Value));
+        let text = properties.get(&UiProperty::Text).or_else(|| properties.get(&UiProperty::Value));
         let children = if let Some(value) = text {
             vec![value.display().into_any_element()]
         } else if is_text_editable(element) {
@@ -1244,16 +1185,10 @@ impl LiveHtml {
         if !state.visible {
             host = host.hidden();
         }
-        if let Some(width) = properties
-            .get(&UiProperty::Width)
-            .and_then(StateValue::as_pixels)
-        {
+        if let Some(width) = properties.get(&UiProperty::Width).and_then(StateValue::as_pixels) {
             host = host.w(px(width));
         }
-        if let Some(height) = properties
-            .get(&UiProperty::Height)
-            .and_then(StateValue::as_pixels)
-        {
+        if let Some(height) = properties.get(&UiProperty::Height).and_then(StateValue::as_pixels) {
             host = host.h(px(height));
         }
         if keep == Some(path.as_slice()) {
@@ -1314,9 +1249,8 @@ impl LiveHtml {
             .map(|(index, child)| {
                 let mut child_path = path.to_vec();
                 child_path.push(index);
-                let child_disclosure_owner = disclosure_owner
-                    .as_ref()
-                    .filter(|_| is_summary_element(child));
+                let child_disclosure_owner =
+                    disclosure_owner.as_ref().filter(|_| is_summary_element(child));
                 self.render_node(
                     child,
                     &child_path,
@@ -1355,9 +1289,7 @@ impl LiveHtml {
                     String::new()
                 }
             });
-        let placeholder = attribute(element, "placeholder")
-            .unwrap_or_default()
-            .to_owned();
+        let placeholder = attribute(element, "placeholder").unwrap_or_default().to_owned();
         let multiline = element.source_tag == "textarea";
         let masked = is_password(element);
         let disabled = !runtime.enabled;
@@ -1369,9 +1301,7 @@ impl LiveHtml {
             .cloned();
         if let Some(input) = cached_input {
             let needs_sync =
-                input
-                    .read(cx)
-                    .needs_sync(self.revision, &value, &placeholder, disabled, cx);
+                input.read(cx).needs_sync(self.revision, &value, &placeholder, disabled, cx);
             if needs_sync {
                 let options = RuntimeTextInputOptions {
                     value,
@@ -1400,9 +1330,7 @@ impl LiveHtml {
             hooks: self.hooks.clone(),
         };
         let input = cx.new(|cx| RuntimeTextInput::new(options, window, cx));
-        self.text_inputs
-            .borrow_mut()
-            .insert(runtime.element_id.clone(), input.clone());
+        self.text_inputs.borrow_mut().insert(runtime.element_id.clone(), input.clone());
         input
     }
 
@@ -1444,26 +1372,19 @@ impl LiveHtml {
         cx: &mut App,
     ) -> Option<FocusHandle> {
         let focusable = focus_styles
-            || runtime.bindings.iter().any(|binding| {
-                matches!(
-                    binding,
-                    Binding::Event {
-                        event: UiEvent::Focus,
-                        ..
-                    }
-                )
-            });
-        text_input
-            .map(|input| input.read(cx).focus_handle(cx))
-            .or_else(|| {
-                focusable.then(|| {
-                    self.focus_handles
-                        .borrow_mut()
-                        .entry(runtime.element_id.clone())
-                        .or_insert_with(|| cx.focus_handle())
-                        .clone()
-                })
+            || runtime
+                .bindings
+                .iter()
+                .any(|binding| matches!(binding, Binding::Event { event: UiEvent::Focus, .. }));
+        text_input.map(|input| input.read(cx).focus_handle(cx)).or_else(|| {
+            focusable.then(|| {
+                self.focus_handles
+                    .borrow_mut()
+                    .entry(runtime.element_id.clone())
+                    .or_insert_with(|| cx.focus_handle())
+                    .clone()
             })
+        })
     }
 
     /// The element's interaction state as of this frame, before its
@@ -1505,12 +1426,7 @@ impl LiveHtml {
         } else {
             0
         };
-        let key = (
-            parent.fingerprint(),
-            environment.key(),
-            interaction.bits(),
-            ancestors_key,
-        );
+        let key = (parent.fingerprint(), environment.key(), interaction.bits(), ancestors_key);
         if let Some(cached) = self.styles.borrow().elements.get(element_id)
             && cached.key == key
         {
@@ -1520,13 +1436,10 @@ impl LiveHtml {
         let starting =
             cascade::starting_declarations(element, environment, interaction, &ancestors);
         let computed = Rc::new(cascade::compute(parent, &declarations, starting.as_deref()));
-        self.styles.borrow_mut().elements.insert(
-            element_id.clone(),
-            CachedStyle {
-                key,
-                computed: computed.clone(),
-            },
-        );
+        self.styles
+            .borrow_mut()
+            .elements
+            .insert(element_id.clone(), CachedStyle { key, computed: computed.clone() });
         computed
     }
 
@@ -1585,15 +1498,10 @@ fn apply_native_state(host: Div, element: &RenderElement, state: &ElementState) 
         return host;
     }
     match attribute(element, "type") {
-        Some("checkbox") => host
-            .bg(rgba(0x4f7d_ffff))
-            .text_color(rgba(0xffff_ffff))
-            .text_size(px(12.))
-            .child("✓"),
-        Some("radio") => host
-            .text_color(rgba(0x4f7d_ffff))
-            .text_size(px(10.))
-            .child("●"),
+        Some("checkbox") => {
+            host.bg(rgba(0x4f7d_ffff)).text_color(rgba(0xffff_ffff)).text_size(px(12.)).child("✓")
+        }
+        Some("radio") => host.text_color(rgba(0x4f7d_ffff)).text_size(px(10.)).child("●"),
         _ => host,
     }
 }
@@ -1613,23 +1521,13 @@ fn index_bindings<'a>(
 ) -> HashMap<ElementId, Rc<[Binding]>> {
     let mut index = HashMap::<ElementId, Vec<Binding>>::new();
     for binding in bindings {
-        index
-            .entry(binding.element_id().clone())
-            .or_default()
-            .push(binding.clone());
+        index.entry(binding.element_id().clone()).or_default().push(binding.clone());
     }
-    index
-        .into_iter()
-        .map(|(element_id, bindings)| (element_id, Rc::from(bindings)))
-        .collect()
+    index.into_iter().map(|(element_id, bindings)| (element_id, Rc::from(bindings))).collect()
 }
 
 pub(crate) fn generated_id(path: &[usize]) -> String {
-    let suffix = path
-        .iter()
-        .map(usize::to_string)
-        .collect::<Vec<_>>()
-        .join("-");
+    let suffix = path.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
     format!("html-node-{suffix}")
 }
 
@@ -1683,15 +1581,10 @@ fn read_properties(
     bindings
         .iter()
         .filter_map(|binding| {
-            let Binding::Property {
-                property, source, ..
-            } = binding
-            else {
+            let Binding::Property { property, source, .. } = binding else {
                 return None;
             };
-            hooks
-                .read(source, window, cx)
-                .map(|value| (*property, value))
+            hooks.read(source, window, cx).map(|value| (*property, value))
         })
         .collect()
 }
@@ -1703,12 +1596,7 @@ fn element_state(
     let disabled = properties
         .get(&UiProperty::Disabled)
         .and_then(StateValue::as_boolean)
-        .unwrap_or_else(|| {
-            element
-                .form_control
-                .as_ref()
-                .is_some_and(|control| control.disabled)
-        });
+        .unwrap_or_else(|| element.form_control.as_ref().is_some_and(|control| control.disabled));
     ElementState {
         visible: properties
             .get(&UiProperty::Visible)
@@ -1829,14 +1717,7 @@ fn accessible_label(
         .as_ref()
         .and_then(|accessibility| accessibility.label.as_ref())
         .map(ToString::to_string)
-        .or_else(|| {
-            element
-                .form_control
-                .as_ref()?
-                .label
-                .as_ref()
-                .map(ToString::to_string)
-        })
+        .or_else(|| element.form_control.as_ref()?.label.as_ref().map(ToString::to_string))
         .or_else(|| attribute(element, "alt").map(str::to_owned))
         .or_else(|| {
             matches!(element.role, UiRole::Button | UiRole::Link | UiRole::Option)
@@ -1857,11 +1738,7 @@ fn element_text(
 ) -> Option<ElementText> {
     let editable = is_text_editable(element) && has_writable_text_binding(bindings);
     if is_password(element) {
-        return Some(ElementText {
-            text: String::new(),
-            redacted: true,
-            editable,
-        });
+        return Some(ElementText { text: String::new(), redacted: true, editable });
     }
 
     let text = properties
@@ -1901,15 +1778,10 @@ fn element_value(
             editable: is_text_editable(element) && has_writable_text_binding(bindings),
         })
         .or_else(|| {
-            element
-                .form_control
-                .as_ref()?
-                .value
-                .as_ref()
-                .map(|value| ElementValue {
-                    value: bounded_utf8(value.to_string(), MAX_TEXT_BYTES),
-                    editable: is_text_editable(element) && has_writable_text_binding(bindings),
-                })
+            element.form_control.as_ref()?.value.as_ref().map(|value| ElementValue {
+                value: bounded_utf8(value.to_string(), MAX_TEXT_BYTES),
+                editable: is_text_editable(element) && has_writable_text_binding(bindings),
+            })
         })
 }
 
@@ -1917,14 +1789,12 @@ fn has_writable_text_binding(bindings: &[Binding]) -> bool {
     bindings.iter().any(|binding| {
         matches!(
             binding,
-            Binding::Event {
-                event: UiEvent::Input | UiEvent::Change,
-                ..
-            } | Binding::Property {
-                property: UiProperty::Text | UiProperty::Value,
-                mode: BindingMode::TwoWay,
-                ..
-            }
+            Binding::Event { event: UiEvent::Input | UiEvent::Change, .. }
+                | Binding::Property {
+                    property: UiProperty::Text | UiProperty::Value,
+                    mode: BindingMode::TwoWay,
+                    ..
+                }
         )
     })
 }
@@ -2022,12 +1892,8 @@ fn install_pointer_hooks(
             }
             if let Some(toggle) = toggle {
                 for binding in &bindings {
-                    let Binding::Property {
-                        property,
-                        source,
-                        mode: BindingMode::TwoWay,
-                        ..
-                    } = binding
+                    let Binding::Property { property, source, mode: BindingMode::TwoWay, .. } =
+                        binding
                     else {
                         continue;
                     };
@@ -2140,9 +2006,7 @@ pub(crate) fn dispatch_input_change(
     if handled {
         HookOutcome::Handled
     } else {
-        HookOutcome::Rejected {
-            reason: "no compatible binding handled the action".to_owned(),
-        }
+        HookOutcome::Rejected { reason: "no compatible binding handled the action".to_owned() }
     }
 }
 
@@ -2182,10 +2046,7 @@ impl ScrollAxes {
         use htmlswap::computed::Overflow;
         let scrolls =
             |value: Option<Overflow>| matches!(value, Some(Overflow::Scroll | Overflow::Auto));
-        Self {
-            x: scrolls(style.overflow_x),
-            y: scrolls(style.overflow_y),
-        }
+        Self { x: scrolls(style.overflow_x), y: scrolls(style.overflow_y) }
     }
 }
 
@@ -2220,9 +2081,7 @@ fn collect_state_anchors(plan: &RenderPlan) -> HashMap<ElementId, StateNeeds> {
             );
             for variant in &element.style_variants {
                 for condition in &variant.conditions {
-                    if let RenderStyleCondition::ElementState {
-                        pseudo, ancestor, ..
-                    } = condition
+                    if let RenderStyleCondition::ElementState { pseudo, ancestor, .. } = condition
                         && *ancestor > 0
                         && let Some(anchor) = ancestors
                             .len()
@@ -2264,13 +2123,7 @@ fn collect_render_diagnostics(plan: &RenderPlan) -> Vec<RenderDiagnostic> {
     let root = ComputedScope::root(&MediaEnvironment::default());
     let root_declarations = plan.root.styles.iter().collect::<Vec<_>>();
     let scope = root.document_root(root_declarations.iter().copied());
-    diagnose_declarations(
-        "html-root",
-        &root_declarations,
-        &scope,
-        &root,
-        &mut diagnostics,
-    );
+    diagnose_declarations("html-root", &root_declarations, &scope, &root, &mut diagnostics);
     for variant in &plan.root.style_variants {
         diagnose_variant("html-root", variant, &scope, &root, &mut diagnostics);
     }
@@ -2290,11 +2143,8 @@ fn collect_node_diagnostics(
         };
         path.push(index);
         let id = attribute(element, "id").map_or_else(|| generated_id(path), str::to_owned);
-        let declarations = element
-            .stylesheet_declarations
-            .iter()
-            .chain(&element.styles)
-            .collect::<Vec<_>>();
+        let declarations =
+            element.stylesheet_declarations.iter().chain(&element.styles).collect::<Vec<_>>();
         let scope = parent.child(declarations.iter().copied());
         diagnose_declarations(&id, &declarations, &scope, parent, diagnostics);
         for variant in &element.style_variants {
@@ -2343,11 +2193,8 @@ fn diagnose_declarations(
     diagnostics: &mut Vec<RenderDiagnostic>,
 ) {
     let mut push = |feature: &str, message: String| {
-        let diagnostic = RenderDiagnostic {
-            node_id: node_id.to_owned(),
-            feature: feature.to_owned(),
-            message,
-        };
+        let diagnostic =
+            RenderDiagnostic { node_id: node_id.to_owned(), feature: feature.to_owned(), message };
         if !diagnostics.contains(&diagnostic) {
             diagnostics.push(diagnostic);
         }
@@ -2422,10 +2269,7 @@ mod tests {
     fn aria_roles_preserve_tree_and_floating_surface_semantics() {
         assert_eq!(aria_role("tree"), Some(AccessibleRole::Tree));
         assert_eq!(aria_role("TREEITEM"), Some(AccessibleRole::TreeItem));
-        assert_eq!(
-            aria_role("menuitemcheckbox"),
-            Some(AccessibleRole::MenuItemCheckBox)
-        );
+        assert_eq!(aria_role("menuitemcheckbox"), Some(AccessibleRole::MenuItemCheckBox));
         assert_eq!(aria_role("combobox"), Some(AccessibleRole::ComboBox));
         assert_eq!(aria_role("option"), Some(AccessibleRole::ListBoxOption));
         assert_eq!(aria_role("presentation"), None);
@@ -2460,20 +2304,15 @@ mod tests {
     #[test]
     fn bound_button_text_is_the_current_accessible_label() -> Result<(), Box<dyn std::error::Error>>
     {
-        let ui = HtmlUi::compile(
-            "<button id='theme'>Foundry dark</button>",
-            BindingDocument::new(),
-        )?;
+        let ui =
+            HtmlUi::compile("<button id='theme'>Foundry dark</button>", BindingDocument::new())?;
         let Some(RenderNode::Element(button)) = ui.plan().nodes.first() else {
             return Err("button render element is missing".into());
         };
         let properties =
             HashMap::from([(UiProperty::Text, StateValue::Text("Paper light".to_owned()))]);
 
-        assert_eq!(
-            accessible_label(button, &properties).as_deref(),
-            Some("Paper light")
-        );
+        assert_eq!(accessible_label(button, &properties).as_deref(), Some("Paper light"));
         Ok(())
     }
 
@@ -2513,10 +2352,7 @@ mod tests {
         ]);
         assert!(supported.is_empty(), "{supported:#?}");
 
-        let rejected = diagnose(&[
-            ("grid-column", "0 / span 2"),
-            ("grid-auto-flow", "diagonal"),
-        ]);
+        let rejected = diagnose(&[("grid-column", "0 / span 2"), ("grid-auto-flow", "diagonal")]);
         assert_eq!(rejected.len(), 2, "{rejected:#?}");
     }
 
@@ -2567,10 +2403,8 @@ mod tests {
             ("height", "50%"),
             ("padding-top", "4px"),
         ]);
-        let properties = diagnostics
-            .iter()
-            .map(|diagnostic| diagnostic.feature.as_str())
-            .collect::<Vec<_>>();
+        let properties =
+            diagnostics.iter().map(|diagnostic| diagnostic.feature.as_str()).collect::<Vec<_>>();
 
         assert_eq!(
             properties,
@@ -2597,12 +2431,8 @@ mod tests {
             BindingDocument::new(),
         )?;
         let mut live = super::LiveHtml::new(initial, Automation::for_test(), HookRegistry::new())?;
-        live.disclosures
-            .borrow_mut()
-            .insert(ElementId::new("kept"), true);
-        live.disclosures
-            .borrow_mut()
-            .insert(ElementId::new("gone"), false);
+        live.disclosures.borrow_mut().insert(ElementId::new("kept"), true);
+        live.disclosures.borrow_mut().insert(ElementId::new("gone"), false);
         *live.hovered_element.borrow_mut() = Some(ElementId::new("kept"));
 
         let candidate = HtmlUi::compile(
@@ -2616,16 +2446,8 @@ mod tests {
         assert_eq!(report.retained_disclosures, 1);
         assert_eq!(report.pruned_disclosures, 1);
         assert!(report.hovered_element_retained);
-        assert_eq!(
-            live.disclosures.borrow().get(&ElementId::new("kept")),
-            Some(&true)
-        );
-        assert!(
-            !live
-                .disclosures
-                .borrow()
-                .contains_key(&ElementId::new("gone"))
-        );
+        assert_eq!(live.disclosures.borrow().get(&ElementId::new("kept")), Some(&true));
+        assert!(!live.disclosures.borrow().contains_key(&ElementId::new("gone")));
         Ok(())
     }
 

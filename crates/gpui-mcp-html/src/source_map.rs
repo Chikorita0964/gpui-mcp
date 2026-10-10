@@ -69,9 +69,7 @@ impl SourceMap {
     /// The element with this semantic id.
     #[must_use]
     pub fn get(&self, semantic_id: &str) -> Option<&SourceNode> {
-        self.by_semantic_id
-            .get(semantic_id)
-            .map(|index| &self.nodes[*index])
+        self.by_semantic_id.get(semantic_id).map(|index| &self.nodes[*index])
     }
 
     /// The innermost element whose markup contains this byte offset, for
@@ -81,15 +79,9 @@ impl SourceMap {
         self.nodes
             .iter()
             .filter(|node| {
-                node.span
-                    .as_ref()
-                    .is_some_and(|span| span.start <= offset && offset < span.end)
+                node.span.as_ref().is_some_and(|span| span.start <= offset && offset < span.end)
             })
-            .min_by_key(|node| {
-                node.span
-                    .as_ref()
-                    .map_or(usize::MAX, ExactSizeIterator::len)
-            })
+            .min_by_key(|node| node.span.as_ref().map_or(usize::MAX, ExactSizeIterator::len))
     }
 }
 
@@ -108,9 +100,7 @@ fn collect(
         let mut path = parent_path.to_vec();
         path.push(index);
         let authored_id = attribute(element, "id").map(str::to_owned);
-        let id = authored_id
-            .clone()
-            .unwrap_or_else(|| crate::render::generated_id(&path));
+        let id = authored_id.clone().unwrap_or_else(|| crate::render::generated_id(&path));
         let semantic = semantic_id(&id);
         let span = element.span.map(|span| span.start..span.end);
         let (line, column) = span
@@ -129,14 +119,7 @@ fn collect(
             line,
             column,
         });
-        collect(
-            &element.children,
-            &path,
-            Some(&semantic),
-            semantic_id,
-            lines,
-            map,
-        );
+        collect(&element.children, &path, Some(&semantic), semantic_id, lines, map);
     }
 }
 

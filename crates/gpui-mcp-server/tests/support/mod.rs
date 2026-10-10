@@ -23,9 +23,7 @@ pub(crate) async fn wait_for_fixture(
                 let apps = client.call_json("list_apps", json!({})).await?;
                 let count = apps.get("count").and_then(Value::as_u64).unwrap_or(0);
                 if count != 1 {
-                    return Err(format!(
-                        "the endpoint directory published {count} applications"
-                    ));
+                    return Err(format!("the endpoint directory published {count} applications"));
                 }
                 let tree = client.call_json("get_ui_tree", json!({})).await?;
                 let missing = missing_nodes(&tree, ids);
@@ -45,11 +43,7 @@ pub(crate) async fn wait_for_fixture(
     };
     tokio::time::timeout(deadline, ready)
         .await
-        .unwrap_or_else(|_| {
-            Err(format!(
-                "fixture was not rendered within {deadline:?}: {last}"
-            ))
-        })
+        .unwrap_or_else(|_| Err(format!("fixture was not rendered within {deadline:?}: {last}")))
 }
 
 fn missing_nodes<'a>(tree: &Value, ids: &[&'a str]) -> Vec<&'a str> {

@@ -87,9 +87,7 @@ impl Environment<'_> {
 
 /// Whether a running transition has any of `types`.
 fn active_type(active: &[gpui::SharedString], types: &[CompactString]) -> bool {
-    types
-        .iter()
-        .any(|kind| active.iter().any(|active| active.as_ref() == kind.as_str()))
+    types.iter().any(|kind| active.iter().any(|active| active.as_ref() == kind.as_str()))
 }
 
 /// Whether a variant applies now.
@@ -122,17 +120,10 @@ pub(crate) fn applies(
                 Some(holds) => holds,
                 None => return Applies::Unsupported,
             },
-            RenderStyleCondition::ElementState {
-                pseudo,
-                ancestor,
-                negated,
-            } => {
+            RenderStyleCondition::ElementState { pseudo, ancestor, negated } => {
                 let element = match usize::from(*ancestor) {
                     0 => Some(own),
-                    up => ancestors
-                        .len()
-                        .checked_sub(up)
-                        .map(|index| ancestors[index]),
+                    up => ancestors.len().checked_sub(up).map(|index| ancestors[index]),
                 };
                 match element.map(|element| element.holds(pseudo)) {
                     Some(Some(holds)) => holds != *negated,
@@ -141,9 +132,9 @@ pub(crate) fn applies(
                     Some(None) => return Applies::Unsupported,
                 }
             }
-            RenderStyleCondition::ActiveViewTransitionType(types) => environment
-                .view_transition_types
-                .is_some_and(|active| active_type(active, types)),
+            RenderStyleCondition::ActiveViewTransitionType(types) => {
+                environment.view_transition_types.is_some_and(|active| active_type(active, types))
+            }
             RenderStyleCondition::StartingStyle => {
                 starting_seen = true;
                 true
@@ -156,11 +147,7 @@ pub(crate) fn applies(
             return Applies::No;
         }
     }
-    if starting_seen && !starting {
-        Applies::No
-    } else {
-        Applies::Yes
-    }
+    if starting_seen && !starting { Applies::No } else { Applies::Yes }
 }
 
 /// Whether the renderer can evaluate every condition of a variant.
@@ -190,9 +177,9 @@ pub(crate) fn condition_holds(
 ) -> bool {
     match condition {
         RenderStyleCondition::Media(query) => environment.media.matches(query).unwrap_or(false),
-        RenderStyleCondition::ActiveViewTransitionType(types) => environment
-            .view_transition_types
-            .is_some_and(|active| active_type(active, types)),
+        RenderStyleCondition::ActiveViewTransitionType(types) => {
+            environment.view_transition_types.is_some_and(|active| active_type(active, types))
+        }
         _ => false,
     }
 }
@@ -229,11 +216,10 @@ pub(crate) fn starting_declarations<'a>(
     own: Interaction,
     ancestors: &[Interaction],
 ) -> Option<Vec<&'a StyleDeclaration>> {
-    let has_starting = element.style_variants.iter().any(|variant| {
-        variant
-            .conditions
-            .contains(&RenderStyleCondition::StartingStyle)
-    });
+    let has_starting = element
+        .style_variants
+        .iter()
+        .any(|variant| variant.conditions.contains(&RenderStyleCondition::StartingStyle));
     has_starting.then(|| collect(element, environment, own, ancestors, true))
 }
 
@@ -244,11 +230,8 @@ fn collect<'a>(
     ancestors: &[Interaction],
     starting: bool,
 ) -> Vec<&'a StyleDeclaration> {
-    let mut declarations: Vec<&StyleDeclaration> = element
-        .stylesheet_declarations
-        .iter()
-        .chain(&element.styles)
-        .collect();
+    let mut declarations: Vec<&StyleDeclaration> =
+        element.stylesheet_declarations.iter().chain(&element.styles).collect();
     for variant in &element.style_variants {
         if applies(variant, environment, own, ancestors, starting) == Applies::Yes {
             declarations.extend(&variant.declarations);
@@ -273,11 +256,9 @@ pub(crate) fn own_state_needs(element: &RenderElement) -> StateNeeds {
         for condition in &variant.conditions {
             match condition {
                 RenderStyleCondition::PseudoClass(pseudo)
-                | RenderStyleCondition::ElementState {
-                    pseudo,
-                    ancestor: 0,
-                    ..
-                } => needs.add(pseudo),
+                | RenderStyleCondition::ElementState { pseudo, ancestor: 0, .. } => {
+                    needs.add(pseudo);
+                }
                 _ => {}
             }
         }
@@ -315,13 +296,7 @@ pub(crate) fn compute(
         let scope = parent.child(declarations.iter().copied());
         typed(&scope, parent, declarations)
     });
-    Computed {
-        scope,
-        style,
-        transitions,
-        animations,
-        starting,
-    }
+    Computed { scope, style, transitions, animations, starting }
 }
 
 /// Typed styles for declarations in a scope, ignoring what does not compute.
@@ -344,10 +319,7 @@ fn resolve<'d>(
     scope: &ComputedScope,
     declarations: &[&'d StyleDeclaration],
 ) -> Vec<Cow<'d, StyleDeclaration>> {
-    declarations
-        .iter()
-        .filter_map(|declaration| scope.resolve(declaration))
-        .collect()
+    declarations.iter().filter_map(|declaration| scope.resolve(declaration)).collect()
 }
 
 #[cfg(test)]
@@ -368,60 +340,29 @@ mod tests {
 
     #[test]
     fn ancestor_and_negated_states_evaluate_against_the_right_element() {
-        let environment = Environment {
-            media: MediaEnvironment::default(),
-            view_transition_types: None,
-        };
-        let hovered = Interaction {
-            hovered: true,
-            ..Interaction::default()
-        };
+        let environment =
+            Environment { media: MediaEnvironment::default(), view_transition_types: None };
+        let hovered = Interaction { hovered: true, ..Interaction::default() };
         let idle = Interaction::default();
         let card_hover = variant(vec![RenderStyleCondition::ElementState {
             pseudo: "hover".into(),
             ancestor: 1,
             negated: false,
         }]);
-        assert_eq!(
-            applies(&card_hover, &environment, idle, &[hovered], false),
-            Applies::Yes
-        );
-        assert_eq!(
-            applies(&card_hover, &environment, hovered, &[idle], false),
-            Applies::No
-        );
-        assert_eq!(
-            applies(&card_hover, &environment, idle, &[], false),
-            Applies::No
-        );
+        assert_eq!(applies(&card_hover, &environment, idle, &[hovered], false), Applies::Yes);
+        assert_eq!(applies(&card_hover, &environment, hovered, &[idle], false), Applies::No);
+        assert_eq!(applies(&card_hover, &environment, idle, &[], false), Applies::No);
         let not_hovered = variant(vec![RenderStyleCondition::ElementState {
             pseudo: "hover".into(),
             ancestor: 0,
             negated: true,
         }]);
-        assert_eq!(
-            applies(&not_hovered, &environment, idle, &[], false),
-            Applies::Yes
-        );
-        assert_eq!(
-            applies(&not_hovered, &environment, hovered, &[], false),
-            Applies::No
-        );
-        let narrow = variant(vec![RenderStyleCondition::Media(
-            "(max-width: 600px)".into(),
-        )]);
-        assert_eq!(
-            applies(&narrow, &environment, idle, &[], false),
-            Applies::No
-        );
+        assert_eq!(applies(&not_hovered, &environment, idle, &[], false), Applies::Yes);
+        assert_eq!(applies(&not_hovered, &environment, hovered, &[], false), Applies::No);
+        let narrow = variant(vec![RenderStyleCondition::Media("(max-width: 600px)".into())]);
+        assert_eq!(applies(&narrow, &environment, idle, &[], false), Applies::No);
         let starting = variant(vec![RenderStyleCondition::StartingStyle]);
-        assert_eq!(
-            applies(&starting, &environment, idle, &[], false),
-            Applies::No
-        );
-        assert_eq!(
-            applies(&starting, &environment, idle, &[], true),
-            Applies::Yes
-        );
+        assert_eq!(applies(&starting, &environment, idle, &[], false), Applies::No);
+        assert_eq!(applies(&starting, &environment, idle, &[], true), Applies::Yes);
     }
 }

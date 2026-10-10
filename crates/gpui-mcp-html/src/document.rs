@@ -21,11 +21,7 @@ pub struct HtmlDiagnostic {
 
 impl From<Diagnostic> for HtmlDiagnostic {
     fn from(diagnostic: Diagnostic) -> Self {
-        Self {
-            severity: diagnostic.severity,
-            message: diagnostic.message,
-            span: diagnostic.span,
-        }
+        Self { severity: diagnostic.severity, message: diagnostic.message, span: diagnostic.span }
     }
 }
 
@@ -82,47 +78,27 @@ impl HtmlUi {
         bindings.validate().map_err(HtmlUiError::Bindings)?;
         let source = source.into();
         let compiler = Compiler::try_with_options(
-            CompilerOptions::new()
-                .with_source_policy(SourcePolicy::pure_html())
-                .with_resources(
-                    CompilerResourceOptions::new()
-                        .with_remote_resolution(false)
-                        .with_file_resolution(false),
-                ),
+            CompilerOptions::new().with_source_policy(SourcePolicy::pure_html()).with_resources(
+                CompilerResourceOptions::new()
+                    .with_remote_resolution(false)
+                    .with_file_resolution(false),
+            ),
         )
         .map_err(HtmlUiError::BuildCompiler)?;
-        let Compilation {
-            value: render_output,
-            diagnostics,
-        } = compiler.compile_fragment(source.clone(), assets);
-        let diagnostics = diagnostics
-            .into_iter()
-            .map(HtmlDiagnostic::from)
-            .collect::<Vec<_>>();
-        if diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.severity == Severity::Error)
-        {
+        let Compilation { value: render_output, diagnostics } =
+            compiler.compile_fragment(source.clone(), assets);
+        let diagnostics = diagnostics.into_iter().map(HtmlDiagnostic::from).collect::<Vec<_>>();
+        if diagnostics.iter().any(|diagnostic| diagnostic.severity == Severity::Error) {
             return Err(HtmlUiError::Source { diagnostics });
         }
 
         let mut resolution = validate_binding_targets(&render_output.plan, &bindings);
-        if resolution
-            .iter()
-            .any(|diagnostic| diagnostic.severity == Severity::Error)
-        {
-            return Err(HtmlUiError::Source {
-                diagnostics: resolution,
-            });
+        if resolution.iter().any(|diagnostic| diagnostic.severity == Severity::Error) {
+            return Err(HtmlUiError::Source { diagnostics: resolution });
         }
         resolution.extend(diagnostics);
 
-        Ok(Self {
-            source,
-            plan: render_output.plan,
-            bindings,
-            diagnostics: resolution,
-        })
+        Ok(Self { source, plan: render_output.plan, bindings, diagnostics: resolution })
     }
 
     /// Original pure HTML source.
@@ -164,9 +140,8 @@ fn validate_binding_targets(plan: &RenderPlan, bindings: &BindingDocument) -> Ve
         })
         .collect::<Vec<_>>();
 
-    for reserved in elements
-        .keys()
-        .filter(|id| id.as_str() == "html-root" || id.starts_with("html-node-"))
+    for reserved in
+        elements.keys().filter(|id| id.as_str() == "html-root" || id.starts_with("html-node-"))
     {
         diagnostics.push(HtmlDiagnostic {
             severity: Severity::Error,
@@ -276,12 +251,7 @@ enum MutationChannel {
 }
 
 fn mutation_channel(binding: &Binding, element: &RenderElement) -> Option<MutationChannel> {
-    let Binding::Property {
-        property,
-        mode: BindingMode::TwoWay,
-        ..
-    } = binding
-    else {
+    let Binding::Property { property, mode: BindingMode::TwoWay, .. } = binding else {
         return None;
     };
     match property {

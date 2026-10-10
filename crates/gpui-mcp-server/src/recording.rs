@@ -30,9 +30,7 @@ pub(crate) struct FrameTiming {
 impl FrameTiming {
     pub(crate) fn frames_per_second(value: u8) -> Result<Self, String> {
         if (1..=30).contains(&value) {
-            Ok(Self {
-                frames_per_second: value,
-            })
+            Ok(Self { frames_per_second: value })
         } else {
             Err("frames_per_second must be between 1 and 30".to_owned())
         }
@@ -104,9 +102,7 @@ impl ArtifactStore {
                 directory.display()
             )
         })?;
-        Ok(Self {
-            directory: Arc::new(directory),
-        })
+        Ok(Self { directory: Arc::new(directory) })
     }
 
     pub(crate) fn directory(&self) -> &Path {
@@ -124,12 +120,7 @@ impl ArtifactStore {
             )
         })?;
         let (file, temporary_path) = temporary.into_parts();
-        Ok(PreparedArtifact {
-            file,
-            temporary_path,
-            final_path,
-            overwrite,
-        })
+        Ok(PreparedArtifact { file, temporary_path, final_path, overwrite })
     }
 }
 
@@ -187,9 +178,7 @@ impl LiveRecorder {
         let config = EncoderConfig::new()
             .usage_type(UsageType::ScreenContentRealTime)
             .complexity(Complexity::Low)
-            .max_frame_rate(FrameRate::from_hz(f32::from(
-                timing.configured_frames_per_second(),
-            )))
+            .max_frame_rate(FrameRate::from_hz(f32::from(timing.configured_frames_per_second())))
             .rate_control_mode(RateControlMode::Off)
             .adaptive_quantization(false)
             .background_detection(false)
@@ -198,13 +187,8 @@ impl LiveRecorder {
             .map_err(|error| format!("could not initialize H.264 video encoder: {error}"))?;
         let first_frame = pad_frame(first_frame, video_dimensions);
         let (mut rgb, mut yuv) = conversion_buffers(video_dimensions)?;
-        let first_sample = encode_h264_frame(
-            &mut encoder,
-            &first_frame,
-            video_dimensions,
-            &mut rgb,
-            &mut yuv,
-        )?;
+        let first_sample =
+            encode_h264_frame(&mut encoder, &first_frame, video_dimensions, &mut rgb, &mut yuv)?;
         let avc = avc_config(&first_sample, video_dimensions)?;
         let bounded = BoundedSeekWriter::new(prepared.file, MAX_RECORDING_OUTPUT_BYTES)
             .map_err(|error| format!("could not initialize MP4 output: {error}"))?;
@@ -307,9 +291,7 @@ impl LiveRecorder {
             .write_end()
             .map_err(|error| format!("could not finalize MP4 video container: {error}"))?;
         let mut output = writer.into_writer();
-        output
-            .flush()
-            .map_err(|error| format!("could not flush MP4 video data: {error}"))?;
+        output.flush().map_err(|error| format!("could not flush MP4 video data: {error}"))?;
         output
             .inner
             .sync_all()
@@ -370,13 +352,8 @@ pub(crate) fn validate_artifact_name(name: &str) -> Result<(), String> {
     if Path::new(name).extension() != Some(OsStr::new("mp4")) {
         return Err("artifact_name must end with lowercase .mp4".to_owned());
     }
-    if !name
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        || !name
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
+    if !name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        || !name.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
     {
         return Err(
             "artifact_name may contain only ASCII letters, digits, '.', '_', and '-', and must start with a letter or digit"
@@ -482,11 +459,7 @@ fn encode_h264_frame(
     if payload.is_empty() {
         return Err("H.264 encoder produced no displayable video frame".to_owned());
     }
-    Ok(H264Sample {
-        payload,
-        nals,
-        sync,
-    })
+    Ok(H264Sample { payload, nals, sync })
 }
 
 fn conversion_buffers(dimensions: (u32, u32)) -> Result<(Vec<u8>, YUVBuffer), String> {
@@ -497,9 +470,8 @@ fn conversion_buffers(dimensions: (u32, u32)) -> Result<(Vec<u8>, YUVBuffer), St
     let pixels = width
         .checked_mul(height)
         .ok_or_else(|| "video color buffer dimensions overflowed".to_owned())?;
-    let rgb_len = pixels
-        .checked_mul(3)
-        .ok_or_else(|| "video RGB buffer size overflowed".to_owned())?;
+    let rgb_len =
+        pixels.checked_mul(3).ok_or_else(|| "video RGB buffer size overflowed".to_owned())?;
     Ok((vec![0; rgb_len], YUVBuffer::new(width, height)))
 }
 
@@ -510,11 +482,8 @@ fn rgba_to_rgb(rgba: &[u8], rgb: &mut [u8]) -> Result<(), String> {
     {
         return Err("video RGBA and RGB conversion buffers do not match".to_owned());
     }
-    for (source, destination) in rgba
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(rgb.as_chunks_mut::<3>().0.iter_mut())
+    for (source, destination) in
+        rgba.as_chunks::<4>().0.iter().zip(rgb.as_chunks_mut::<3>().0.iter_mut())
     {
         destination.copy_from_slice(&source[..3]);
     }
@@ -589,24 +558,21 @@ fn split_annex_b_nals(data: &[u8]) -> Result<Vec<Vec<u8>>, String> {
 
 fn validate_existing_artifact(path: &Path, overwrite: bool) -> Result<(), String> {
     match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
-            "refusing to replace symlink recording artifact {}",
-            path.display()
-        )),
-        Ok(metadata) if !metadata.is_file() => Err(format!(
-            "refusing to replace non-regular recording artifact {}",
-            path.display()
-        )),
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(format!("refusing to replace symlink recording artifact {}", path.display()))
+        }
+        Ok(metadata) if !metadata.is_file() => {
+            Err(format!("refusing to replace non-regular recording artifact {}", path.display()))
+        }
         Ok(_) if !overwrite => Err(format!(
             "recording artifact {} already exists; pass overwrite=true to replace it",
             path.display()
         )),
         Ok(_) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!(
-            "could not inspect recording artifact {}: {error}",
-            path.display()
-        )),
+        Err(error) => {
+            Err(format!("could not inspect recording artifact {}: {error}", path.display()))
+        }
     }
 }
 
@@ -631,12 +597,7 @@ struct BoundedSeekWriter<W> {
 impl<W: Seek> BoundedSeekWriter<W> {
     fn new(mut inner: W, limit: u64) -> io::Result<Self> {
         let position = inner.stream_position()?;
-        Ok(Self {
-            inner,
-            limit,
-            position,
-            high_water_mark: position,
-        })
+        Ok(Self { inner, limit, position, high_water_mark: position })
     }
 
     const fn bytes_written(&self) -> u64 {
@@ -647,9 +608,7 @@ impl<W: Seek> BoundedSeekWriter<W> {
         let length = u64::try_from(length)
             .map_err(|_| io::Error::other("recording output size overflowed"))?;
         if self.position.saturating_add(length) > self.limit {
-            Err(io::Error::other(
-                "recording output exceeds the 256 MiB safety bound",
-            ))
+            Err(io::Error::other("recording output exceeds the 256 MiB safety bound"))
         } else {
             Ok(())
         }
@@ -690,9 +649,7 @@ impl<W: Seek> Seek for BoundedSeekWriter<W> {
     fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
         let position = self.inner.seek(position)?;
         if position > self.limit {
-            return Err(io::Error::other(
-                "recording output exceeds the 256 MiB safety bound",
-            ));
+            return Err(io::Error::other("recording output exceeds the 256 MiB safety bound"));
         }
         self.position = position;
         self.high_water_mark = self.high_water_mark.max(position);
@@ -705,23 +662,15 @@ fn secure_directory_permissions(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt as _;
 
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|error| {
-        format!(
-            "could not secure recording artifact directory {}: {error}",
-            path.display()
-        )
+        format!("could not secure recording artifact directory {}: {error}", path.display())
     })
 }
 
 #[cfg(unix)]
 fn sync_parent_directory(path: &Path) -> Result<(), String> {
-    fs::File::open(path)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| {
-            format!(
-                "could not synchronize recording artifact directory {}: {error}",
-                path.display()
-            )
-        })
+    fs::File::open(path).and_then(|directory| directory.sync_all()).map_err(|error| {
+        format!("could not synchronize recording artifact directory {}: {error}", path.display())
+    })
 }
 
 #[cfg(test)]
@@ -737,17 +686,8 @@ mod tests {
     #[test]
     fn artifact_names_are_portable_single_mp4_filenames() {
         assert!(validate_artifact_name("demo.mp4").is_ok());
-        for invalid in [
-            "../demo.mp4",
-            "demo.MP4",
-            ".demo.mp4",
-            "CON.mp4",
-            "demo/png",
-        ] {
-            assert!(
-                validate_artifact_name(invalid).is_err(),
-                "accepted {invalid:?}"
-            );
+        for invalid in ["../demo.mp4", "demo.MP4", ".demo.mp4", "CON.mp4", "demo/png"] {
+            assert!(validate_artifact_name(invalid).is_err(), "accepted {invalid:?}");
         }
     }
 

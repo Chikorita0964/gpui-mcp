@@ -28,10 +28,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<PointerMoveArgs>,
     ) -> Result<Json<Value>, String> {
-        let point = Point {
-            x: args.x,
-            y: args.y,
-        };
+        let point = Point { x: args.x, y: args.y };
         validate_pointer_point(point)?;
         self.dispatch_pointer_input(PointerCommand::MouseMove {
             point,
@@ -46,10 +43,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<PointerButtonArgs>,
     ) -> Result<Json<Value>, String> {
-        let point = Point {
-            x: args.x,
-            y: args.y,
-        };
+        let point = Point { x: args.x, y: args.y };
         validate_pointer_point(point)?;
         validate_pointer_click_count(args.count)?;
         self.dispatch_pointer_input(PointerCommand::MouseDown {
@@ -66,10 +60,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<PointerButtonArgs>,
     ) -> Result<Json<Value>, String> {
-        let point = Point {
-            x: args.x,
-            y: args.y,
-        };
+        let point = Point { x: args.x, y: args.y };
         validate_pointer_point(point)?;
         validate_pointer_click_count(args.count)?;
         self.dispatch_pointer_input(PointerCommand::MouseUp {
@@ -88,15 +79,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<PointerButtonArgs>,
     ) -> Result<Json<Value>, String> {
-        self.click_at(
-            Point {
-                x: args.x,
-                y: args.y,
-            },
-            args.button,
-            args.count,
-        )
-        .await?;
+        self.click_at(Point { x: args.x, y: args.y }, args.button, args.count).await?;
         Ok(ack_json("pointer_clicked"))
     }
 
@@ -108,14 +91,8 @@ impl GpuiMcp {
         Parameters(args): Parameters<DragPointArgs>,
     ) -> Result<Json<Value>, String> {
         self.drag_between(
-            Point {
-                x: args.from_x,
-                y: args.from_y,
-            },
-            Point {
-                x: args.to_x,
-                y: args.to_y,
-            },
+            Point { x: args.from_x, y: args.from_y },
+            Point { x: args.to_x, y: args.to_y },
             args.steps,
         )
         .await?;
@@ -127,15 +104,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ScrollPointArgs>,
     ) -> Result<Json<Value>, String> {
-        self.scroll_at(
-            Point {
-                x: args.x,
-                y: args.y,
-            },
-            args.delta_x,
-            args.delta_y,
-        )
-        .await?;
+        self.scroll_at(Point { x: args.x, y: args.y }, args.delta_x, args.delta_y).await?;
         Ok(ack_json("pointer_scrolled"))
     }
 
@@ -168,15 +137,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ClickPointArgs>,
     ) -> Result<Json<Value>, String> {
-        self.click_at(
-            Point {
-                x: args.x,
-                y: args.y,
-            },
-            args.button,
-            args.count,
-        )
-        .await?;
+        self.click_at(Point { x: args.x, y: args.y }, args.button, args.count).await?;
         Ok(ack_json("clicked"))
     }
 
@@ -188,11 +149,8 @@ impl GpuiMcp {
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
         let point = self.element_point(&args.id, NodeAction::Hover).await?;
-        self.dispatch_pointer_input(PointerCommand::MouseMove {
-            point,
-            pressed_button: None,
-        })
-        .await?;
+        self.dispatch_pointer_input(PointerCommand::MouseMove { point, pressed_button: None })
+            .await?;
         Ok(ack_json("hovered"))
     }
 
@@ -218,14 +176,8 @@ impl GpuiMcp {
         Parameters(args): Parameters<DragPointArgs>,
     ) -> Result<Json<Value>, String> {
         self.drag_between(
-            Point {
-                x: args.from_x,
-                y: args.from_y,
-            },
-            Point {
-                x: args.to_x,
-                y: args.to_y,
-            },
+            Point { x: args.from_x, y: args.from_y },
+            Point { x: args.to_x, y: args.to_y },
             args.steps,
         )
         .await?;
@@ -234,10 +186,7 @@ impl GpuiMcp {
 
     #[tool(description = "Dispatch one cross-platform GPUI keystroke to the focused element.")]
     async fn keyboard(&self, Parameters(args): Parameters<KeyArgs>) -> Result<Json<Value>, String> {
-        self.dispatch_input(InputCommand::Key {
-            keystroke: args.keystroke,
-        })
-        .await?;
+        self.dispatch_input(InputCommand::Key { keystroke: args.keystroke }).await?;
         Ok(ack_json("key_dispatched"))
     }
 
@@ -246,8 +195,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<TypeTextArgs>,
     ) -> Result<Json<Value>, String> {
-        self.dispatch_input(InputCommand::TypeText { text: args.text })
-            .await?;
+        self.dispatch_input(InputCommand::TypeText { text: args.text }).await?;
         Ok(ack_json("text_typed"))
     }
 
@@ -256,10 +204,8 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<ElementArgs>,
     ) -> Result<Json<Value>, String> {
-        self.element_with_action(&args.id, NodeAction::Focus)
-            .await?;
-        self.ack_after_frame(Operation::Focus { node_id: args.id })
-            .await?;
+        self.element_with_action(&args.id, NodeAction::Focus).await?;
+        self.ack_after_frame(Operation::Focus { node_id: args.id }).await?;
         Ok(ack_json("focused"))
     }
 
@@ -273,9 +219,7 @@ impl GpuiMcp {
             .text
             .as_ref()
             .ok_or_else(|| format!("element {:?} has no text", args.id))?;
-        Ok(object_output(
-            serde_json::to_value(text).map_err(encode_error)?,
-        ))
+        Ok(object_output(serde_json::to_value(text).map_err(encode_error)?))
     }
 
     #[tool(
@@ -285,16 +229,12 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<SetTextArgs>,
     ) -> Result<Json<Value>, String> {
-        let node = self
-            .element_with_action(&args.id, NodeAction::SetText)
-            .await?;
+        let node = self.element_with_action(&args.id, NodeAction::SetText).await?;
         if node.text.as_ref().is_none_or(|text| text.redacted) {
             return Err("element is not an editable non-secret text field".to_owned());
         }
-        self.ack_after_frame(Operation::Focus { node_id: args.id })
-            .await?;
-        self.dispatch_input(InputCommand::ReplaceText { text: args.text })
-            .await?;
+        self.ack_after_frame(Operation::Focus { node_id: args.id }).await?;
+        self.dispatch_input(InputCommand::ReplaceText { text: args.text }).await?;
         Ok(ack_json("text_replaced"))
     }
 
@@ -310,13 +250,9 @@ impl GpuiMcp {
         // belong to whatever is painted there now, so GPUI's own click fallback would
         // activate a different control, and a disabled slider still registers its
         // Increment and Decrement listeners outside its `when(!disabled)` block.
-        self.element_with_action(&args.id, required_node_action(&args.action))
+        self.element_with_action(&args.id, required_node_action(&args.action)).await?;
+        self.ack_after_frame(Operation::PerformAction { node_id: args.id, action: args.action })
             .await?;
-        self.ack_after_frame(Operation::PerformAction {
-            node_id: args.id,
-            action: args.action,
-        })
-        .await?;
         Ok(ack_json("action_performed"))
     }
 
@@ -330,9 +266,7 @@ impl GpuiMcp {
             .value
             .as_ref()
             .ok_or_else(|| format!("element {:?} has no value", args.id))?;
-        Ok(object_output(
-            serde_json::to_value(value).map_err(encode_error)?,
-        ))
+        Ok(object_output(serde_json::to_value(value).map_err(encode_error)?))
     }
 
     #[tool(
@@ -355,10 +289,8 @@ impl GpuiMcp {
                     .as_ref()
                     .ok_or_else(|| format!("element {:?} has no value", args.id))?;
                 validate_value(&args.value, value)?;
-                self.ack_after_frame(Operation::Focus { node_id: args.id })
-                    .await?;
-                self.dispatch_input(InputCommand::ReplaceText { text: args.value })
-                    .await?;
+                self.ack_after_frame(Operation::Focus { node_id: args.id }).await?;
+                self.dispatch_input(InputCommand::ReplaceText { text: args.value }).await?;
             }
             Role::Checkbox | Role::Radio | Role::Switch => {
                 let requested = parse_boolean(&args.value)?;
@@ -395,11 +327,7 @@ impl GpuiMcp {
     #[tool(description = "Count elements whose selected state is true.")]
     async fn get_selection_count(&self) -> Result<Json<Value>, String> {
         let tree = self.tree().await?;
-        let count = tree
-            .nodes
-            .values()
-            .filter(|node| node.state.selected == Some(true))
-            .count();
+        let count = tree.nodes.values().filter(|node| node.state.selected == Some(true)).count();
         Ok(object_output(json!({ "selected_count": count })))
     }
 
@@ -412,9 +340,7 @@ impl GpuiMcp {
     ) -> Result<Json<Value>, String> {
         let tree = self.tree().await?;
         let state = &get_node(&tree, &args.id)?.state;
-        Ok(object_output(
-            serde_json::to_value(state).map_err(encode_error)?,
-        ))
+        Ok(object_output(serde_json::to_value(state).map_err(encode_error)?))
     }
 
     #[tool(
@@ -442,9 +368,8 @@ impl GpuiMcp {
         current: &super::ValueInfo,
         requested: &str,
     ) -> Result<(), String> {
-        let target = requested
-            .parse::<f64>()
-            .map_err(|_| "slider value must be numeric".to_owned())?;
+        let target =
+            requested.parse::<f64>().map_err(|_| "slider value must be numeric".to_owned())?;
         let now = current
             .value
             .parse::<f64>()
@@ -457,11 +382,8 @@ impl GpuiMcp {
         if steps.abs() > 1_000.0 {
             return Err("slider target requires more than 1000 steps".to_owned());
         }
-        let action = if steps >= 0.0 {
-            SemanticAction::Increment
-        } else {
-            SemanticAction::Decrement
-        };
+        let action =
+            if steps >= 0.0 { SemanticAction::Increment } else { SemanticAction::Decrement };
         let count = (0..=1_000_u16)
             .find(|count| (f64::from(*count) - steps.abs()).abs() < f64::EPSILON)
             .ok_or_else(|| "slider target does not align to its step".to_owned())?;
@@ -481,12 +403,9 @@ impl GpuiMcp {
         current: &super::ValueInfo,
         requested: &str,
     ) -> Result<(), String> {
-        let target = requested
-            .parse::<f64>()
-            .map_err(|_| "slider value must be numeric".to_owned())?;
-        let min = current
-            .min
-            .ok_or_else(|| "slider must expose a minimum".to_owned())?;
+        let target =
+            requested.parse::<f64>().map_err(|_| "slider value must be numeric".to_owned())?;
+        let min = current.min.ok_or_else(|| "slider must expose a minimum".to_owned())?;
         let step = current
             .step
             .filter(|step| *step > 0.0)
@@ -498,15 +417,11 @@ impl GpuiMcp {
         let step_count = (0..=1_000_u16)
             .find(|count| (f64::from(*count) - steps).abs() < f64::EPSILON)
             .ok_or_else(|| "slider target does not align to its step".to_owned())?;
-        self.ack_after_frame(Operation::Focus {
-            node_id: id.to_owned(),
-        })
-        .await?;
+        self.ack_after_frame(Operation::Focus { node_id: id.to_owned() }).await?;
         let mut keystrokes = Vec::with_capacity(usize::from(step_count) + 1);
         keystrokes.push("home".to_owned());
         keystrokes.extend((0..step_count).map(|_| "right".to_owned()));
-        self.dispatch_input(InputCommand::KeySequence { keystrokes })
-            .await?;
+        self.dispatch_input(InputCommand::KeySequence { keystrokes }).await?;
         Ok(())
     }
 }

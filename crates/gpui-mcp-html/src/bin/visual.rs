@@ -161,11 +161,7 @@ fn run_fixture(fixture: FixtureName, state: FixtureState) -> Result<()> {
     );
     let ui = HtmlUi::compile(fixture.html(), BindingDocument::new())
         .context("compile visual parity fixture")?;
-    ensure!(
-        ui.diagnostics().is_empty(),
-        "fixture compiler diagnostics: {:?}",
-        ui.diagnostics()
-    );
+    ensure!(ui.diagnostics().is_empty(), "fixture compiler diagnostics: {:?}", ui.diagnostics());
     let automation = Automation::for_test();
     let live = LiveHtml::new(ui, automation.clone(), HookRegistry::new())
         .context("connect visual parity fixture")?;
@@ -250,9 +246,7 @@ fn run_fixture(fixture: FixtureName, state: FixtureState) -> Result<()> {
             },
         );
         if let Err(error) = opened {
-            print_error(format_args!(
-                "could not open visual parity fixture: {error:#}"
-            ));
+            print_error(format_args!("could not open visual parity fixture: {error:#}"));
             cx.quit();
             return;
         }
@@ -340,13 +334,11 @@ async fn wait_for_content_surface(
     let target = fixture_content_size();
     let started = Instant::now();
     loop {
-        let viewport = cx
-            .update(|window, _| window.viewport_size())
-            .context("inspect fixture viewport")?;
+        let viewport =
+            cx.update(|window, _| window.viewport_size()).context("inspect fixture viewport")?;
         if viewport == target {
             let completed_frame = automation.completed_frames();
-            cx.update(|window, _| window.refresh())
-                .context("refresh resized fixture")?;
+            cx.update(|window, _| window.refresh()).context("refresh resized fixture")?;
             return wait_for_completed_frame(automation, completed_frame, cx).await;
         }
         ensure!(
@@ -395,10 +387,7 @@ struct CaptureRequest {
 }
 
 fn capture_window(request: &CaptureRequest) -> Result<()> {
-    ensure!(
-        request.width > 0 && request.height > 0,
-        "capture size must be non-zero"
-    );
+    ensure!(request.width > 0 && request.height > 0, "capture size must be non-zero");
     ensure!(
         request.width <= 16_384 && request.height <= 16_384,
         "capture size exceeds 16384 pixels"
@@ -439,11 +428,7 @@ fn fixture_content_size() -> gpui::Size<gpui::Pixels> {
 }
 
 // The logical dimensions and native scale are bounded before conversion.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss
-)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 fn normalize_capture(
     image: &RgbaImage,
     width: u32,
@@ -470,10 +455,7 @@ fn normalize_capture(
         .rev()
         .find(|y| *image.get_pixel(vertical_probe, *y) == FIXTURE_BACKGROUND)
         .map_or(image.height(), |y| y.saturating_add(1));
-    ensure!(
-        right > left && bottom > top,
-        "native capture contains no fixture surface"
-    );
+    ensure!(right > left && bottom > top, "native capture contains no fixture surface");
     let content_width = right - left;
     let content_height = bottom - top;
     let scaled_width = (width as f32 * scale_factor).round() as u32;

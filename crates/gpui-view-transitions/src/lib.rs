@@ -119,9 +119,7 @@ pub struct ViewTransitions<Old, Key = ()> {
 
 impl<Old, Key> Clone for ViewTransitions<Old, Key> {
     fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
+        Self { state: self.state.clone() }
     }
 }
 
@@ -282,11 +280,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
     /// Whether a transition has started but not been drawn yet.
     #[must_use]
     pub fn is_pending(&self) -> bool {
-        self.state
-            .borrow()
-            .active
-            .as_ref()
-            .is_some_and(|active| active.started.is_none())
+        self.state.borrow().active.as_ref().is_some_and(|active| active.started.is_none())
     }
 
     /// The running transition's types, for `:active-view-transition-type()`.
@@ -374,11 +368,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
             let image = style.new_image(active.elapsed, from.is_some());
             active.running |= group.running || image.running;
             (
-                MorphMotion {
-                    from,
-                    progress: group.progress,
-                    translate: image.translate,
-                },
+                MorphMotion { from, progress: group.progress, translate: image.translate },
                 image.opacity,
             )
         });
@@ -442,11 +432,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
             let Some(child) = draw_old(&old, OldPart::Named(captured)) else {
                 continue;
             };
-            let child = div()
-                .size_full()
-                .opacity(part.opacity)
-                .child(child)
-                .into_any_element();
+            let child = div().size_full().opacity(part.opacity).child(child).into_any_element();
             images.push(OldImage::lifted(
                 child,
                 captured.bounds,
@@ -458,31 +444,17 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
         if let Some(active) = self.state.borrow_mut().active.as_mut() {
             active.running |= running;
         }
-        let old_root = draw_old(
-            &old,
-            OldPart::Root {
-                named: &captured_names,
-            },
-        );
+        let old_root = draw_old(&old, OldPart::Root { named: &captured_names });
         let image = div()
             .size_full()
-            .child(
-                div()
-                    .size_full()
-                    .opacity(old_part.opacity)
-                    .children(old_root),
-            )
+            .child(div().size_full().opacity(old_part.opacity).children(old_root))
             .children(images)
             .into_any_element();
         fade(&mut root, new_part.opacity);
         Stage::new(root.into_any_element(), measured, shift)
             .transition(
                 new_part.translate,
-                OldRoot {
-                    image,
-                    bounds: old_root_bounds,
-                    translate: old_part.translate,
-                },
+                OldRoot { image, bounds: old_root_bounds, translate: old_part.translate },
             )
             .into_any_element()
     }

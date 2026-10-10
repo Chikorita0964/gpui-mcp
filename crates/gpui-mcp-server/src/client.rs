@@ -72,11 +72,7 @@ impl BridgeClient {
         if let Some(expected) = app_id
             && descriptor.app_id != *expected
         {
-            bail!(
-                "endpoint application id is {:?}, not {:?}",
-                descriptor.app_id,
-                expected
-            );
+            bail!("endpoint application id is {:?}, not {:?}", descriptor.app_id, expected);
         }
         validate_descriptor(&descriptor, path)?;
         Ok(Self {
@@ -104,10 +100,7 @@ impl BridgeClient {
         {
             return self.clone();
         }
-        Self {
-            descriptor: Arc::new(descriptor),
-            ..self.clone()
-        }
+        Self { descriptor: Arc::new(descriptor), ..self.clone() }
     }
 
     pub(crate) fn descriptor(&self) -> &EndpointDescriptor {
@@ -122,17 +115,14 @@ impl BridgeClient {
         let response_timeout = match &operation {
             Operation::WaitForTree { timeout_ms, .. }
             | Operation::WaitForFrame { timeout_ms, .. }
-            | Operation::ReadMessages {
-                wait_ms: timeout_ms,
-                ..
-            } => Duration::from_millis(*timeout_ms).saturating_add(IO_TIMEOUT),
+            | Operation::ReadMessages { wait_ms: timeout_ms, .. } => {
+                Duration::from_millis(*timeout_ms).saturating_add(IO_TIMEOUT)
+            }
             _ => IO_TIMEOUT,
         };
         let request_id =
             self.next_request_id
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    current.checked_add(1)
-                });
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| current.checked_add(1));
         let request_id = request_id
             .ok()
             .and_then(RequestId::new)
@@ -183,10 +173,7 @@ pub(crate) struct TargetId(String);
 
 impl TargetId {
     fn from_descriptor(descriptor: &EndpointDescriptor) -> Self {
-        Self(format!(
-            "{}-{:016x}",
-            descriptor.app_id, descriptor.instance_id
-        ))
+        Self(format!("{}-{:016x}", descriptor.app_id, descriptor.instance_id))
     }
 
     fn parse(value: &str) -> Result<Self, String> {
@@ -201,9 +188,7 @@ impl TargetId {
                 .and_then(gpui_mcp_protocol::InstanceId::new)
                 .is_none()
         {
-            return Err(
-                "target ID must end with a nonzero 16-digit instance identifier".to_owned(),
-            );
+            return Err("target ID must end with a nonzero 16-digit instance identifier".to_owned());
         }
         Ok(Self(value.to_owned()))
     }
@@ -264,24 +249,14 @@ impl BridgeRegistry {
         app_id: Option<AppId>,
         endpoint_dir: Option<PathBuf>,
     ) -> Self {
-        Self {
-            endpoint,
-            app_id,
-            endpoint_dir,
-            selected: Arc::new(RwLock::new(None)),
-        }
+        Self { endpoint, app_id, endpoint_dir, selected: Arc::new(RwLock::new(None)) }
     }
 
     pub(crate) async fn list_apps(&self) -> Result<Vec<AppInfo>, String> {
-        let clients = self
-            .discover()
-            .await
-            .map_err(|error| format_discovery_error(&error))?;
+        let clients = self.discover().await.map_err(|error| format_discovery_error(&error))?;
         let mut selected = self.selected.write().await;
         if selected.as_ref().is_some_and(|selected| {
-            clients
-                .iter()
-                .all(|client| client.target_id() != selected.target_id())
+            clients.iter().all(|client| client.target_id() != selected.target_id())
         }) {
             *selected = None;
         }
@@ -297,9 +272,7 @@ impl BridgeRegistry {
             .map(|client| {
                 AppInfo::from_client(
                     client,
-                    selected_id
-                        .as_ref()
-                        .is_some_and(|selected| client.target_id() == *selected),
+                    selected_id.as_ref().is_some_and(|selected| client.target_id() == *selected),
                 )
             })
             .collect())
@@ -307,13 +280,8 @@ impl BridgeRegistry {
 
     pub(crate) async fn select(&self, requested: &str) -> Result<AppInfo, String> {
         let requested = TargetId::parse(requested)?;
-        let clients = self
-            .discover()
-            .await
-            .map_err(|error| format_discovery_error(&error))?;
-        let Some(client) = clients
-            .into_iter()
-            .find(|client| client.target_id() == requested)
+        let clients = self.discover().await.map_err(|error| format_discovery_error(&error))?;
+        let Some(client) = clients.into_iter().find(|client| client.target_id() == requested)
         else {
             return Err(format!(
                 "GPUI target {requested} is not live; call list_apps to refresh available targets"
@@ -328,15 +296,10 @@ impl BridgeRegistry {
             *selected = selected.with_current_descriptor();
             return Ok(selected.clone());
         }
-        let clients = self
-            .discover()
-            .await
-            .map_err(|error| format_discovery_error(&error))?;
+        let clients = self.discover().await.map_err(|error| format_discovery_error(&error))?;
         match clients.as_slice() {
-            [] => Err(
-                "no live GPUI applications were found; start an instrumented app and retry"
-                    .to_owned(),
-            ),
+            [] => Err("no live GPUI applications were found; start an instrumented app and retry"
+                .to_owned()),
             [client] => {
                 let client = client.clone();
                 *self.selected.write().await = Some(client.clone());
@@ -493,12 +456,9 @@ async fn discover_clients(
 }
 
 async fn probe(client: &BridgeClient) -> bool {
-    timeout(
-        DISCOVERY_PROBE_TIMEOUT,
-        connect(&client.descriptor().endpoint),
-    )
-    .await
-    .is_ok_and(|result| result.is_ok())
+    timeout(DISCOVERY_PROBE_TIMEOUT, connect(&client.descriptor().endpoint))
+        .await
+        .is_ok_and(|result| result.is_ok())
 }
 
 /// Once a process that wrote a descriptor could plausibly have started this
@@ -570,10 +530,7 @@ fn validate_descriptor(descriptor: &EndpointDescriptor, descriptor_path: &Path) 
     }
     validate_local_endpoint(&descriptor.endpoint, descriptor_path)?;
     if descriptor.token.len() != 64
-        || !descriptor
-            .token
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+        || !descriptor.token.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
         bail!("endpoint authentication token is malformed");
     }
@@ -749,10 +706,7 @@ mod tests {
 
         let client = BridgeClient::from_path(&path, None)?;
         for _ in 0..2 {
-            let result = client
-                .call(Operation::Ping)
-                .await
-                .map_err(anyhow::Error::msg)?;
+            let result = client.call(Operation::Ping).await.map_err(anyhow::Error::msg)?;
             assert!(matches!(result, BridgeResult::Pong { pid, .. } if pid.get() == 7));
         }
         task.await??;
@@ -779,9 +733,7 @@ mod tests {
         write_test_descriptor(&live_path, std::process::id(), live_endpoint)?;
 
         #[cfg(unix)]
-        let dead_endpoint = LocalEndpoint::Filesystem {
-            path: directory.path().join("dead.sock"),
-        };
+        let dead_endpoint = LocalEndpoint::Filesystem { path: directory.path().join("dead.sock") };
         #[cfg(windows)]
         let dead_endpoint = LocalEndpoint::Namespaced {
             name: format!("gpui-mcp-test-dead-{}", std::process::id()),
@@ -804,13 +756,7 @@ mod tests {
         let directory = tempdir()?;
         let registry = BridgeRegistry::new(None, None, Some(directory.path().to_path_buf()));
 
-        assert!(
-            registry
-                .list_apps()
-                .await
-                .map_err(anyhow::Error::msg)?
-                .is_empty()
-        );
+        assert!(registry.list_apps().await.map_err(anyhow::Error::msg)?.is_empty());
         assert!(registry.client().await.is_err());
         Ok(())
     }
@@ -843,12 +789,7 @@ mod tests {
         write_named_test_descriptor(&path, std::process::id(), endpoint.clone(), "late-app", 0x7)?;
         let registry = BridgeRegistry::new(None, None, Some(directory.path().to_path_buf()));
         let before = registry.client().await.map_err(anyhow::Error::msg)?;
-        assert!(
-            !before
-                .descriptor()
-                .capabilities
-                .supports(Capability::Messages)
-        );
+        assert!(!before.descriptor().capabilities.supports(Capability::Messages));
 
         // The bridge rewrites the descriptor when the application registers
         // `on_message` after install; the selection must not keep the old copy.
@@ -863,12 +804,7 @@ mod tests {
             capabilities,
         )?;
         let after = registry.client().await.map_err(anyhow::Error::msg)?;
-        assert!(
-            after
-                .descriptor()
-                .capabilities
-                .supports(Capability::Messages)
-        );
+        assert!(after.descriptor().capabilities.supports(Capability::Messages));
         assert_eq!(after.target_id(), before.target_id());
         listener_task.abort();
         Ok(())
@@ -903,23 +839,12 @@ mod tests {
 
         let apps = registry.list_apps().await.map_err(anyhow::Error::msg)?;
         assert_eq!(apps.len(), 2);
-        assert!(
-            registry
-                .client()
-                .await
-                .is_err_and(|error| error.contains("select_app"))
-        );
-        let selected = registry
-            .select("shared-app-0000000000000202")
-            .await
-            .map_err(anyhow::Error::msg)?;
+        assert!(registry.client().await.is_err_and(|error| error.contains("select_app")));
+        let selected =
+            registry.select("shared-app-0000000000000202").await.map_err(anyhow::Error::msg)?;
         assert_eq!(selected.target_id.as_str(), "shared-app-0000000000000202");
         assert_eq!(
-            registry
-                .client()
-                .await
-                .map_err(anyhow::Error::msg)?
-                .target_id(),
+            registry.client().await.map_err(anyhow::Error::msg)?.target_id(),
             selected.target_id
         );
         first_listener_task.abort();
@@ -984,13 +909,7 @@ mod tests {
 
         first_task.abort();
         fs::remove_file(&first_path)?;
-        assert!(
-            registry
-                .list_apps()
-                .await
-                .map_err(anyhow::Error::msg)?
-                .is_empty()
-        );
+        assert!(registry.list_apps().await.map_err(anyhow::Error::msg)?.is_empty());
 
         let second_endpoint = test_endpoint_named(directory.path(), "after-restart");
         let second_task = serve_test_listener(create_test_listener(&second_endpoint)?);
@@ -1030,20 +949,14 @@ mod tests {
         let path = directory.path().join("descriptor.json");
         fs::write(&path, b"{}")?;
         let past = std::time::SystemTime::now() - std::time::Duration::from_hours(1);
-        fs::File::options()
-            .write(true)
-            .open(&path)?
-            .set_modified(past)?;
+        fs::File::options().write(true).open(&path)?.set_modified(past)?;
         let mut child = long_running_process()?;
         let pid = process_id(child.id())?;
         let liveness = super::ProcessLiveness::query(std::iter::once(pid));
         let stale = liveness.is_stale(pid, &path);
         child.kill()?;
         child.wait()?;
-        assert!(
-            stale,
-            "a process started after the descriptor was written cannot own it"
-        );
+        assert!(stale, "a process started after the descriptor was written cannot own it");
         Ok(())
     }
 
@@ -1128,9 +1041,7 @@ mod tests {
     fn test_endpoint_named(directory: &Path, suffix: &str) -> LocalEndpoint {
         #[cfg(unix)]
         {
-            LocalEndpoint::Filesystem {
-                path: directory.join(format!("{suffix}.sock")),
-            }
+            LocalEndpoint::Filesystem { path: directory.join(format!("{suffix}.sock")) }
         }
         #[cfg(windows)]
         {

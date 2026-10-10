@@ -28,9 +28,7 @@ impl GpuiMcp {
     )]
     async fn get_frame_stats(&self) -> Result<Json<Value>, String> {
         let stats = self.frame_stats().await?;
-        Ok(object_output(
-            serde_json::to_value(stats).map_err(encode_error)?,
-        ))
+        Ok(object_output(serde_json::to_value(stats).map_err(encode_error)?))
     }
 
     #[tool(
@@ -54,9 +52,7 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<FrameReportArgs>,
     ) -> Result<Json<Value>, String> {
-        let report = self
-            .frame_report(args.since_frame_count, args.frame_limit)
-            .await?;
+        let report = self.frame_report(args.since_frame_count, args.frame_limit).await?;
         Ok(object_output(report_value(&report, args.summary_only)?))
     }
 
@@ -71,9 +67,7 @@ impl GpuiMcp {
         let before = self.frame_stats().await?;
         sleep(Duration::from_millis(args.duration_ms)).await;
         let after = self.frame_stats().await?;
-        let report = self
-            .frame_report(Some(before.frame_count), RECORDED_FRAME_LIMIT)
-            .await?;
+        let report = self.frame_report(Some(before.frame_count), RECORDED_FRAME_LIMIT).await?;
         Ok(object_output(json!({
             "duration_ms": args.duration_ms,
             "before": before,
@@ -104,18 +98,12 @@ impl GpuiMcp {
         &self,
         Parameters(args): Parameters<LogsArgs>,
     ) -> Result<Json<Value>, String> {
-        let result = self
-            .call(Operation::GetLogs {
-                limit: args.limit,
-                min_level: args.min_level,
-            })
-            .await?;
+        let result =
+            self.call(Operation::GetLogs { limit: args.limit, min_level: args.min_level }).await?;
         let BridgeResult::Logs(logs) = result else {
             return Err("bridge returned the wrong result for logs".to_owned());
         };
-        Ok(object_output(
-            json!({ "count": logs.len(), "entries": logs }),
-        ))
+        Ok(object_output(json!({ "count": logs.len(), "entries": logs })))
     }
 
     #[tool(description = "Clear all retained application-published diagnostic logs")]
@@ -144,14 +132,8 @@ mod tests {
             after_frame_count: 41,
             latest_frame_count: 44,
             truncated: true,
-            summary: FrameSummary {
-                frames: 3,
-                ..FrameSummary::default()
-            },
-            frames: vec![FrameSample {
-                frame_count: 42,
-                ..FrameSample::default()
-            }],
+            summary: FrameSummary { frames: 3, ..FrameSummary::default() },
+            frames: vec![FrameSample { frame_count: 42, ..FrameSample::default() }],
             views: vec![ViewActivity {
                 entity_id: 7,
                 type_name: "DemoView".to_owned(),
@@ -192,29 +174,14 @@ mod tests {
         let report = fixture();
         let full = report_value(&report, false)?;
         let compact = report_value(&report, true)?;
-        let compact = compact
-            .as_object()
-            .ok_or("the compact report is an object")?;
-        assert!(
-            !compact.contains_key("frames"),
-            "the per-frame samples are dropped"
-        );
+        let compact = compact.as_object().ok_or("the compact report is an object")?;
+        assert!(!compact.contains_key("frames"), "the per-frame samples are dropped");
         assert!(
             !compact.contains_key("last_frame_views"),
             "the last frame's view draws are dropped"
         );
-        for field in [
-            "after_frame_count",
-            "latest_frame_count",
-            "truncated",
-            "summary",
-            "views",
-        ] {
-            assert_eq!(
-                compact.get(field),
-                full.get(field),
-                "{field} survives the reduction"
-            );
+        for field in ["after_frame_count", "latest_frame_count", "truncated", "summary", "views"] {
+            assert_eq!(compact.get(field), full.get(field), "{field} survives the reduction");
         }
         Ok(())
     }

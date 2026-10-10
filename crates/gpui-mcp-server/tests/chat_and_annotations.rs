@@ -43,14 +43,8 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
         Ok(Self {
             child,
             stdin,
@@ -105,12 +99,8 @@ impl Server {
     }
 
     async fn call(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        let result = self
-            .request(
-                "tools/call",
-                json!({ "name": tool, "arguments": arguments }),
-            )
-            .await?;
+        let result =
+            self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await?;
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             let content = result.get("content").cloned().unwrap_or(JsonValue::Null);
             return Err(format!("{tool} reported an error: {content}"));
@@ -128,9 +118,7 @@ impl Server {
             .get("content")
             .and_then(JsonValue::as_array)
             .and_then(|content| {
-                content
-                    .iter()
-                    .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+                content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
             })
             .ok_or_else(|| format!("{tool} returned no JSON payload"))?;
         serde_json::from_str(text)
@@ -175,17 +163,13 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory =
+        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
+        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 
@@ -204,10 +188,8 @@ impl Server {
     /// Read until a notification with `method` arrives, keeping earlier ones.
     async fn notification(&mut self, method: &str) -> Result<JsonValue, String> {
         loop {
-            if let Some(index) = self
-                .notifications
-                .iter()
-                .position(|message| message["method"] == method)
+            if let Some(index) =
+                self.notifications.iter().position(|message| message["method"] == method)
             {
                 return Ok(self.notifications.remove(index));
             }
@@ -236,10 +218,7 @@ impl Server {
             return Ok(());
         }
         let tree = self.call_json("get_ui_tree", json!({})).await?;
-        Err(format!(
-            "{id} was never labelled {label:?}; it is {}",
-            tree["nodes"][id]
-        ))
+        Err(format!("{id} was never labelled {label:?}; it is {}", tree["nodes"][id]))
     }
 }
 
@@ -315,45 +294,27 @@ async fn exercise(server: &mut Server) -> Result<(), String> {
         );
     }
     assert_eq!(annotated["annotations"][0]["source"], "agent");
-    server
-        .wait_for_label("annotation-count", "Annotations: 1 (agent)")
-        .await?;
+    server.wait_for_label("annotation-count", "Annotations: 1 (agent)").await?;
 
     // highlight_elements is now a group of node annotations beside it.
-    server
-        .call("highlight_elements", json!({ "ids": ["reset"] }))
-        .await?;
+    server.call("highlight_elements", json!({ "ids": ["reset"] })).await?;
     let listed = server.call_json("list_annotations", json!({})).await?;
-    assert_eq!(
-        listed["annotations"].as_array().map(Vec::len),
-        Some(2),
-        "{listed}"
-    );
+    assert_eq!(listed["annotations"].as_array().map(Vec::len), Some(2), "{listed}");
     server.call("clear_highlights", json!({})).await?;
     let listed = server.call_json("list_annotations", json!({})).await?;
     assert_eq!(listed["annotations"][0]["id"], "focus", "{listed}");
     assert_eq!(listed["annotations"].as_array().map(Vec::len), Some(1));
 
     // The app posts a message; a subscribed client is told, and the agent reads it.
-    server
-        .request("resources/subscribe", json!({ "uri": "gpui://messages" }))
-        .await?;
-    server
-        .call("click_element", json!({ "id": "chat-send" }))
-        .await?;
-    let updated = server
-        .notification("notifications/resources/updated")
-        .await?;
+    server.request("resources/subscribe", json!({ "uri": "gpui://messages" })).await?;
+    server.call("click_element", json!({ "id": "chat-send" })).await?;
+    let updated = server.notification("notifications/resources/updated").await?;
     assert_eq!(updated["params"]["uri"], "gpui://messages");
-    let page = server
-        .call_json("read_messages", json!({ "since": 0 }))
-        .await?;
+    let page = server.call_json("read_messages", json!({ "since": 0 })).await?;
     let message = &page["messages"][0];
     assert_eq!(message["from"], "app", "{page}");
     assert!(
-        message["text"]
-            .as_str()
-            .is_some_and(|text| text.starts_with("Hello from the demo")),
+        message["text"].as_str().is_some_and(|text| text.starts_with("Hello from the demo")),
         "{page}"
     );
     assert_eq!(page["unread_from_app"], 0, "reading marks the message read");
@@ -361,30 +322,18 @@ async fn exercise(server: &mut Server) -> Result<(), String> {
     // The agent replies; the app's on_message callback shows it.
     let reply_to = message["id"].clone();
     server
-        .call(
-            "send_message",
-            json!({ "text": "Hi from the agent", "reply_to": reply_to }),
-        )
+        .call("send_message", json!({ "text": "Hi from the agent", "reply_to": reply_to }))
         .await?;
-    server
-        .wait_for_label("chat-reply", "Hi from the agent")
-        .await?;
+    server.wait_for_label("chat-reply", "Hi from the agent").await?;
 
     // A wait with nothing new times out with an empty page rather than an error.
     let latest = page["latest_id"].as_u64().unwrap_or_default() + 1;
     let waited = server
-        .call_json(
-            "wait_for_messages",
-            json!({ "since": latest, "timeout_ms": 200 }),
-        )
+        .call_json("wait_for_messages", json!({ "since": latest, "timeout_ms": 200 }))
         .await?;
     assert_eq!(waited["timed_out"], true, "{waited}");
 
-    server
-        .call("remove_annotations", json!({ "all": true }))
-        .await?;
-    server
-        .wait_for_label("annotation-count", "Annotations: 0 (agent)")
-        .await?;
+    server.call("remove_annotations", json!({ "all": true })).await?;
+    server.wait_for_label("annotation-count", "Annotations: 0 (agent)").await?;
     Ok(())
 }

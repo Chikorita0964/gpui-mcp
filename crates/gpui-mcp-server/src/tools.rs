@@ -54,12 +54,8 @@ use messages::{MESSAGES_URI, watch_app_messages};
 /// Tools that can block for seconds. For a client that declares the MCP tasks
 /// extension they run as tasks, so the client is not held on one call; other
 /// clients get the same result synchronously.
-const TASK_TOOLS: [&str; 4] = [
-    "wait_for_messages",
-    "wait_for_element",
-    "wait_for_state",
-    "record_performance",
-];
+const TASK_TOOLS: [&str; 4] =
+    ["wait_for_messages", "wait_for_element", "wait_for_state", "record_performance"];
 
 const MAX_TREE_SNAPSHOTS: usize = 32;
 const MAX_IMAGE_SNAPSHOTS: usize = 8;
@@ -400,10 +396,7 @@ struct CaptureNamedArgs {
 struct StartVideoRecordingArgs {
     /// Portable MP4 filename written inside the server-configured artifact directory.
     /// This is selected when recording starts so invalid destinations fail before capture.
-    #[schemars(
-        length(min = 1, max = 128),
-        regex(pattern = r"^[A-Za-z0-9][A-Za-z0-9._-]*[.]mp4$")
-    )]
+    #[schemars(length(min = 1, max = 128), regex(pattern = r"^[A-Za-z0-9][A-Za-z0-9._-]*[.]mp4$"))]
     artifact_name: String,
     /// Replace an existing regular artifact with the same name. Defaults to false.
     /// Symlinks and non-regular files are always rejected.
@@ -526,12 +519,8 @@ impl GpuiMcp {
             | PointerCommand::MouseUp { point, .. }
             | PointerCommand::ScrollWheel { point, .. } => *point,
         };
-        self.ack_after_frame(Operation::PointerInput { command })
-            .await?;
-        *self
-            .pointer
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = point;
+        self.ack_after_frame(Operation::PointerInput { command }).await?;
+        *self.pointer.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = point;
         Ok(())
     }
 
@@ -574,18 +563,10 @@ impl GpuiMcp {
             return Err("click count must be between 1 and 3".to_owned());
         }
         for click_count in 1..=count {
-            self.dispatch_pointer_input(PointerCommand::MouseDown {
-                point,
-                button,
-                click_count,
-            })
-            .await?;
+            self.dispatch_pointer_input(PointerCommand::MouseDown { point, button, click_count })
+                .await?;
             if let Err(error) = self
-                .dispatch_pointer_input(PointerCommand::MouseUp {
-                    point,
-                    button,
-                    click_count,
-                })
+                .dispatch_pointer_input(PointerCommand::MouseUp { point, button, click_count })
                 .await
             {
                 return Err(self.release_error(point, button, click_count, error).await);
@@ -626,9 +607,7 @@ impl GpuiMcp {
                 })
                 .await
             {
-                return Err(self
-                    .release_error(last_point, MouseButton::Left, 1, error)
-                    .await);
+                return Err(self.release_error(last_point, MouseButton::Left, 1, error).await);
             }
             last_point = point;
         }
@@ -646,10 +625,7 @@ impl GpuiMcp {
         validate_scroll_delta(delta_x, delta_y)?;
         self.dispatch_pointer_input(PointerCommand::ScrollWheel {
             point,
-            delta: PointerScrollDelta::Pixels {
-                delta_x: -delta_x,
-                delta_y: -delta_y,
-            },
+            delta: PointerScrollDelta::Pixels { delta_x: -delta_x, delta_y: -delta_y },
         })
         .await
     }
@@ -662,11 +638,7 @@ impl GpuiMcp {
         error: String,
     ) -> String {
         match self
-            .dispatch_pointer_input(PointerCommand::MouseUp {
-                point,
-                button,
-                click_count,
-            })
+            .dispatch_pointer_input(PointerCommand::MouseUp { point, button, click_count })
             .await
         {
             Ok(()) => error,
@@ -697,15 +669,9 @@ impl GpuiMcp {
     }
 
     async fn wait_for_tree(&self, generation: u64, wait: Duration) -> Result<UiTree, String> {
-        let timeout_ms = u64::try_from(wait.as_millis())
-            .unwrap_or(MAX_WAIT_MS)
-            .clamp(1, MAX_WAIT_MS);
-        match self
-            .call(Operation::WaitForTree {
-                after_generation: generation,
-                timeout_ms,
-            })
-            .await?
+        let timeout_ms =
+            u64::try_from(wait.as_millis()).unwrap_or(MAX_WAIT_MS).clamp(1, MAX_WAIT_MS);
+        match self.call(Operation::WaitForTree { after_generation: generation, timeout_ms }).await?
         {
             BridgeResult::Tree(tree) => Ok(tree),
             _ => Err("bridge returned the wrong result for semantic tree wait".to_owned()),
@@ -713,14 +679,10 @@ impl GpuiMcp {
     }
 
     async fn wait_for_frame(&self, frame_count: u64, wait: Duration) -> Result<FrameStats, String> {
-        let timeout_ms = u64::try_from(wait.as_millis())
-            .unwrap_or(MAX_WAIT_MS)
-            .clamp(1, MAX_WAIT_MS);
+        let timeout_ms =
+            u64::try_from(wait.as_millis()).unwrap_or(MAX_WAIT_MS).clamp(1, MAX_WAIT_MS);
         match self
-            .call(Operation::WaitForFrame {
-                after_frame_count: frame_count,
-                timeout_ms,
-            })
+            .call(Operation::WaitForFrame { after_frame_count: frame_count, timeout_ms })
             .await?
         {
             BridgeResult::FrameStats(stats) => Ok(stats),
@@ -775,13 +737,7 @@ impl GpuiMcp {
         after_frame_count: Option<u64>,
         frame_limit: u16,
     ) -> Result<FrameReport, String> {
-        match self
-            .call(Operation::GetFrameReport {
-                after_frame_count,
-                frame_limit,
-            })
-            .await?
-        {
+        match self.call(Operation::GetFrameReport { after_frame_count, frame_limit }).await? {
             BridgeResult::FrameReport(report) => Ok(report),
             _ => Err("bridge returned the wrong result for the frame report".to_owned()),
         }
@@ -804,9 +760,7 @@ where
     F: FnMut(Operation) -> Fut,
     Fut: Future<Output = Result<BridgeResult, String>>,
 {
-    let timeout_ms = u64::try_from(wait.as_millis())
-        .unwrap_or(MAX_WAIT_MS)
-        .clamp(1, MAX_WAIT_MS);
+    let timeout_ms = u64::try_from(wait.as_millis()).unwrap_or(MAX_WAIT_MS).clamp(1, MAX_WAIT_MS);
     let mut completed = None;
     for _ in 0..MAX_SETTLE_FRAMES {
         let BridgeResult::PendingFrame(pending) = call(Operation::GetPendingFrame).await? else {
@@ -835,14 +789,12 @@ where
     F: FnMut(Operation) -> Fut,
     Fut: Future<Output = Result<BridgeResult, String>>,
 {
-    let timeout_ms = u64::try_from(wait.as_millis())
-        .unwrap_or(MAX_WAIT_MS)
-        .clamp(1, MAX_WAIT_MS);
+    let timeout_ms = u64::try_from(wait.as_millis()).unwrap_or(MAX_WAIT_MS).clamp(1, MAX_WAIT_MS);
     let mut completed = None;
     for _ in 0..2 {
         let BridgeResult::FrameStats(before_request) = call(Operation::RequestFrame).await? else {
             return Err(
-                "bridge returned the wrong completed-frame token for a frame request".to_owned(),
+                "bridge returned the wrong completed-frame token for a frame request".to_owned()
             );
         };
         let BridgeResult::FrameStats(stats) = call(Operation::WaitForFrame {
@@ -929,10 +881,7 @@ impl ServerHandler for GpuiMcp {
     ) -> Result<ListResourcesResult, ErrorData> {
         let mut resources = vec![apps_resource(), messages_resource()];
         if let Ok(client) = self.registry.client().await
-            && client
-                .descriptor()
-                .capabilities
-                .supports(Capability::ContextResources)
+            && client.descriptor().capabilities.supports(Capability::ContextResources)
         {
             match client.call(Operation::ListContextResources).await {
                 Ok(BridgeResult::ContextResources(context_resources)) => {
@@ -995,9 +944,7 @@ impl ServerHandler for GpuiMcp {
             .into());
         }
         let result = self
-            .call(Operation::ReadContextResource {
-                uri: request.uri.clone(),
-            })
+            .call(Operation::ReadContextResource { uri: request.uri.clone() })
             .await
             .map_err(context_resource_error)?;
         let BridgeResult::ContextResource(resource) = result else {
@@ -1064,8 +1011,7 @@ impl ServerHandler for GpuiMcp {
         request: UpdateTaskParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<(), ErrorData> {
-        self.tasks
-            .update_task(&request.task_id, request.input_responses)
+        self.tasks.update_task(&request.task_id, request.input_responses)
     }
 
     async fn cancel_task(
@@ -1081,12 +1027,10 @@ impl ServerHandler for GpuiMcp {
         requested: &SubscriptionFilter,
     ) -> Option<SubscriptionFilter> {
         let mut accepted = SubscriptionFilter::new();
-        accepted.resource_subscriptions = requested.resource_subscriptions.as_ref().map(|uris| {
-            uris.iter()
-                .filter(|uri| *uri == MESSAGES_URI)
-                .cloned()
-                .collect()
-        });
+        accepted.resource_subscriptions = requested
+            .resource_subscriptions
+            .as_ref()
+            .map(|uris| uris.iter().filter(|uri| *uri == MESSAGES_URI).cloned().collect());
         Some(accepted)
     }
 
@@ -1121,10 +1065,7 @@ impl ServerHandler for GpuiMcp {
     ) -> Result<(), ErrorData> {
         if request.uri != MESSAGES_URI {
             return Err(ErrorData::invalid_params(
-                format!(
-                    "{} does not support subscriptions; only {MESSAGES_URI} does",
-                    request.uri
-                ),
+                format!("{} does not support subscriptions; only {MESSAGES_URI} does", request.uri),
                 None,
             ));
         }
@@ -1139,21 +1080,17 @@ impl ServerHandler for GpuiMcp {
         }
         let peer = context.peer;
         let uri = request.uri;
-        tokio::spawn(watch_app_messages(
-            self.registry.clone(),
-            cancellation,
-            move || {
-                let peer = peer.clone();
-                let uri = uri.clone();
-                async move {
-                    peer.notify_resource_updated(
-                        rmcp::model::ResourceUpdatedNotificationParam::new(uri),
-                    )
-                    .await
-                    .is_ok()
-                }
-            },
-        ));
+        tokio::spawn(watch_app_messages(self.registry.clone(), cancellation, move || {
+            let peer = peer.clone();
+            let uri = uri.clone();
+            async move {
+                peer.notify_resource_updated(rmcp::model::ResourceUpdatedNotificationParam::new(
+                    uri,
+                ))
+                .await
+                .is_ok()
+            }
+        }));
         Ok(())
     }
 
@@ -1289,9 +1226,7 @@ fn find_nodes<'a>(tree: &'a UiTree, args: &FindArgs) -> Vec<&'a UiNode> {
             if args.exact {
                 label == query
             } else {
-                label
-                    .to_lowercase()
-                    .contains(query_lower.as_deref().unwrap_or_default())
+                label.to_lowercase().contains(query_lower.as_deref().unwrap_or_default())
             }
         })
         .take(limit)
@@ -1299,9 +1234,7 @@ fn find_nodes<'a>(tree: &'a UiTree, args: &FindArgs) -> Vec<&'a UiNode> {
 }
 
 fn get_node<'a>(tree: &'a UiTree, id: &str) -> Result<&'a UiNode, String> {
-    tree.nodes
-        .get(id)
-        .ok_or_else(|| format!("semantic element {id:?} was not found"))
+    tree.nodes.get(id).ok_or_else(|| format!("semantic element {id:?} was not found"))
 }
 
 fn require_bounds(node: &UiNode) -> Result<Rect, String> {
@@ -1314,9 +1247,8 @@ fn validate_value(input: &str, value: &ValueInfo) -> Result<(), String> {
     if value.min.is_none() && value.max.is_none() && value.step.is_none() {
         return Ok(());
     }
-    let number: f64 = input
-        .parse()
-        .map_err(|_| "numeric value requires a finite number".to_owned())?;
+    let number: f64 =
+        input.parse().map_err(|_| "numeric value requires a finite number".to_owned())?;
     if !number.is_finite() {
         return Err("numeric value requires a finite number".to_owned());
     }
@@ -1350,33 +1282,20 @@ fn validate_name(name: &str) -> Result<(), String> {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
     {
         return Err(
-            "snapshot name must contain 1-64 ASCII letters, digits, '.', '_' or '-'".to_owned(),
+            "snapshot name must contain 1-64 ASCII letters, digits, '.', '_' or '-'".to_owned()
         );
     }
     Ok(())
 }
 
 fn state_matches(state: &NodeState, args: &WaitStateArgs) -> bool {
-    args.visible
-        .is_none_or(|expected| state.visible == expected)
-        && args
-            .enabled
-            .is_none_or(|expected| state.enabled == expected)
-        && args
-            .focused
-            .is_none_or(|expected| state.focused == expected)
-        && args
-            .read_only
-            .is_none_or(|expected| state.read_only == Some(expected))
-        && args
-            .checked
-            .is_none_or(|expected| state.checked == Some(expected))
-        && args
-            .selected
-            .is_none_or(|expected| state.selected == Some(expected))
-        && args
-            .expanded
-            .is_none_or(|expected| state.expanded == Some(expected))
+    args.visible.is_none_or(|expected| state.visible == expected)
+        && args.enabled.is_none_or(|expected| state.enabled == expected)
+        && args.focused.is_none_or(|expected| state.focused == expected)
+        && args.read_only.is_none_or(|expected| state.read_only == Some(expected))
+        && args.checked.is_none_or(|expected| state.checked == Some(expected))
+        && args.selected.is_none_or(|expected| state.selected == Some(expected))
+        && args.expanded.is_none_or(|expected| state.expanded == Some(expected))
 }
 
 fn tree_diff(left: &UiTree, right: &UiTree) -> JsonValue {
@@ -1447,10 +1366,7 @@ fn compare_images(
             left_pixel[2].abs_diff(right_pixel[2]),
             left_pixel[3].abs_diff(right_pixel[3]),
         ];
-        absolute_difference += differences
-            .iter()
-            .map(|value| u64::from(*value))
-            .sum::<u64>();
+        absolute_difference += differences.iter().map(|value| u64::from(*value)).sum::<u64>();
         let changed = differences.iter().any(|value| *value > tolerance);
         if changed {
             changed_pixels = changed_pixels.saturating_add(1);
@@ -1630,10 +1546,7 @@ fn select_tree(tree: &UiTree, args: &TreeArgs) -> Result<Option<UiTree>, String>
         // Saturating: an unlimited depth still walks a chain deeper than u16::MAX.
         if args.max_depth.is_none_or(|max| depth < max) {
             stack.extend(
-                node.children
-                    .iter()
-                    .rev()
-                    .map(|child| (child.as_str(), depth.saturating_add(1))),
+                node.children.iter().rev().map(|child| (child.as_str(), depth.saturating_add(1))),
             );
         }
         // Visibility filters the node, not the traversal: a hidden container's
@@ -1687,19 +1600,13 @@ mod tests {
     };
 
     fn stats(frame_count: u64) -> BridgeResult {
-        BridgeResult::FrameStats(FrameStats {
-            frame_count,
-            ..FrameStats::default()
-        })
+        BridgeResult::FrameStats(FrameStats { frame_count, ..FrameStats::default() })
     }
 
     fn pending(pending: bool, frame_count: u64) -> BridgeResult {
         BridgeResult::PendingFrame(PendingFrame {
             pending,
-            completed: FrameStats {
-                frame_count,
-                ..FrameStats::default()
-            },
+            completed: FrameStats { frame_count, ..FrameStats::default() },
         })
     }
 
@@ -1736,10 +1643,7 @@ mod tests {
         }
 
         fn operations(&self) -> Vec<Operation> {
-            self.operations
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone()
+            self.operations.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
         }
     }
 
@@ -1753,25 +1657,11 @@ mod tests {
         assert_eq!(settled.frame_count, 15);
         let operations = script.operations();
         assert!(matches!(operations[0], Operation::RequestFrame));
-        assert!(matches!(
-            operations[1],
-            Operation::WaitForFrame {
-                after_frame_count: 11,
-                ..
-            }
-        ));
+        assert!(matches!(operations[1], Operation::WaitForFrame { after_frame_count: 11, .. }));
         assert!(matches!(operations[2], Operation::RequestFrame));
-        assert!(matches!(
-            operations[3],
-            Operation::WaitForFrame {
-                after_frame_count: 14,
-                ..
-            }
-        ));
+        assert!(matches!(operations[3], Operation::WaitForFrame { after_frame_count: 14, .. }));
         assert!(
-            operations
-                .iter()
-                .all(|operation| !matches!(operation, Operation::Refresh)),
+            operations.iter().all(|operation| !matches!(operation, Operation::Refresh)),
             "settling must never discard every cached view"
         );
         Ok(())
@@ -1785,10 +1675,7 @@ mod tests {
                 .await?;
 
         assert_eq!(settled.frame_count, 7);
-        assert!(matches!(
-            script.operations().as_slice(),
-            [Operation::GetPendingFrame]
-        ));
+        assert!(matches!(script.operations().as_slice(), [Operation::GetPendingFrame]));
         Ok(())
     }
 
@@ -1807,20 +1694,8 @@ mod tests {
 
         assert_eq!(settled.frame_count, 9);
         let operations = script.operations();
-        assert!(matches!(
-            operations[1],
-            Operation::WaitForFrame {
-                after_frame_count: 7,
-                ..
-            }
-        ));
-        assert!(matches!(
-            operations[3],
-            Operation::WaitForFrame {
-                after_frame_count: 8,
-                ..
-            }
-        ));
+        assert!(matches!(operations[1], Operation::WaitForFrame { after_frame_count: 7, .. }));
+        assert!(matches!(operations[3], Operation::WaitForFrame { after_frame_count: 8, .. }));
         assert!(
             operations.iter().all(|operation| !matches!(
                 operation,
@@ -1883,10 +1758,7 @@ mod tests {
 
     #[test]
     fn state_wait_matches_expanded_disclosures() {
-        let state = NodeState {
-            expanded: Some(true),
-            ..NodeState::default()
-        };
+        let state = NodeState { expanded: Some(true), ..NodeState::default() };
         let expanded = WaitStateArgs {
             id: "details".to_owned(),
             visible: None,
@@ -1900,10 +1772,7 @@ mod tests {
         };
         assert!(state_matches(&state, &expanded));
 
-        let collapsed = WaitStateArgs {
-            expanded: Some(false),
-            ..expanded
-        };
+        let collapsed = WaitStateArgs { expanded: Some(false), ..expanded };
         assert!(!state_matches(&state, &collapsed));
     }
 
@@ -1915,10 +1784,7 @@ mod tests {
             )
             .map_err(|error| error.to_string())?;
             for reported in [None, Some(true), Some(false)] {
-                let state = NodeState {
-                    read_only: reported,
-                    ..NodeState::default()
-                };
+                let state = NodeState { read_only: reported, ..NodeState::default() };
                 assert_eq!(state_matches(&state, &args), reported == Some(expected));
             }
         }
@@ -1962,10 +1828,7 @@ mod tests {
             label: None,
             description: None,
             bounds: None,
-            state: NodeState {
-                visible,
-                ..NodeState::default()
-            },
+            state: NodeState { visible, ..NodeState::default() },
             actions: Vec::new(),
             text: None,
             value: None,
@@ -1985,10 +1848,7 @@ mod tests {
         UiTree {
             generation: 3,
             roots: vec!["app".to_owned()],
-            nodes: nodes
-                .into_iter()
-                .map(|node| (node.id.clone(), node))
-                .collect(),
+            nodes: nodes.into_iter().map(|node| (node.id.clone(), node)).collect(),
             diagnostics: vec![SemanticDiagnostic {
                 code: SemanticDiagnosticCode::DuplicateId,
                 node_id: Some("app".to_owned()),
@@ -1998,12 +1858,7 @@ mod tests {
     }
 
     fn args(root: Option<&str>, max_depth: Option<u16>, visible_only: bool) -> TreeArgs {
-        TreeArgs {
-            root: root.map(str::to_owned),
-            max_depth,
-            visible_only,
-            ids_only: false,
-        }
+        TreeArgs { root: root.map(str::to_owned), max_depth, visible_only, ids_only: false }
     }
 
     /// The ids the selection returns, or the whole tree's when it selects all of it.
@@ -2096,10 +1951,7 @@ mod tests {
         let tree = UiTree {
             generation: 1,
             roots: vec!["app".to_owned()],
-            nodes: nodes
-                .into_iter()
-                .map(|node| (node.id.clone(), node))
-                .collect(),
+            nodes: nodes.into_iter().map(|node| (node.id.clone(), node)).collect(),
             diagnostics: Vec::new(),
         };
 
@@ -2134,10 +1986,7 @@ mod tests {
         let tree = UiTree {
             generation: 1,
             roots: vec!["loop".to_owned()],
-            nodes: nodes
-                .into_iter()
-                .map(|node| (node.id.clone(), node))
-                .collect(),
+            nodes: nodes.into_iter().map(|node| (node.id.clone(), node)).collect(),
             diagnostics: Vec::new(),
         };
 
@@ -2164,25 +2013,14 @@ mod tests {
             "a node keeps its full child list, so a caller can see what the depth limit cut"
         );
         assert!(!cut.nodes.contains_key("panel"));
-        assert_eq!(
-            cut.roots,
-            ["app"],
-            "roots names the requested starting node"
-        );
+        assert_eq!(cut.roots, ["app"], "roots names the requested starting node");
         assert_eq!(cut.generation, 3, "the frame generation survives selection");
-        assert_eq!(
-            cut.diagnostics.len(),
-            1,
-            "the full tree's diagnostics survive selection"
-        );
+        assert_eq!(cut.diagnostics.len(), 1, "the full tree's diagnostics survive selection");
 
         let error = select_tree(&tree, &args(Some("missing"), None, false))
             .err()
             .ok_or("an id that is not in the tree is an error")?;
-        assert!(
-            error.contains("missing"),
-            "the error names the requested id, got {error:?}"
-        );
+        assert!(error.contains("missing"), "the error names the requested id, got {error:?}");
         Ok(())
     }
 
@@ -2221,26 +2059,17 @@ mod tests {
         );
 
         let filtered = serialized_reply(&tree_result(&tree, &args(None, None, true))?)?;
-        assert_ne!(
-            filtered, current,
-            "an argument that selects less must change the reply"
-        );
+        assert_ne!(filtered, current, "an argument that selects less must change the reply");
         Ok(())
     }
 
     #[test]
     fn find_reply_ids_only_lists_the_same_matches_in_the_same_order() -> Result<(), String> {
-        let nodes = [
-            plain_node("beta", None, &[], true),
-            plain_node("alpha", None, &[], true),
-        ];
+        let nodes = [plain_node("beta", None, &[], true), plain_node("alpha", None, &[], true)];
         let tree = UiTree {
             generation: 1,
             roots: vec!["alpha".to_owned(), "beta".to_owned()],
-            nodes: nodes
-                .into_iter()
-                .map(|node| (node.id.clone(), node))
-                .collect(),
+            nodes: nodes.into_iter().map(|node| (node.id.clone(), node)).collect(),
             diagnostics: Vec::new(),
         };
         let found = find_nodes(
@@ -2255,25 +2084,18 @@ mod tests {
             },
         );
         assert_eq!(
-            found
-                .iter()
-                .map(|node| node.id.as_str())
-                .collect::<Vec<_>>(),
+            found.iter().map(|node| node.id.as_str()).collect::<Vec<_>>(),
             ["alpha", "beta"],
             "matches come out in the tree's own order"
         );
 
         let full = find_reply(&found, false);
         let compact = find_reply(&found, true);
-        let elements = full["elements"]
-            .as_array()
-            .ok_or("the full reply lists elements")?;
+        let elements = full["elements"].as_array().ok_or("the full reply lists elements")?;
         let element_ids: Vec<&str> = elements
             .iter()
             .map(|element| {
-                element["id"]
-                    .as_str()
-                    .ok_or_else(|| "an element carries an id".to_owned())
+                element["id"].as_str().ok_or_else(|| "an element carries an id".to_owned())
             })
             .collect::<Result<_, String>>()?;
         assert_eq!(compact["count"], full["count"]);
@@ -2290,10 +2112,7 @@ mod tests {
     fn tree_ids_only_reply_describes_the_same_selection() -> Result<(), String> {
         let tree = selection_fixture();
 
-        let visible = TreeArgs {
-            ids_only: true,
-            ..args(None, None, true)
-        };
+        let visible = TreeArgs { ids_only: true, ..args(None, None, true) };
         let reply = serialized_reply(&tree_result(&tree, &visible)?)?;
         assert_eq!(
             reply.get("structuredContent").cloned(),
@@ -2306,11 +2125,8 @@ mod tests {
             "the compact reply counts and names exactly the selected nodes"
         );
 
-        let rooted = TreeArgs {
-            root: Some("panel".to_owned()),
-            ids_only: true,
-            ..TreeArgs::default()
-        };
+        let rooted =
+            TreeArgs { root: Some("panel".to_owned()), ids_only: true, ..TreeArgs::default() };
         let reply = serialized_reply(&tree_result(&tree, &rooted)?)?;
         assert_eq!(
             reply.get("structuredContent").cloned(),
@@ -2323,10 +2139,7 @@ mod tests {
             "a root argument shapes the compact reply from that subtree's nodes"
         );
 
-        let whole = TreeArgs {
-            ids_only: true,
-            ..TreeArgs::default()
-        };
+        let whole = TreeArgs { ids_only: true, ..TreeArgs::default() };
         let reply = serialized_reply(&tree_result(&tree, &whole)?)?;
         assert_eq!(
             reply.get("structuredContent").cloned(),
@@ -2357,19 +2170,11 @@ mod tests {
             let label_id = format!("{row_id}/label");
             let mut node = plain_node(&row_id, Some("stress-list"), &[&label_id], row % 7 != 0);
             node.label = Some(format!("Row {row}"));
-            node.bounds = Some(super::Rect {
-                x: 32.0,
-                y: 313.333_34,
-                width: 576.0,
-                height: 2.0,
-            });
+            node.bounds = Some(super::Rect { x: 32.0, y: 313.333_34, width: 576.0, height: 2.0 });
             node.metadata =
                 BTreeMap::from([("accesskit_id".to_owned(), "17437630179299350513".to_owned())]);
             nodes.insert(row_id.clone(), node);
-            nodes.insert(
-                label_id.clone(),
-                plain_node(&label_id, Some(&row_id), &[], true),
-            );
+            nodes.insert(label_id.clone(), plain_node(&label_id, Some(&row_id), &[], true));
         }
         UiTree {
             generation: 1,
@@ -2398,10 +2203,8 @@ mod tests {
         let started = StdInstant::now();
         let mut floor_bytes = 0;
         for _ in 0..ROUNDS {
-            floor_bytes = serde_json::to_value(&tree)
-                .map_err(|error| error.to_string())?
-                .to_string()
-                .len();
+            floor_bytes =
+                serde_json::to_value(&tree).map_err(|error| error.to_string())?.to_string().len();
         }
         let floor_ms = started.elapsed().as_secs_f64() * 1000.0 / f64::from(ROUNDS);
 
@@ -2415,25 +2218,18 @@ mod tests {
         let started = StdInstant::now();
         let mut legacy_bytes = 0;
         for _ in 0..ROUNDS {
-            legacy_bytes = serialized_reply(&legacy_tree_result(&tree)?)?
-                .to_string()
-                .len();
+            legacy_bytes = serialized_reply(&legacy_tree_result(&tree)?)?.to_string().len();
         }
         let legacy_ms = started.elapsed().as_secs_f64() * 1000.0 / f64::from(ROUNDS);
 
         let select_only = |args: &TreeArgs, rounds: u32| -> Result<(usize, f64), String> {
-            let nodes = select_tree(&tree, args)?
-                .ok_or("the subtree arguments select")?
-                .nodes
-                .len();
+            let nodes =
+                select_tree(&tree, args)?.ok_or("the subtree arguments select")?.nodes.len();
             let started = StdInstant::now();
             for _ in 0..rounds {
                 drop(select_tree(&tree, args)?);
             }
-            Ok((
-                nodes,
-                started.elapsed().as_secs_f64() * 1000.0 / f64::from(rounds),
-            ))
+            Ok((nodes, started.elapsed().as_secs_f64() * 1000.0 / f64::from(rounds)))
         };
         let (row_nodes, row_select_ms) = select_only(&one_row, ROUNDS * 1_000)?;
         let (wide_nodes, wide_select_ms) = select_only(&wide, ROUNDS * 10)?;
@@ -2562,10 +2358,8 @@ mod tests {
     #[test]
     fn start_video_recording_schema_exposes_destination_bounds() -> Result<(), String> {
         let router = super::GpuiMcp::production_router();
-        let Some(tool) = router
-            .list_all()
-            .into_iter()
-            .find(|tool| tool.name == "start_video_recording")
+        let Some(tool) =
+            router.list_all().into_iter().find(|tool| tool.name == "start_video_recording")
         else {
             return Err("start_video_recording was not registered".to_owned());
         };
