@@ -16,7 +16,7 @@ indent_size = 4
 [*.toml]
 indent_size = 4
 
-# Test data compared byte for byte: an editor must not add or trim anything.
+# Test data compared exactly: an editor must not add or trim anything.
 [{crates/*/tests/fixtures/**,crates/*/tests/snapshots/**,visual-tests/fixtures/**}]
-trim_trailing_whitespace = unset
-insert_final_newline = unset
+trim_trailing_whitespace = false
+insert_final_newline = false

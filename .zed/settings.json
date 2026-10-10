@@ -1,0 +1,35 @@
+{
+  "languages": {
+    "Rust": {
+      "format_on_save": "on",
+      "formatter": "language_server"
+    }
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "check": {
+          "command": "clippy"
+        },
+        "cargo": {
+          "features": [
+            "gpui-mcp/test-support",
+            "gpui-mcp-html/dev-watch",
+            "gpui-mcp-html/visual-parity"
+          ]
+        },
+        "procMacro": {
+          "processes": 4
+        }
+      }
+    }
+  },
+  "read_only_files": [
+    "**/.rustup/**",
+    "**/.cargo/registry/**",
+    "**/.cargo/git/**",
+    "target/**/*.rs",
+    "**/*.lock",
+    "vendor/**"
+  ]
+}
