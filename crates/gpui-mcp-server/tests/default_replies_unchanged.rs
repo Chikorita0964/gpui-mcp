@@ -6,8 +6,8 @@
 //! that passes no new argument must get today's reply. This file pins that
 //! promise. It drives the same JSON-RPC
 //! surface a client uses against the demo fixture and compares the serialized
-//! `result` of each flagged tool with the committed fixture under
-//! `tests/fixtures/default_replies/`.
+//! `result` of each flagged tool with its committed insta snapshot under
+//! `tests/snapshots/`.
 //!
 //! Protocol (the check and the generator run exactly this): the demo is spawned
 //! beside the server binary with a private endpoint directory; after the
@@ -29,13 +29,14 @@
 //! before it measures. That wait reads the frame report and requests no frame,
 //! so it cannot itself change the frames the session measures.
 //!
-//! The comparison is byte-for-byte on the *canonical* serialization of the raw
-//! JSON-RPC `result` object, and the fixtures store that same form. The frame
+//! The comparison is exact on the *canonical* serialization of the raw JSON-RPC
+//! `result` object, pretty-printed so a changed reply reviews as a readable
+//! diff, and the snapshots store that same form. The frame
 //! tools answer with real timings and absolute frame counters that differ on
 //! every run, so the canonicalizer zeroes exactly the volatile numbers; every
 //! other key, string, boolean, array and number - the reply's shape, its
 //! counts, its view activity lists - is compared as sent. Object keys are
-//! rewritten in name order, the form the fixtures were written in: the
+//! rewritten in name order, the form the snapshots are written in: the
 //! workspace build enables `serde_json/preserve_order` through the vendored
 //! gpui-pre crate, which makes a live reply serialize its keys in insertion
 //! order, and JSON object order carries no meaning - comparing name order is
@@ -56,10 +57,10 @@
 //! Running: needs the demo built beside the server binary - `cargo build -p
 //! gpui-mcp-demo -p gpui-mcp-server` - and a desktop session; without `DISPLAY`
 //! or `WAYLAND_DISPLAY` the check prints a note and passes. One window is open
-//! at a time through the static `WINDOW` mutex. To regenerate the fixtures
-//! after a deliberate default-reply change, run the ignored generator once:
-//! `cargo test -p gpui-mcp-server --test default_replies_unchanged -- --ignored
-//! capture_default_replies`, and say so in the report.
+//! at a time through the static `WINDOW` mutex. After a deliberate
+//! default-reply change, review the new replies with `cargo insta test -p
+//! gpui-mcp-server --test default_replies_unchanged --review`, and say so in the
+//! report.
 
 mod support;
 
@@ -67,7 +68,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use cow_utils::CowUtils as _;
 use serde_json::{Value as JsonValue, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
@@ -94,7 +94,7 @@ const LEFT: &str = "probe-left-target";
 const READY_NODES: [&str; 5] =
     [PARKING, "increment", "count", "probe-left-target", "probe-right-target"];
 
-/// The tools whose default replies the fixtures freeze, in session order.
+/// The tools whose default replies the snapshots freeze, in session order.
 const FIXTURE_TOOLS: [&str; 7] = [
     "find_elements",
     "get_ui_tree",
@@ -468,57 +468,14 @@ async fn capture(
     Ok(())
 }
 
-/// Where the committed fixtures live.
-fn fixtures_directory() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/default_replies")
-}
-
-/// A failure line naming the tool, the fixture and the first differing byte.
-fn mismatch(tool: &str, path: &Path, live: &str, fixture: &str) -> String {
-    let differing = live.as_bytes().iter().zip(fixture.as_bytes()).position(|(a, b)| a != b);
-    let at = differing.unwrap_or_else(|| live.len().min(fixture.len()));
-    format!(
-        "{tool}: the default reply no longer matches {} \
-         (first difference at byte {at}; live {} bytes, fixture {} bytes)\n  \
-         live:    {}...\n  \
-         fixture: {}...\n  \
-         (volatile timings and frame counters are zeroed before this comparison; \
-         every other byte, including `count` and `frames`, is compared as sent)",
-        path.display(),
-        live.len(),
-        fixture.len(),
-        excerpt(live, at),
-        excerpt(fixture, at),
-    )
-}
-
-/// ~80 bytes of `text` around `at`, losing any partial UTF-8 at the edges.
-fn excerpt(text: &str, at: usize) -> String {
-    let bytes = text.as_bytes();
-    let start = at.saturating_sub(40);
-    let end = (at + 40).min(bytes.len());
-    format!("[{}]", String::from_utf8_lossy(&bytes[start..end]).cow_replace('\n', "\\n"))
-}
-
-/// Check one captured session against the committed fixtures, reporting every
-/// drifted tool rather than only the first.
-fn compare_with_fixtures(captured: &[(&str, String)]) -> Result<(), String> {
-    let directory = fixtures_directory();
-    let mut failures = Vec::new();
-    for (tool, live) in captured {
-        let path = directory.join(format!("{tool}.json"));
-        let fixture = match std::fs::read_to_string(&path) {
-            Ok(fixture) => fixture,
-            Err(error) => {
-                failures.push(format!("could not read {}: {error}", path.display()));
-                continue;
-            }
-        };
-        if *live != fixture {
-            failures.push(mismatch(tool, &path, live, &fixture));
-        }
-    }
-    if failures.is_empty() { Ok(()) } else { Err(failures.join("\n")) }
+/// The canonical reply as its snapshot stores it: pretty-printed, so a change
+/// reviews line by line. Printing does not loosen the check: every value of
+/// the canonical reply still appears exactly.
+fn snapshot_text(tool: &str, canonical: &str) -> Result<String, String> {
+    let value: JsonValue = serde_json::from_str(canonical)
+        .map_err(|error| format!("the canonical {tool} reply is not JSON: {error}"))?;
+    serde_json::to_string_pretty(&value)
+        .map_err(|error| format!("could not print the canonical {tool} reply: {error}"))
 }
 
 #[tokio::test]
@@ -526,49 +483,24 @@ fn compare_with_fixtures(captured: &[(&str, String)]) -> Result<(), String> {
     clippy::print_stderr,
     reason = "a test without a desktop session says why it passed without opening a window"
 )]
-async fn default_replies_match_the_fixtures() -> Result<(), String> {
+async fn default_replies_match_the_snapshots() -> Result<(), String> {
     if !has_a_desktop_session() {
         eprintln!("skipping: this machine has no desktop session to open a window on");
         return Ok(());
     }
+    let mut captured = Vec::new();
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        let captured = capture_session(server).await?;
-        for tool in FIXTURE_TOOLS {
-            if !captured.iter().any(|(name, _)| *name == tool) {
-                return Err(format!("the session captured no reply for {tool}"));
-            }
-        }
-        compare_with_fixtures(&captured)
-    })
-    .await
-}
-
-/// Write the fixtures from a fresh session. Ignored: run it deliberately after
-/// a default-reply change, then say so in the report.
-#[tokio::test]
-#[ignore = "regenerates tests/fixtures/default_replies; run deliberately"]
-#[expect(
-    clippy::print_stderr,
-    clippy::print_stdout,
-    reason = "the generator says what it wrote, or why it could not run"
-)]
-async fn capture_default_replies() -> Result<(), String> {
-    if !has_a_desktop_session() {
-        eprintln!("skipping: this machine has no desktop session to open a window on");
-        return Ok(());
-    }
-    with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        let captured = capture_session(server).await?;
-        let directory = fixtures_directory();
-        std::fs::create_dir_all(&directory)
-            .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
-        for (tool, canonical) in &captured {
-            let path = directory.join(format!("{tool}.json"));
-            std::fs::write(&path, canonical)
-                .map_err(|error| format!("could not write {}: {error}", path.display()))?;
-            println!("wrote {} ({} bytes)", path.display(), canonical.len());
-        }
+        captured = capture_session(server).await?;
         Ok(())
     })
-    .await
+    .await?;
+    // Compared once the window and the server are gone, so a mismatch reports
+    // after a clean shutdown.
+    for tool in FIXTURE_TOOLS {
+        let Some((_, canonical)) = captured.iter().find(|(name, _)| *name == tool) else {
+            return Err(format!("the session captured no reply for {tool}"));
+        };
+        insta::assert_snapshot!(tool, snapshot_text(tool, canonical)?);
+    }
+    Ok(())
 }

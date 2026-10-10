@@ -48,6 +48,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7e
 gpui-base = { version = ">=0.6.4, <0.8", default-features = false }
 htmlswap = { git = "https://github.com/themixednuts/htmlswap", rev = "80d36dff051050165ad8fdabc89abd288c9a72fc" }
 image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
+insta = "1.49.0"
 interprocess = { version = "2.4.2", features = ["tokio"] }
 notify = "8.2.0"
 mp4 = "0.14.0"
@@ -139,6 +140,13 @@ strip = "symbols"
 
 [profile.dev.package.image]
 opt-level = 2
+
+# Snapshot comparison and its diff, optimized as insta recommends (and oxc does).
+[profile.dev.package.insta]
+opt-level = 3
+
+[profile.dev.package.similar]
+opt-level = 3
 
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }

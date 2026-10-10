@@ -6,7 +6,7 @@
 //! `record_performance` take `summary_only`, and the two live-document tools take
 //! `summary_only` too.
 //! Every option is additive: it answers under the budget while keeping the promised
-//! reduced shape, and a call without it is unchanged (the fixture test covers the
+//! reduced shape, and a call without it is unchanged (the snapshot test covers the
 //! default replies).
 //!
 //! These tests drive each flag through the same JSON-RPC surface a client uses,
@@ -51,7 +51,7 @@ const DISCOVERY_DEADLINE: Duration = Duration::from_secs(45);
 /// The quiet wait: `latest_frame_count` must repeat across this many polls,
 /// `QUIET_POLL_INTERVAL` apart, before a session measures frames. Two repeated
 /// readings mean three equal counts, which is what worker5's protocol (and the
-/// `default_replies_unchanged` fixtures) use; `QUIET_DEADLINE` bounds the wait so
+/// `default_replies_unchanged` snapshots) use; `QUIET_DEADLINE` bounds the wait so
 /// a never-quiet window proceeds exactly as before.
 const QUIET_POLLS: usize = 2;
 const QUIET_POLL_INTERVAL: Duration = Duration::from_millis(150);

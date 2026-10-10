@@ -9,3 +9,6 @@ target/
 Thumbs.db
 *.log
 *.tmp
+# insta: snapshots awaiting review
+*.snap.new
+*.pending-snap

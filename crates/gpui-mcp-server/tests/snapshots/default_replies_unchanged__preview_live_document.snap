@@ -1,0 +1,13 @@
+---
+source: crates/gpui-mcp-server/tests/default_replies_unchanged.rs
+expression: "snapshot_text(tool, canonical)?"
+---
+{
+  "content": [
+    {
+      "text": "Unsupported: document host is not registered",
+      "type": "text"
+    }
+  ],
+  "isError": true
+}
