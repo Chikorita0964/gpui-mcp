@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[lib]
+# No doc tests in this crate: cargo test --doc would build its docs for nothing.
+doctest = false
+
 [features]
 default = ["zed", "json", "ron"]
 # The live renderer. It needs a GPUI backend: `zed` (the default) or `gpui-pre`
