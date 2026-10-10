@@ -1,4 +1,0 @@
-# Tests sh/orch-tests.py skips, one per line: <package> <test name> <why>. A skip is a known baseline
-# failure that a card did not cause; remove the line once the test is fixed.
-gpui-mcp-server an_injected_hover_renders_only_the_hovered_cached_region flaky ~1 in 3 on the base itself (frame_cost, 2026-10-04; timing under load)
-gpui-mcp-server a_region_crop_carries_the_focus_ring_the_full_window_capture_carries fails under WSLg on the base itself (region_capture, 2026-10-04; environment, not code)
