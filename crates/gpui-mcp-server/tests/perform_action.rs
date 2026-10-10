@@ -74,6 +74,15 @@ const UNKNOWN_ID: &str = "no-such-node-2f9c";
 /// The prefix the fixture stamps on every line its counter writes.
 const COUNTER_LOG_PREFIX: &str = "counter changed to ";
 
+/// The fixture's volume slider: it registers only the accessibility Increment
+/// and Decrement actions, no click and no key handler, and logs each change
+/// with this prefix. It starts at 5 of 0..=10 in steps of 1.
+const VOLUME: &str = "volume";
+const VOLUME_LOG_PREFIX: &str = "volume changed to ";
+
+/// The fixture's root node, which fills the window.
+const ROOT: &str = "demo-root";
+
 /// One window at a time: each test opens a real window on the shared desktop,
 /// and several at once make the fixture flaky.
 static WINDOW: Mutex<()> = Mutex::const_new(());
@@ -211,10 +220,10 @@ impl Server {
         }
     }
 
-    /// The counter lines the fixture has published, oldest first. The fixture
-    /// writes one per performed step and one on reset, so the lines are both
-    /// the count's published value and its change history.
-    async fn counter_lines(&mut self) -> Result<Vec<String>, String> {
+    /// The log lines starting with `prefix` the fixture has published, oldest
+    /// first. The counter and the volume slider write one per performed step,
+    /// so the lines are both the published value and its change history.
+    async fn log_lines(&mut self, prefix: &str) -> Result<Vec<String>, String> {
         let logs = self
             .call_json("get_logs", json!({ "limit": 512 }))
             .await
@@ -226,30 +235,31 @@ impl Server {
         Ok(entries
             .iter()
             .filter_map(|entry| entry.get("message").and_then(JsonValue::as_str))
-            .filter(|message| message.starts_with(COUNTER_LOG_PREFIX))
+            .filter(|message| message.starts_with(prefix))
             .map(str::to_owned)
             .collect())
     }
 
-    /// Wait, bounded, until the fixture has published exactly `expected`
-    /// counter lines, and return them. The count is deliberately exact: a
-    /// handler that ran twice for one call, or once and then repeated on its
-    /// own, publishes more lines than the call it answered.
-    async fn wait_for_counter(
+    /// Wait, bounded, until the fixture has published exactly `expected` lines
+    /// starting with `prefix`, and return them. The count is deliberately
+    /// exact: a handler that ran twice for one call, or once and then repeated
+    /// on its own, publishes more lines than the call it answered.
+    async fn wait_for_lines(
         &mut self,
+        prefix: &str,
         expected: usize,
-        deadline: Duration,
     ) -> Result<Vec<String>, String> {
         let started = Instant::now();
         loop {
-            let observation = match self.counter_lines().await {
+            let observation = match self.log_lines(prefix).await {
                 Ok(lines) if lines.len() == expected => return Ok(lines),
-                Ok(lines) => format!("it published {} counter lines: {lines:?}", lines.len()),
+                Ok(lines) => format!("it published {} such lines: {lines:?}", lines.len()),
                 Err(error) => error,
             };
-            if started.elapsed() >= deadline {
+            if started.elapsed() >= SETTLE_DEADLINE {
                 return Err(format!(
-                    "the fixture never published {expected} counter lines within {deadline:?}: {observation}"
+                    "the fixture never published {expected} lines starting with {prefix:?} \
+                     within {SETTLE_DEADLINE:?}: {observation}"
                 ));
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -443,6 +453,29 @@ fn is_visible(tree: &JsonValue, id: &str) -> Result<bool, String> {
         .ok_or_else(|| format!("the node {id} carries no boolean state.visible"))
 }
 
+/// Whether the node's bounds lie wholly inside the fixture's root, which fills
+/// the window. `state.visible` is the application's own view and is not
+/// clipped to the window, so a control laid out below the window's edge is
+/// still "visible" there.
+fn is_inside_the_window(tree: &JsonValue, id: &str) -> Result<bool, String> {
+    let edges = |id: &str| -> Result<[f64; 4], String> {
+        let bounds = node(tree, id)?
+            .get("bounds")
+            .ok_or_else(|| format!("the node {id} carries no bounds"))?;
+        let number = |field: &str| {
+            bounds
+                .get(field)
+                .and_then(JsonValue::as_f64)
+                .ok_or_else(|| format!("the bounds of {id} carry no numeric {field}: {bounds}"))
+        };
+        let (x, y) = (number("x")?, number("y")?);
+        Ok([x, y, x + number("width")?, y + number("height")?])
+    };
+    let [left, top, right, bottom] = edges(id)?;
+    let [root_left, root_top, root_right, root_bottom] = edges(ROOT)?;
+    Ok(left >= root_left && top >= root_top && right <= root_right && bottom <= root_bottom)
+}
+
 /// Whether an error says the node does not accept the action. Both spellings
 /// the two layers of the stack use pass: the tool's own gate
 /// (`element "increment" does not support SetValue (it advertises [Click])`)
@@ -481,7 +514,7 @@ async fn a_click_changes_the_counter_exactly_once_per_call() -> Result<(), Strin
             is_visible(&before, COUNTER)?,
             "the node showing the count must be visible before the click"
         );
-        let lines = server.counter_lines().await?;
+        let lines = server.log_lines(COUNTER_LOG_PREFIX).await?;
         assert!(
             lines.is_empty(),
             "the fixture must start with a fresh counter: {lines:?} would make the per-click \
@@ -507,7 +540,7 @@ async fn a_click_changes_the_counter_exactly_once_per_call() -> Result<(), Strin
                 .map(|count| format!("counter changed to {count}"))
                 .collect();
             assert_eq!(
-                server.wait_for_counter(steps, SETTLE_DEADLINE).await?,
+                server.wait_for_lines(COUNTER_LOG_PREFIX, steps).await?,
                 expected,
                 "after {steps} click(s) the counter lines must be exactly one step per call"
             );
@@ -575,7 +608,7 @@ async fn an_action_the_node_does_not_handle_is_refused() -> Result<(), String> {
         );
 
         // A refused action must leave the application alone.
-        let lines = server.counter_lines().await?;
+        let lines = server.log_lines(COUNTER_LOG_PREFIX).await?;
         assert!(
             lines.is_empty(),
             "a refused action must not change the counter: {lines:?}"
@@ -610,6 +643,81 @@ async fn an_unknown_node_id_is_not_found() -> Result<(), String> {
         assert!(
             says_not_found(&refusal),
             "the refusal must say the node was not found: {refusal}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_slider_is_stepped_through_its_own_accessibility_actions() -> Result<(), String> {
+    if skip_without_a_desktop() {
+        return Ok(());
+    }
+    with_fixture(WINDOW.lock().await, async |server: &mut Server| {
+        // The slider registers Increment and Decrement listeners and nothing
+        // else, so the tree advertises "step" and no value replacement: the
+        // only route to its value is the bridge's accessibility dispatch.
+        let tree = server.call_json("get_ui_tree", json!({})).await?;
+        let advertised = actions_of(&tree, VOLUME)?;
+        assert!(
+            advertised.contains(&"step".to_owned()),
+            "{VOLUME} must advertise step, the action this case performs; it advertises \
+             {advertised:?}"
+        );
+        assert!(
+            is_visible(&tree, VOLUME)? && is_inside_the_window(&tree, VOLUME)?,
+            "the slider must be visible and laid out inside the fixture window"
+        );
+        let lines = server.log_lines(VOLUME_LOG_PREFIX).await?;
+        assert!(
+            lines.is_empty(),
+            "the fixture must start with an untouched slider: {lines:?}"
+        );
+
+        // One call, one step, in each direction.
+        for action in ["increment", "increment", "decrement"] {
+            let acknowledgement = server
+                .call_json(
+                    "perform_action",
+                    json!({ "id": VOLUME, "action": { "action": action } }),
+                )
+                .await?;
+            assert_eq!(
+                acknowledgement,
+                json!({ "ok": true, "action": "action_performed" }),
+                "a handled {action} is acknowledged with the tool's own success payload"
+            );
+        }
+        assert_eq!(
+            server.wait_for_lines(VOLUME_LOG_PREFIX, 3).await?,
+            [
+                "volume changed to 6",
+                "volume changed to 7",
+                "volume changed to 6"
+            ],
+            "two increments and a decrement must step the volume once per call"
+        );
+
+        // set_value on a step-only slider steps it with the same actions, from
+        // the value the tree publishes: 6 down to 3 is three decrements.
+        let acknowledgement = server
+            .call_json("set_value", json!({ "id": VOLUME, "value": "3" }))
+            .await?;
+        assert_eq!(
+            acknowledgement,
+            json!({ "ok": true, "action": "value_set" }),
+            "set_value acknowledges with its own success payload"
+        );
+        let lines = server.wait_for_lines(VOLUME_LOG_PREFIX, 6).await?;
+        assert_eq!(
+            lines[3..],
+            [
+                "volume changed to 5",
+                "volume changed to 4",
+                "volume changed to 3"
+            ],
+            "set_value must step the slider down one decrement at a time"
         );
         Ok(())
     })
