@@ -1547,8 +1547,17 @@ fn object_output(value: JsonValue) -> Json<ObjectOutput> {
 ///
 /// Returning `Json<T>` instead makes rmcp convert the value into a second
 /// `Value` before encoding its text, which a large tree pays for in full.
+///
+/// The top-level keys are sorted, as `ObjectOutput`'s map sorts every other
+/// tool's reply. Left alone their order would follow `serde_json`'s map, which
+/// keeps insertion order whenever any crate in the build enables its
+/// `preserve_order` feature (the vendored GPUI does), so the same reply would
+/// differ between a single-package and a workspace build.
 fn serialized_result(value: &impl Serialize) -> Result<CallToolResult, String> {
-    let structured = serde_json::to_value(value).map_err(encode_error)?;
+    let mut structured = serde_json::to_value(value).map_err(encode_error)?;
+    if let JsonValue::Object(fields) = &mut structured {
+        fields.sort_keys();
+    }
     Ok(CallToolResult::structured(structured))
 }
 
