@@ -47,7 +47,7 @@ impl FrameTiming {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ArtifactStore {
-    directory: Arc<PathBuf>,
+    directory: Arc<Path>,
 }
 
 impl ArtifactStore {
@@ -102,11 +102,11 @@ impl ArtifactStore {
                 directory.display()
             )
         })?;
-        Ok(Self { directory: Arc::new(directory) })
+        Ok(Self { directory: Arc::from(directory) })
     }
 
     pub(crate) fn directory(&self) -> &Path {
-        self.directory.as_path()
+        &self.directory
     }
 
     fn prepare(&self, artifact_name: &str, overwrite: bool) -> Result<PreparedArtifact, String> {

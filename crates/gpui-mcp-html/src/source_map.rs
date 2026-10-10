@@ -3,11 +3,10 @@
 //! Every element is mapped, whether or not it has an authored `id`: elements
 //! without one are rendered under a generated id derived from their position,
 //! and each element also carries the byte range of its markup in the source.
-
-use std::collections::HashMap;
 use std::ops::Range;
 
 use htmlswap::{RenderNode, RenderPlan};
+use rustc_hash::FxHashMap;
 
 use crate::ElementId;
 use crate::document::attribute;
@@ -45,7 +44,7 @@ pub struct SourceNode {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SourceMap {
     nodes: Vec<SourceNode>,
-    by_semantic_id: HashMap<String, usize>,
+    by_semantic_id: FxHashMap<String, usize>,
 }
 
 impl SourceMap {

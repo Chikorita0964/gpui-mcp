@@ -26,7 +26,7 @@ pub(crate) struct Interaction {
 
 impl Interaction {
     pub(crate) const fn bits(self) -> u8 {
-        self.hovered as u8 | (self.focused as u8) << 1 | (self.active as u8) << 2
+        self.hovered as u8 | ((self.focused as u8) << 1) | ((self.active as u8) << 2)
     }
 
     /// Whether a state pseudo-class holds, or `None` for one the renderer
@@ -276,7 +276,7 @@ pub(crate) struct Computed {
     pub(crate) animations: Vec<Animation>,
     /// The typed style with `@starting-style` applied, when the element has
     /// one. Only GPUI Kit's motion runtime animates from it.
-    #[cfg_attr(not(feature = "gpui-pre"), allow(dead_code))]
+    #[cfg_attr(not(feature = "gpui-pre"), expect(dead_code))]
     pub(crate) starting: Option<ComputedStyle>,
 }
 

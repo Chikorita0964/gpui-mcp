@@ -28,6 +28,7 @@ visual-parity = ["zed", "dep:anyhow", "dep:clap", "dep:gpui-mcp-capture", "dep:g
 [dependencies]
 anyhow = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
+cow-utils.workspace = true
 gpui = { workspace = true, optional = true }
 gpui_pre = { workspace = true, optional = true }
 gpui_platform = { workspace = true, optional = true }
@@ -39,6 +40,7 @@ htmlswap = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 notify = { workspace = true, optional = true }
 ron = { workspace = true, optional = true }
+rustc-hash.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, optional = true }
 thiserror.workspace = true

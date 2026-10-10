@@ -391,6 +391,10 @@ fn draw_times_are_reported(report: &Report) -> Result<(), String> {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 async fn an_injected_hover_renders_only_the_hovered_cached_region() -> Result<(), String> {
     if !has_a_desktop_session() {
         eprintln!("skipping: this machine has no desktop session to open a window on");

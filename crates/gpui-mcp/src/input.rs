@@ -324,7 +324,7 @@ mod tests {
     #[gpui::test]
     fn synthetic_mouse_move_runs_gpui_hover_handlers(cx: &mut TestAppContext) {
         let hovered = Rc::new(Cell::new(false));
-        let hovered_for_handler = hovered.clone();
+        let hovered_for_handler = Rc::clone(&hovered);
         let visual = cx.add_empty_window();
         visual.draw(point(px(0.0), px(0.0)), size(px(300.0), px(100.0)), move |_, _| {
             div()
@@ -356,9 +356,9 @@ mod tests {
         let pressed = Rc::new(Cell::new(false));
         let drag_started = Rc::new(Cell::new(false));
         let dropped = Rc::new(Cell::new(false));
-        let pressed_for_handler = pressed.clone();
-        let drag_started_for_handler = drag_started.clone();
-        let dropped_for_handler = dropped.clone();
+        let pressed_for_handler = Rc::clone(&pressed);
+        let drag_started_for_handler = Rc::clone(&drag_started);
+        let dropped_for_handler = Rc::clone(&dropped);
         let visual = cx.add_empty_window();
         visual.draw(point(px(0.0), px(0.0)), size(px(300.0), px(100.0)), move |_, _| {
             div()

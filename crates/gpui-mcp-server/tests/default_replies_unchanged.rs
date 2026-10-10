@@ -67,6 +67,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use cow_utils::CowUtils as _;
 use serde_json::{Value as JsonValue, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
@@ -496,7 +497,7 @@ fn excerpt(text: &str, at: usize) -> String {
     let bytes = text.as_bytes();
     let start = at.saturating_sub(40);
     let end = (at + 40).min(bytes.len());
-    format!("[{}]", String::from_utf8_lossy(&bytes[start..end]).replace('\n', "\\n"))
+    format!("[{}]", String::from_utf8_lossy(&bytes[start..end]).cow_replace('\n', "\\n"))
 }
 
 /// Check one captured session against the committed fixtures, reporting every
@@ -521,6 +522,10 @@ fn compare_with_fixtures(captured: &[(&str, String)]) -> Result<(), String> {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 async fn default_replies_match_the_fixtures() -> Result<(), String> {
     if !has_a_desktop_session() {
         eprintln!("skipping: this machine has no desktop session to open a window on");
@@ -542,6 +547,11 @@ async fn default_replies_match_the_fixtures() -> Result<(), String> {
 /// a default-reply change, then say so in the report.
 #[tokio::test]
 #[ignore = "regenerates tests/fixtures/default_replies; run deliberately"]
+#[expect(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "the generator says what it wrote, or why it could not run"
+)]
 async fn capture_default_replies() -> Result<(), String> {
     if !has_a_desktop_session() {
         eprintln!("skipping: this machine has no desktop session to open a window on");

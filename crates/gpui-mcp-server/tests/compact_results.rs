@@ -349,6 +349,10 @@ where
 }
 
 /// The skip note every test prints when it cannot open a window.
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 fn skip_without_a_desktop() -> bool {
     if has_a_desktop_session() {
         false
@@ -469,6 +473,7 @@ fn assert_compact_shape(tool: &str, payload: &JsonValue, expected: &[&str]) -> R
 }
 
 /// The compact reply's measured size, printed for the report.
+#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
 fn assert_under_the_cap(tool: &str, measured: &Measured) -> Result<(), String> {
     println!("measure {tool} compact reply: result_bytes={}", measured.result_bytes);
     if measured.result_bytes >= COMPACT_LIMIT_BYTES {
@@ -482,6 +487,7 @@ fn assert_under_the_cap(tool: &str, measured: &Measured) -> Result<(), String> {
 
 /// The default reply's measured size, printed and checked to be over the cap, so
 /// the compact test above it is not vacuously passing on a small fixture.
+#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
 fn assert_default_over_the_cap(tool: &str, measured: &Measured) -> Result<(), String> {
     println!("measure {tool} default reply: result_bytes={}", measured.result_bytes);
     if measured.result_bytes <= COMPACT_LIMIT_BYTES {
@@ -495,6 +501,7 @@ fn assert_default_over_the_cap(tool: &str, measured: &Measured) -> Result<(), St
 
 /// The demo's documented unsupported live-document reply, whatever the flag says:
 /// the call must be answered (not rejected) and the error text must be unchanged.
+#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
 fn assert_unsupported(tool: &str, result: &JsonValue) -> Result<(), String> {
     if result.get("isError").and_then(JsonValue::as_bool) != Some(true) {
         return Err(format!(
@@ -689,6 +696,7 @@ async fn load_ui_snapshot_ids_only_returns_the_saved_tree_ids() -> Result<(), St
 }
 
 #[tokio::test]
+#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
 async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());
@@ -767,6 +775,7 @@ async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> 
 }
 
 #[tokio::test]
+#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
 async fn record_performance_summary_only_stays_well_formed_and_bounded() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());

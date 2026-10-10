@@ -61,7 +61,7 @@ pub(crate) struct BridgeClient {
     descriptor: Arc<EndpointDescriptor>,
     /// The descriptor's file: the bridge rewrites it when the application
     /// publishes a capability after install (`on_message`, `on_annotations`).
-    path: Arc<PathBuf>,
+    path: Arc<Path>,
     next_request_id: Arc<AtomicU64>,
     pool: Arc<ConnectionPool>,
 }
@@ -77,7 +77,7 @@ impl BridgeClient {
         validate_descriptor(&descriptor, path)?;
         Ok(Self {
             descriptor: Arc::new(descriptor),
-            path: Arc::new(path.to_path_buf()),
+            path: Arc::from(path),
             next_request_id: Arc::new(AtomicU64::new(1)),
             pool: Arc::new(ConnectionPool::new()),
         })
@@ -437,7 +437,7 @@ async fn discover_clients(
             probes.spawn(async move {
                 let client = BridgeClient {
                     descriptor: Arc::new(descriptor),
-                    path: Arc::new(path),
+                    path: Arc::from(path),
                     next_request_id: Arc::new(AtomicU64::new(1)),
                     pool: Arc::new(ConnectionPool::new()),
                 };
@@ -1018,7 +1018,7 @@ mod tests {
     /// 2^22) and the range Windows hands out. A real process that has just
     /// exited is no substitute, as Windows reuses its id almost at once and
     /// parallel tests start processes of their own.
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     fn exited_process_id() -> Result<u32> {
         Ok(0x7FFF_FFFC)
     }

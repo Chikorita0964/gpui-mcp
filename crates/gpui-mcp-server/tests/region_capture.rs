@@ -283,6 +283,10 @@ impl support::FixtureClient for Server {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 async fn a_region_crop_carries_the_focus_ring_the_full_window_capture_carries() -> Result<(), String>
 {
     if !has_a_desktop_session() {

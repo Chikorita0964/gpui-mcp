@@ -11,6 +11,7 @@ homepage.workspace = true
 [dependencies]
 gpui_pre.workspace = true
 gpui-base.workspace = true
+rustc-hash.workspace = true
 
 [dev-dependencies]
 gpui_pre = { workspace = true, features = ["test-support"] }

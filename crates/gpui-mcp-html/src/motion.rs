@@ -17,7 +17,7 @@ use htmlswap::{RenderMotionPlan, StyleDeclaration};
 use crate::cascade::Computed;
 
 /// What one element animates this frame.
-#[cfg_attr(not(feature = "gpui-pre"), allow(dead_code))]
+#[cfg_attr(not(feature = "gpui-pre"), expect(dead_code))]
 pub(crate) struct Inputs<'a> {
     /// The element's runtime id, which keys its motion state.
     pub(crate) key: &'a str,
@@ -129,8 +129,6 @@ mod kit {
             SharedString::from(suffix.to_owned()),
         )
     }
-
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn animate(inputs: &Inputs<'_>, window: &mut Window, cx: &mut App) -> Output {
         let mut output = Output::default();
         let computed = inputs.computed;
@@ -252,7 +250,7 @@ mod kit {
                 Iterations::Infinite => IterationCount::Infinite,
                 // GPUI Kit plays whole iterations; a fractional count
                 // finishes its last iteration.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 Iterations::Count(count) => IterationCount::Finite(count.max(0.0).ceil() as u64),
             })
             .direction(match animation.direction {

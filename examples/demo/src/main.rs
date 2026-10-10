@@ -325,6 +325,10 @@ impl Render for Demo {
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "the demo reports a startup failure on stderr before it exits"
+)]
 fn main() {
     tracing_subscriber::fmt().with_writer(std::io::stderr).with_ansi(false).init();
     gpui_platform::application().run(|cx: &mut App| {

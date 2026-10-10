@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use cow_utils::CowUtils as _;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId as GpuiElementId,
     ElementInputHandler, EntityInputHandler, FocusHandle, Focusable, Global, GlobalElementId,
@@ -784,8 +785,9 @@ impl Element for TextElement {
 }
 
 fn normalize_value(value: &str, multiline: bool) -> String {
-    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
-    if multiline { normalized } else { normalized.replace('\n', " ") }
+    let normalized = value.cow_replace("\r\n", "\n");
+    let normalized = normalized.cow_replace('\r', "\n");
+    if multiline { normalized.into_owned() } else { normalized.cow_replace('\n', " ").into_owned() }
 }
 
 fn source_lines(content: &str) -> Vec<Range<usize>> {

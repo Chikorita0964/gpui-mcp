@@ -262,7 +262,7 @@ impl std::error::Error for CaptureFailure {}
 // GPUI regions are floating-point logical pixels while image crops use u32
 // physical pixels. Values are validated, clamped, and images are capped before
 // these intentional conversions.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+#[expect(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 pub fn screenshot(
     window: CaptureTarget,
     options: ScreenshotOptions,
@@ -553,7 +553,7 @@ struct RegionMapping {
     scale_y: f32,
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[expect(clippy::cast_precision_loss)]
 fn region_mapping(
     image_width: u32,
     image_height: u32,

@@ -8,12 +8,11 @@
 //!
 //! On the Zed backend, which GPUI Kit does not support, transitions apply
 //! their end state at once, as transitions and animations do there.
-
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::SharedString;
 use htmlswap::StyleDeclaration;
+use rustc_hash::FxHashMap;
 
 use crate::{Binding, ElementId, HtmlUi, StateValue, UiProperty};
 
@@ -88,16 +87,16 @@ pub(crate) fn element_at<'a>(
 }
 
 /// Bound property values by element.
-pub(crate) type PropertySnapshot = HashMap<ElementId, HashMap<UiProperty, StateValue>>;
+pub(crate) type PropertySnapshot = FxHashMap<ElementId, FxHashMap<UiProperty, StateValue>>;
 
 /// The outgoing document of a transition, which the renderer draws again.
 pub(crate) struct OldState {
     pub(crate) ui: Rc<HtmlUi>,
-    pub(crate) bindings: HashMap<ElementId, Rc<[Binding]>>,
+    pub(crate) bindings: FxHashMap<ElementId, Rc<[Binding]>>,
     /// Bound property values at capture time, or `None` to read the hooks
     /// live (a document swap leaves application state unchanged).
     pub(crate) properties: Option<PropertySnapshot>,
-    pub(crate) disclosures: HashMap<ElementId, bool>,
+    pub(crate) disclosures: FxHashMap<ElementId, bool>,
 }
 
 #[cfg(feature = "gpui-pre")]
@@ -122,7 +121,7 @@ mod off {
     pub(crate) struct DocumentTransitions(());
 
     // The same methods as the GPUI Kit version, so the renderer has one path.
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self)]
     impl DocumentTransitions {
         pub(crate) fn set_document(&self, _: Rc<HtmlUi>) {}
 
@@ -225,8 +224,8 @@ mod kit {
 
         /// Start a transition from the document as last drawn.
         pub(crate) fn start(&self, types: Vec<SharedString>, old: OldState) -> bool {
-            let incoming = self.incoming.clone();
-            let media = self.media.clone();
+            let incoming = Rc::clone(&self.incoming);
+            let media = Rc::clone(&self.media);
             self.inner.start(
                 types,
                 old,

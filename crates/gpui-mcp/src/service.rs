@@ -337,7 +337,6 @@ impl BridgeHandle {
     ///
     /// Returns [`StartError`] when configuration validation, the private endpoint
     /// directory, native local listener, descriptor serialization, or runtime setup fails.
-    #[allow(clippy::too_many_lines)]
     pub fn install(
         window: &mut Window,
         cx: &App,
@@ -350,7 +349,7 @@ impl BridgeHandle {
         let token = encode_hex(&token_bytes);
         let instance_id = random_instance_id();
         let state = SharedState::new();
-        let automation = Automation::new(state.clone());
+        let automation = Automation::new(Arc::clone(&state));
         automation.attach(window);
         let pid = ProcessId::new(std::process::id()).ok_or(StartError::InvalidProcessId)?;
         let native_window_id = crate::native_window_id(window);
@@ -401,10 +400,10 @@ impl BridgeHandle {
             window,
             cx,
             command_rx,
-            state.clone(),
-            document_host.clone(),
-            resource_host.clone(),
-            command_host.clone(),
+            Arc::clone(&state),
+            Rc::clone(&document_host),
+            Rc::clone(&resource_host),
+            Rc::clone(&command_host),
         );
         spawn_annotation_listener(window, cx, &state, &annotation_listener);
         spawn_message_listener(window, cx, &state, &message_listener);
@@ -759,8 +758,6 @@ fn spawn_message_listener(
         })
         .detach();
 }
-
-#[allow(clippy::too_many_lines)]
 fn handle_ui_operation(
     operation: Operation,
     state: &SharedState,
@@ -938,8 +935,6 @@ fn dispatch_semantic_action(
         "the gpui-pre backend does not support semantic accessibility actions",
     ))
 }
-
-#[allow(clippy::too_many_arguments)]
 async fn run_listener(
     listener: LocalSocketListener,
     command_tx: Sender<UiCommand>,
@@ -969,13 +964,13 @@ async fn run_listener(
                     tracing::warn!(%error, "rejected a local IPC peer");
                     continue;
                 }
-                let Ok(permit) = permits.clone().try_acquire_owned() else {
+                let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
                     tracing::warn!(max_connections = MAX_CONNECTIONS, "bridge connection limit reached");
                     continue;
                 };
                 let context = ConnectionContext {
                     command_tx: command_tx.clone(),
-                    state: state.clone(),
+                    state: Arc::clone(&state),
                     token: token.clone(),
                     pid,
                     app_id: app_id.clone(),
@@ -1063,8 +1058,6 @@ async fn read_request(
         .map(Some)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "request JSON is invalid"))
 }
-
-#[allow(clippy::too_many_lines)]
 async fn process_request(request: WireRequest, context: ConnectionContext) -> WireResponse {
     if request.protocol_version != PROTOCOL_VERSION {
         return WireResponse::failure(
@@ -1244,7 +1237,6 @@ fn validate_node_id(node_id: &str) -> Result<(), BridgeError> {
     }
     Ok(())
 }
-#[allow(clippy::too_many_lines)]
 fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
     match operation {
         Operation::Input { command } => input::validate(command),
@@ -1740,7 +1732,7 @@ mod tests {
 
     impl Render for ActionFixture {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            let steps = self.steps.clone();
+            let steps = Rc::clone(&self.steps);
             div()
                 .id("root")
                 .role(Role::Application)
@@ -1763,7 +1755,7 @@ mod tests {
     ) {
         let automation = Automation::isolated();
         let steps = Rc::new(Cell::new(0));
-        let steps_by_view = steps.clone();
+        let steps_by_view = Rc::clone(&steps);
         let automation_for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);

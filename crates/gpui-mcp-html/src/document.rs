@@ -1,10 +1,9 @@
-use std::collections::{HashMap, HashSet};
-
 use htmlswap::{
     Compilation, CompileAssets, Compiler, CompilerBuildError, CompilerOptions,
     CompilerResourceOptions, Diagnostic, RenderElement, RenderNode, RenderPlan, Severity,
     SourcePolicy, Span, UiRole,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{Binding, BindingDocument, BindingDocumentError, BindingMode, UiEvent, UiProperty};
 
@@ -127,9 +126,9 @@ impl HtmlUi {
 }
 
 fn validate_binding_targets(plan: &RenderPlan, bindings: &BindingDocument) -> Vec<HtmlDiagnostic> {
-    let mut elements = HashMap::new();
-    let mut duplicates = HashSet::new();
-    let mut mutation_channels = HashSet::new();
+    let mut elements = FxHashMap::default();
+    let mut duplicates = FxHashSet::default();
+    let mut mutation_channels = FxHashSet::default();
     collect_identified_elements(&plan.nodes, &mut elements, &mut duplicates);
     let mut diagnostics = duplicates
         .into_iter()
@@ -191,8 +190,8 @@ fn validate_binding_targets(plan: &RenderPlan, bindings: &BindingDocument) -> Ve
 
 fn collect_identified_elements<'a>(
     nodes: &'a [RenderNode],
-    elements: &mut HashMap<String, &'a RenderElement>,
-    duplicates: &mut HashSet<String>,
+    elements: &mut FxHashMap<String, &'a RenderElement>,
+    duplicates: &mut FxHashSet<String>,
 ) {
     for node in nodes {
         let RenderNode::Element(element) = node else {

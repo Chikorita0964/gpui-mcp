@@ -1,7 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{AnyElement, App, Window};
+use rustc_hash::FxHashMap;
 
 pub(crate) type ComponentFactory =
     Rc<dyn Fn(&ComponentNode, Vec<AnyElement>, &mut Window, &mut App) -> AnyElement>;
@@ -47,7 +48,7 @@ impl ComponentNode {
 /// Application-owned custom-element factories for live previews and embedded UIs.
 #[derive(Clone, Default)]
 pub struct ComponentRegistry {
-    factories: HashMap<String, ComponentFactory>,
+    factories: FxHashMap<String, ComponentFactory>,
 }
 
 impl ComponentRegistry {

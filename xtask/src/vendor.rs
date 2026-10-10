@@ -101,6 +101,7 @@ pub(crate) struct VendorArgs {
     check: bool,
 }
 
+#[expect(clippy::print_stdout, reason = "xtask is a command-line tool: its result goes to stdout")]
 pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
     let name = args.krate.name();
     if let Some(patch) = args.without.iter().find(|patch| patch.required()) {

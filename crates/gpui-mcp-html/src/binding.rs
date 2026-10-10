@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use std::fmt;
 
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 /// Current on-disk binding document version.
@@ -219,8 +219,8 @@ impl BindingDocument {
             });
         }
 
-        let mut events = HashSet::new();
-        let mut properties = HashSet::new();
+        let mut events = FxHashSet::default();
+        let mut properties = FxHashSet::default();
         for (index, binding) in self.bindings.iter().enumerate().take(MAX_BINDINGS) {
             validate_identifier(
                 index,

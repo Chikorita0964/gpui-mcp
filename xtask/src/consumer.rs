@@ -6,14 +6,14 @@
 //! with that backend's `Window` and `App`, and verifies that the app's GPUI
 //! crates and the bridge all share the one patched GPUI package from the
 //! requested commit.
-
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
 use anyhow::{Context as _, Result, bail, ensure};
 use clap::{Args, ValueEnum};
+use cow_utils::CowUtils as _;
+use rustc_hash::FxHashMap;
 use serde_json::Value;
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -89,6 +89,7 @@ pub(crate) struct ConsumerArgs {
     target_dir: Option<PathBuf>,
 }
 
+#[expect(clippy::print_stdout, reason = "xtask is a command-line tool: its result goes to stdout")]
 pub(crate) fn run(args: &ConsumerArgs) -> Result<()> {
     ensure!(
         args.rev.len() == 40 && args.rev.chars().all(|c| c.is_ascii_hexdigit()),
@@ -188,15 +189,16 @@ fn verify(metadata: &Value, recipe: &Recipe, rev: &str) -> Result<()> {
         bail!("expected one {gpui_package} package; found {}", packages_named(gpui_package).len());
     };
     let source = snapshot["source"].as_str().unwrap_or_default();
-    if snapshot["version"] != gpui_version || !source.ends_with(&format!("#{}", rev.to_lowercase()))
+    if snapshot["version"] != gpui_version
+        || !source.ends_with(&format!("#{}", rev.cow_to_lowercase()))
     {
         bail!("{gpui_package} did not resolve to the requested patched Git snapshot");
     }
-    let names: HashMap<&str, &str> = packages
+    let names: FxHashMap<&str, &str> = packages
         .iter()
         .filter_map(|package| Some((package["id"].as_str()?, package["name"].as_str()?)))
         .collect();
-    let nodes: HashMap<&str, &Value> = metadata["resolve"]["nodes"]
+    let nodes: FxHashMap<&str, &Value> = metadata["resolve"]["nodes"]
         .as_array()
         .context("metadata has no resolve graph")?
         .iter()

@@ -6,6 +6,7 @@ use super::{
     encode_error, get_node, json, object_output, require_bounds, tool, tool_router,
     validate_pointer_point, validate_value,
 };
+use cow_utils::CowUtils as _;
 
 #[tool_router(router = input_router)]
 impl GpuiMcp {
@@ -420,7 +421,7 @@ impl GpuiMcp {
         self.ack_after_frame(Operation::Focus { node_id: id.to_owned() }).await?;
         let mut keystrokes = Vec::with_capacity(usize::from(step_count) + 1);
         keystrokes.push("home".to_owned());
-        keystrokes.extend((0..step_count).map(|_| "right".to_owned()));
+        keystrokes.extend(std::iter::repeat_n("right".to_owned(), usize::from(step_count)));
         self.dispatch_input(InputCommand::KeySequence { keystrokes }).await?;
         Ok(())
     }
@@ -449,7 +450,7 @@ fn validate_pointer_click_count(count: u8) -> Result<(), String> {
 }
 
 fn parse_boolean(value: &str) -> Result<bool, String> {
-    match value.trim().to_ascii_lowercase().as_str() {
+    match value.trim().cow_to_ascii_lowercase().as_ref() {
         "true" | "1" | "on" | "yes" => Ok(true),
         "false" | "0" | "off" | "no" => Ok(false),
         _ => Err("checkable values accept true or false".to_owned()),

@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use cow_utils::CowUtils as _;
 use gpui::AccessibilityFrame;
 use gpui_mcp_protocol::{
     Annotation, AnnotationSource, AnnotationSpec, BridgeError, Distribution, ErrorCode,
@@ -12,6 +13,7 @@ use gpui_mcp_protocol::{
     NewMessage, Rect, SemanticDiagnostic, SemanticDiagnosticCode, UiNode, UiTree, ViewActivity,
     ViewDraw, ViewOutcome, ViewRenderCause, WindowGeometry,
 };
+use rustc_hash::FxHashMap;
 use tokio::sync::watch;
 use tokio::time::timeout;
 
@@ -232,7 +234,7 @@ impl SharedState {
             intake.awaiting = false;
             let carried = intake.pending.as_ref().is_some_and(|pending| pending.incomplete);
             let incomplete = std::mem::take(&mut intake.incomplete) || carried;
-            intake.pending.replace(PendingSemantics { frame: frame.clone(), incomplete })
+            intake.pending.replace(PendingSemantics { frame: Arc::clone(frame), incomplete })
         };
         // Release the lock before an unread frame is freed.
         drop(replaced);
@@ -699,7 +701,7 @@ impl SharedState {
 
     pub(crate) fn add_log(&self, level: &str, message: &str) {
         let timestamp_ms = unix_ms();
-        let mut sanitized = message.replace(['\r', '\n'], " ");
+        let mut sanitized = message.cow_replace(&['\r', '\n'][..], " ").into_owned();
         sanitized.truncate(sanitized.floor_char_boundary(4096));
         let mut logs = self.logs.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if logs.len() == 512 {
@@ -1003,7 +1005,7 @@ fn frame_stats_from_timings(timings: &TimingState) -> FrameStats {
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[expect(clippy::cast_precision_loss)]
 fn timing_summary(samples: &VecDeque<Duration>) -> (f64, f64) {
     if samples.is_empty() {
         return (0.0, 0.0);
@@ -1019,7 +1021,7 @@ fn milliseconds(duration: Duration) -> f64 {
 }
 
 /// Mean and nearest-rank percentiles of `values`.
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[expect(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn distribution(mut values: Vec<f64>) -> Distribution {
     if values.is_empty() {
         return Distribution::default();
@@ -1093,7 +1095,7 @@ fn build_report(
         views_reused: samples.iter().map(|sample| u64::from(sample.views_reused)).sum(),
     };
 
-    let mut positions = HashMap::<u64, usize>::new();
+    let mut positions = FxHashMap::<u64, usize>::default();
     let mut views = Vec::<ViewActivity>::new();
     for view in records.iter().flat_map(|record| record.views.iter()) {
         let position = *positions.entry(view.entity_id).or_insert_with(|| {
@@ -1137,7 +1139,7 @@ fn build_report(
 }
 
 fn normalize_level(level: &str) -> &'static str {
-    match level.to_ascii_lowercase().as_str() {
+    match level.cow_to_ascii_lowercase().as_ref() {
         "trace" => "trace",
         "debug" => "debug",
         "warn" | "warning" => "warn",
@@ -1192,6 +1194,7 @@ pub(crate) fn rect_from_gpui(bounds: gpui::Bounds<gpui::Pixels>) -> Rect {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::Arc;
     use std::time::Duration;
 
     use gpui_mcp_protocol::{NodeState, Role, SemanticDiagnosticCode, UiNode, ViewRenderCause};
@@ -1295,7 +1298,7 @@ mod tests {
     #[tokio::test]
     async fn tree_wait_wakes_when_a_new_generation_is_published() -> Result<(), String> {
         let state = SharedState::new();
-        let waiter_state = state.clone();
+        let waiter_state = Arc::clone(&state);
         let waiter =
             tokio::spawn(
                 async move { waiter_state.wait_for_tree(0, Duration::from_secs(1)).await },
@@ -1317,7 +1320,7 @@ mod tests {
         let state = SharedState::new();
         draw_frame(&state, 2, &[]);
 
-        let waiter_state = state.clone();
+        let waiter_state = Arc::clone(&state);
         let waiter =
             tokio::spawn(
                 async move { waiter_state.wait_for_frame(1, Duration::from_secs(1)).await },

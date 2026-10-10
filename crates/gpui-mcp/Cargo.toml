@@ -24,6 +24,7 @@ test-support = ["gpui?/test-support", "gpui_pre?/test-support"]
 
 [dependencies]
 async-channel.workspace = true
+cow-utils.workspace = true
 gpui = { workspace = true, optional = true }
 gpui_pre = { workspace = true, optional = true }
 gpui_ce = { workspace = true, optional = true }
@@ -31,6 +32,7 @@ gpui-mcp-protocol = { path = "../gpui-mcp-protocol" }
 interprocess.workspace = true
 rand.workspace = true
 raw-window-handle.workspace = true
+rustc-hash.workspace = true
 serde_json.workspace = true
 subtle.workspace = true
 thiserror.workspace = true

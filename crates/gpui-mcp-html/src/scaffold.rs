@@ -3,6 +3,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use cow_utils::CowUtils as _;
+
 use crate::{
     Binding, BindingDocument, BindingDocumentError, BindingTarget, ElementId, HandlerId, UiEvent,
 };
@@ -280,8 +282,6 @@ edition = "2024"
 "#
     )
 }
-
-#[allow(clippy::too_many_lines)] // The generated starter is clearer as one auditable template.
 fn main_rs(app_id: &str, title: &str) -> String {
     format!(
         r#"use std::path::PathBuf;
@@ -497,9 +497,9 @@ fn validate_workspace(workspace: &Path) -> Result<(), ScaffoldError> {
 fn cargo_path(path: &Path) -> Result<String, ScaffoldError> {
     let raw = path.to_string_lossy();
     let path = if let Some(path) = raw.strip_prefix(r"\\?\UNC\") {
-        format!("//{}", path.replace('\\', "/"))
+        format!("//{}", path.cow_replace('\\', "/"))
     } else {
-        raw.strip_prefix(r"\\?\").unwrap_or(&raw).replace('\\', "/")
+        raw.strip_prefix(r"\\?\").unwrap_or(&raw).cow_replace('\\', "/").into_owned()
     };
     if path.contains(['"', '\n', '\r']) {
         Err(ScaffoldError::InvalidDependencyPath { path })

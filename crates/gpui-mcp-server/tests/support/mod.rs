@@ -77,7 +77,7 @@ mod tests {
     impl FixtureClient for DelayedTree {
         // The trait declares `async fn`, so the impl must match that form even
         // though this fixture's answers are ready without awaiting anything.
-        #[allow(clippy::unused_async_trait_impl)]
+        #[expect(clippy::unused_async_trait_impl)]
         async fn call_json(&mut self, tool: &str, _: Value) -> Result<Value, String> {
             if tool == "list_apps" {
                 return Ok(json!({ "count": 1 }));

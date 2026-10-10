@@ -208,7 +208,7 @@ impl ProjectWatcher {
     pub fn new(paths: ProjectPaths) -> Result<Self, ProjectError> {
         let (sender, receiver) = sync_channel(EVENT_QUEUE_CAPACITY);
         let overflowed = Arc::new(AtomicBool::new(false));
-        let callback_overflowed = overflowed.clone();
+        let callback_overflowed = Arc::clone(&overflowed);
         let mut watcher = notify::recommended_watcher(move |event| {
             if sender.try_send(event).is_err() {
                 callback_overflowed.store(true, Ordering::Release);

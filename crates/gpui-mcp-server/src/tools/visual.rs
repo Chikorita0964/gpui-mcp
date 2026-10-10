@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_mcp_capture::{CaptureFailure, CaptureTarget, LiveFrameStream};
@@ -137,7 +138,7 @@ impl GpuiMcp {
         *self.pointer.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = pointer;
         let root = largest_root_bounds(&self.tree().await?);
         let include_pointer = args.include_pointer;
-        let pointer_state = self.pointer.clone();
+        let pointer_state = Arc::clone(&self.pointer);
         let (stream, first) = tokio::task::spawn_blocking(move || {
             let mut stream = LiveFrameStream::open(capture_target, args.frames_per_second)
                 .map_err(|error| error.to_string())?;
@@ -269,7 +270,7 @@ struct VideoCaptureTask {
     stream: LiveFrameStream,
     latest_frame: image::RgbaImage,
     worker_cancellation: super::CancellationToken,
-    pointer: std::sync::Arc<std::sync::Mutex<Point>>,
+    pointer: Arc<std::sync::Mutex<Point>>,
     root: Option<Rect>,
     include_pointer: bool,
     frames_per_second: u8,
@@ -392,7 +393,7 @@ fn draw_pointer_marker(image: &mut image::RgbaImage, x: i32, y: i32) -> bool {
     true
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation)]
 fn rounded_i32(value: f64) -> i32 {
     if value.is_nan() {
         return 0;

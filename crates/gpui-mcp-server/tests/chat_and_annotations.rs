@@ -229,6 +229,10 @@ impl support::FixtureClient for Server {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 async fn annotations_and_messages_cross_the_bridge_both_ways() -> Result<(), String> {
     if !has_a_desktop_session() {
         eprintln!("skipping: this machine has no desktop session to open a window on");
@@ -249,8 +253,6 @@ async fn annotations_and_messages_cross_the_bridge_both_ways() -> Result<(), Str
     fixture.stop().await;
     outcome
 }
-
-#[allow(clippy::too_many_lines)]
 async fn exercise(server: &mut Server) -> Result<(), String> {
     server
         .request(

@@ -399,8 +399,8 @@ fn expect_ok<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> Opti
 
 fn build_hooks(state: &TestState) -> Option<HookRegistry> {
     let mut hooks = HookRegistry::new();
-    let title_reader = state.title.clone();
-    let title_writer = state.title.clone();
+    let title_reader = Rc::clone(&state.title);
+    let title_writer = Rc::clone(&state.title);
     expect_ok(
         hooks.register_state_mut(
             StateBindingId::new("document_title"),
@@ -424,7 +424,7 @@ fn build_hooks(state: &TestState) -> Option<HookRegistry> {
     )?;
 
     register_published_hook(&mut hooks, state)?;
-    let recorded_events = state.events.clone();
+    let recorded_events = Rc::clone(&state.events);
     expect_ok(
         hooks.register_event(HandlerId::new("save_document"), move |event, _, _| {
             recorded_events.borrow_mut().push(format!(
@@ -436,7 +436,7 @@ fn build_hooks(state: &TestState) -> Option<HookRegistry> {
         }),
         "save hook should register",
     )?;
-    let recorded_events = state.events.clone();
+    let recorded_events = Rc::clone(&state.events);
     expect_ok(
         hooks.register_event(HandlerId::new("open_document"), move |event, _, _| {
             recorded_events.borrow_mut().push(format!(
@@ -452,8 +452,8 @@ fn build_hooks(state: &TestState) -> Option<HookRegistry> {
 }
 
 fn register_published_hook(hooks: &mut HookRegistry, state: &TestState) -> Option<()> {
-    let published_reader = state.published.clone();
-    let published_writer = state.published.clone();
+    let published_reader = Rc::clone(&state.published);
+    let published_writer = Rc::clone(&state.published);
     expect_ok(
         hooks.register_state_mut(
             StateBindingId::new("is_published"),
@@ -474,7 +474,7 @@ fn register_published_hook(hooks: &mut HookRegistry, state: &TestState) -> Optio
 }
 
 fn build_components(state: &TestState) -> Option<ComponentRegistry> {
-    let render_count = state.component_renders.clone();
+    let render_count = Rc::clone(&state.component_renders);
     let mut components = ComponentRegistry::new();
     expect_ok(
         components.register("project-card", move |_, children, _, _| {
@@ -1311,6 +1311,8 @@ fn navigation_view_transitions_move_named_elements(cx: &mut TestAppContext) {
 #[cfg(feature = "gpui-pre")]
 #[gpui::test]
 fn same_document_view_transitions_activate_their_types(cx: &mut TestAppContext) {
+    use cow_utils::CowUtils as _;
+
     let css = "body { width: 600px; height: 400px; }
 #page { display: flex; flex-direction: column; }
 .hero { view-transition-name: hero; width: 100px; height: 20px; }
@@ -1324,7 +1326,7 @@ main:active-view-transition-type(slide) .badge { width: 80px; }
         return;
     };
     let hero = bounds_of(&automation, "hero");
-    let moved = html.replace(
+    let moved = html.cow_replace(
         r#"<div id="hero" class="hero">Hero</div><div id="badge" class="badge"></div>"#,
         r#"<div id="badge" class="badge"></div><div id="hero" class="hero">Hero</div>"#,
     );

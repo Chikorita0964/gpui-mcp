@@ -48,6 +48,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use cow_utils::CowUtils as _;
 use serde_json::{Value as JsonValue, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
@@ -312,6 +313,10 @@ fn has_a_desktop_session() -> bool {
 }
 
 /// The skip note every test prints when it cannot open a window.
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 fn skip_without_a_desktop() -> bool {
     if has_a_desktop_session() {
         false
@@ -452,7 +457,7 @@ fn is_inside_the_window(tree: &JsonValue, id: &str) -> Result<bool, String> {
 /// this action`), so the test states the contract rather than one layer's
 /// wording.
 fn says_it_does_not_handle(error: &str) -> bool {
-    let error = error.to_ascii_lowercase();
+    let error = error.cow_to_ascii_lowercase();
     error.contains("does not support") || error.contains("does not handle")
 }
 
@@ -460,7 +465,7 @@ fn says_it_does_not_handle(error: &str) -> bool {
 /// human-readable (`was not found`) or the protocol's code spelling
 /// (`NotFound` / `not_found`).
 fn says_not_found(error: &str) -> bool {
-    let error = error.to_ascii_lowercase();
+    let error = error.cow_to_ascii_lowercase();
     error.contains("not found") || error.contains("not_found")
 }
 

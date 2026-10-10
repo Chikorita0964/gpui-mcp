@@ -484,6 +484,10 @@ fn reachable_ids(tree: &JsonValue) -> Result<BTreeSet<String>, String> {
 }
 
 /// The skip note every test prints when it cannot open a window.
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 fn skip_without_a_desktop() -> bool {
     if has_a_desktop_session() {
         false
@@ -647,6 +651,10 @@ async fn max_depth_bounds_the_levels_below_the_starting_node() -> Result<(), Str
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured reply goes into the run's log for the report"
+)]
 async fn visible_only_drops_the_nodes_reported_as_invisible() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());
@@ -762,6 +770,10 @@ async fn an_unknown_root_is_an_error_naming_the_requested_id() -> Result<(), Str
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured reply goes into the run's log for the report"
+)]
 async fn a_whole_tree_and_a_subtree_call_are_measured() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());

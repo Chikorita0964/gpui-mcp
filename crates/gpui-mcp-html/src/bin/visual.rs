@@ -365,11 +365,13 @@ async fn wait_for_completed_frame(
     Ok(())
 }
 
+#[expect(clippy::print_stdout, reason = "the parity driver reads the ready line from stdout")]
 fn print_ready(window_id: u32) {
     println!("READY {} {window_id}", std::process::id());
     let _ = std::io::stdout().flush();
 }
 
+#[expect(clippy::print_stderr, reason = "the parity driver reads a failure from stderr")]
 fn print_error(error: impl std::fmt::Display) {
     for line in error.to_string().lines() {
         eprintln!("{ERROR_PREFIX}{line}");
@@ -386,6 +388,7 @@ struct CaptureRequest {
     settle: Duration,
 }
 
+#[expect(clippy::print_stdout, reason = "the parity driver reads the capture result from stdout")]
 fn capture_window(request: &CaptureRequest) -> Result<()> {
     ensure!(request.width > 0 && request.height > 0, "capture size must be non-zero");
     ensure!(
@@ -422,13 +425,13 @@ fn capture_window(request: &CaptureRequest) -> Result<()> {
 }
 
 // The fixed fixture dimensions are exactly representable as f32 values.
-#[allow(clippy::cast_precision_loss)]
+#[expect(clippy::cast_precision_loss)]
 fn fixture_content_size() -> gpui::Size<gpui::Pixels> {
     size(px(VIEWPORT_WIDTH as f32), px(VIEWPORT_HEIGHT as f32))
 }
 
 // The logical dimensions and native scale are bounded before conversion.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+#[expect(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 fn normalize_capture(
     image: &RgbaImage,
     width: u32,

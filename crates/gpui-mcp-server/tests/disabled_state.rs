@@ -222,6 +222,10 @@ impl support::FixtureClient for Server {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 async fn a_disabled_control_reads_as_disabled_and_follows_the_control_when_it_is_enabled()
 -> Result<(), String> {
     if !has_a_desktop_session() {

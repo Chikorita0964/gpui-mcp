@@ -65,7 +65,6 @@ mod elements;
 mod style;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -73,6 +72,7 @@ extern crate gpui_pre as gpui;
 
 use gpui::{AnyElement, Bounds, IntoElement, Pixels, SharedString, Styled, Window, div};
 use gpui::{ParentElement, Point};
+use rustc_hash::FxHashMap;
 
 pub use gpui_base::motion::{Easing, Keyframe, Keyframes, Timing};
 pub use style::{
@@ -119,7 +119,7 @@ pub struct ViewTransitions<Old, Key = ()> {
 
 impl<Old, Key> Clone for ViewTransitions<Old, Key> {
     fn clone(&self) -> Self {
-        Self { state: self.state.clone() }
+        Self { state: Rc::clone(&self.state) }
     }
 }
 
@@ -127,7 +127,7 @@ impl<Old, Key> Default for ViewTransitions<Old, Key> {
     fn default() -> Self {
         Self {
             state: Rc::new(RefCell::new(State {
-                slots: HashMap::new(),
+                slots: FxHashMap::default(),
                 order: 0,
                 root: Rc::default(),
                 shift: Rc::default(),
@@ -138,7 +138,7 @@ impl<Old, Key> Default for ViewTransitions<Old, Key> {
 }
 
 struct State<Old, Key> {
-    slots: HashMap<SharedString, Slot<Key>>,
+    slots: FxHashMap<SharedString, Slot<Key>>,
     /// Visits so far this frame, for document order.
     order: u32,
     root: Measured,
@@ -162,7 +162,7 @@ struct Active<Old, Key> {
     /// In document order.
     named: Vec<Captured<Key>>,
     resolve: Resolve,
-    styles: HashMap<SharedString, Rc<NameStyle>>,
+    styles: FxHashMap<SharedString, Rc<NameStyle>>,
     /// Set by the first frame drawn after the transition starts.
     started: Option<Instant>,
     elapsed: Duration,
@@ -173,10 +173,10 @@ struct Active<Old, Key> {
 impl<Old, Key> Active<Old, Key> {
     fn style(&mut self, name: &str, classes: &[SharedString]) -> Rc<NameStyle> {
         if let Some(style) = self.styles.get(name) {
-            return style.clone();
+            return Rc::clone(style);
         }
         let style = Rc::new((self.resolve)(name, classes, &self.types));
-        self.styles.insert(name.into(), style.clone());
+        self.styles.insert(name.into(), Rc::clone(&style));
         style
     }
 }
@@ -258,7 +258,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
             root,
             named: named.into_iter().map(|(_, captured)| captured).collect(),
             resolve,
-            styles: HashMap::new(),
+            styles: FxHashMap::default(),
             started: None,
             elapsed: Duration::ZERO,
             running: false,
@@ -306,7 +306,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
     #[must_use]
     pub fn old(&self) -> Option<Rc<Old>> {
         let state = self.state.borrow();
-        state.active.as_ref().map(|active| active.old.clone())
+        state.active.as_ref().map(|active| Rc::clone(&active.old))
     }
 
     /// Replace the outgoing state of a pending transition, before its first
@@ -356,7 +356,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
         slot.key = key;
         slot.order = order;
         slot.classes = classes.to_vec();
-        let measured = slot.measured.clone();
+        let measured = Rc::clone(&slot.measured);
         let motion = state.active.as_mut().map(|active| {
             let style = active.style(&name, classes);
             let from = active
@@ -372,7 +372,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
                 image.opacity,
             )
         });
-        let shift = state.shift.clone();
+        let shift = Rc::clone(&state.shift);
         drop(guard);
         let motion = motion.map(|(motion, opacity)| {
             fade(&mut element, opacity);
@@ -395,8 +395,8 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
     {
         let mut guard = self.state.borrow_mut();
         let state = &mut *guard;
-        let measured = state.root.clone();
-        let shift = state.shift.clone();
+        let measured = Rc::clone(&state.root);
+        let shift = Rc::clone(&state.shift);
         let Some(active) = state.active.as_mut() else {
             drop(guard);
             return Stage::new(root.into_any_element(), measured, shift).into_any_element();
@@ -416,11 +416,11 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
                     .slots
                     .get(&captured.name)
                     .filter(|slot| slot.seen == 1)
-                    .map(|slot| slot.measured.clone());
+                    .map(|slot| Rc::clone(&slot.measured));
                 (captured, style, incoming)
             })
             .collect::<Vec<_>>();
-        let old = active.old.clone();
+        let old = Rc::clone(&active.old);
         let old_root_bounds = active.root;
         drop(guard);
 

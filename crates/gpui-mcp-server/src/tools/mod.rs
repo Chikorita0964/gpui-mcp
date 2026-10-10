@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io::Cursor;
 use std::sync::atomic::AtomicU64;
@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
+use cow_utils::CowUtils as _;
 use gpui_mcp_protocol::{
     BridgeResult, Capability, ContextResourceDescriptor, FrameReport, FrameStats, InputCommand,
     LiveDocumentSource, MouseButton, NodeAction, NodeState, Operation, Point, PointerCommand,
@@ -28,6 +29,7 @@ use rmcp::{
     task_manager::{TaskExit, TaskManager, TaskOptions},
     tool, tool_handler, tool_router,
 };
+use rustc_hash::FxHashSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -856,7 +858,7 @@ impl CacheHints for ReadResourceResult {
 
 // `tool_handler` expands to dispatcher methods that never await; that shape
 // belongs to the macro, so it cannot be fixed in this impl.
-#[allow(clippy::unused_async_trait_impl)]
+#[expect(clippy::unused_async_trait_impl)]
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GpuiMcp {
     fn get_info(&self) -> ServerInfo {
@@ -1057,7 +1059,6 @@ impl ServerHandler for GpuiMcp {
         Ok(())
     }
 
-    #[allow(deprecated)]
     async fn subscribe(
         &self,
         request: SubscribeRequestParams,
@@ -1094,7 +1095,6 @@ impl ServerHandler for GpuiMcp {
         Ok(())
     }
 
-    #[allow(deprecated)]
     async fn unsubscribe(
         &self,
         request: UnsubscribeRequestParams,
@@ -1213,7 +1213,7 @@ fn validate_scroll_delta(delta_x: f32, delta_y: f32) -> Result<(), String> {
 
 fn find_nodes<'a>(tree: &'a UiTree, args: &FindArgs) -> Vec<&'a UiNode> {
     let limit = usize::from(args.limit.clamp(1, 200));
-    let query_lower = args.query.as_ref().map(|query| query.to_lowercase());
+    let query_lower = args.query.as_ref().map(|query| query.cow_to_lowercase());
     tree.nodes
         .values()
         .filter(|node| !args.visible_only || node.state.visible)
@@ -1226,7 +1226,7 @@ fn find_nodes<'a>(tree: &'a UiTree, args: &FindArgs) -> Vec<&'a UiNode> {
             if args.exact {
                 label == query
             } else {
-                label.to_lowercase().contains(query_lower.as_deref().unwrap_or_default())
+                label.cow_to_lowercase().contains(query_lower.as_deref().unwrap_or_default())
             }
         })
         .take(limit)
@@ -1334,7 +1334,7 @@ fn image_result(screenshot: Screenshot) -> CallToolResult {
 
 // Counts are bounded to 64 megapixels above, so conversion to f64 is well
 // inside the exact-integer range needed for deterministic comparison metrics.
-#[allow(clippy::cast_precision_loss)]
+#[expect(clippy::cast_precision_loss)]
 fn compare_images(
     left: &Screenshot,
     right: &Screenshot,
@@ -1534,7 +1534,7 @@ fn select_tree(tree: &UiTree, args: &TreeArgs) -> Result<Option<UiTree>, String>
     // one: a `children` cycle, or a child named by two parents, would otherwise
     // be pushed again for every pass through it, without bound when no depth
     // limit was given.
-    let mut visited: HashSet<&str> = HashSet::new();
+    let mut visited: FxHashSet<&str> = FxHashSet::default();
     let mut stack: Vec<(&str, u16)> = starts.iter().rev().map(|id| (id.as_str(), 0)).collect();
     while let Some((id, depth)) = stack.pop() {
         if !visited.insert(id) {
@@ -2188,6 +2188,10 @@ mod tests {
     /// `cargo test --release -p gpui-mcp-server --bin gpui-mcp tree_reply_stage_costs -- --ignored --nocapture`.
     #[test]
     #[ignore = "benchmark; prints numbers rather than asserting"]
+    #[expect(
+        clippy::print_stderr,
+        reason = "a benchmark reports its numbers rather than asserting them"
+    )]
     fn tree_reply_stage_costs() -> Result<(), String> {
         use std::time::Instant as StdInstant;
 

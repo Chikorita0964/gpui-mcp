@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     sync::{Arc, Weak},
     time::Instant,
 };
@@ -14,6 +14,7 @@ use gpui_mcp_protocol::{
     AnnotationStyle, AnnotationTarget, NodeAction, NodeState, Rect, Role, TextInfo, UiNode,
     ValueInfo, ViewRenderCause,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::annotations::PaintItem;
 use crate::registry::{SharedState, ViewRecord, rect_from_gpui};
@@ -126,7 +127,7 @@ impl BridgeObserver {
         if !state.claim_expiry_timer(deadline) {
             return;
         }
-        let weak = self.state.clone();
+        let weak = Weak::clone(&self.state);
         window
             .spawn(cx, async move |cx| {
                 let executor = cx.background_executor().clone();
@@ -151,7 +152,7 @@ pub(crate) fn resolve_targets(
     frame: Option<&AccessibilityFrame>,
     viewport: Rect,
 ) -> BTreeMap<String, Option<Rect>> {
-    let index: Option<HashMap<&str, &FrameNode>> = frame
+    let index: Option<FxHashMap<&str, &FrameNode>> = frame
         .filter(|_| items.iter().any(|item| matches!(item.target, AnnotationTarget::Node { .. })))
         .map(|frame| frame.nodes().map(|(_, node)| (node.id(), node)).collect());
     items
@@ -170,7 +171,7 @@ pub(crate) fn resolve_targets(
 
 fn visible_node_rect(
     frame: &AccessibilityFrame,
-    index: &HashMap<&str, &FrameNode>,
+    index: &FxHashMap<&str, &FrameNode>,
     node_id: &str,
 ) -> Option<Rect> {
     let hidden =
@@ -337,7 +338,7 @@ const fn render_cause(cause: gpui::ViewRenderCause) -> ViewRenderCause {
 pub(crate) fn semantic_nodes(frame: &AccessibilityFrame) -> Vec<UiNode> {
     let mut nodes = frame.nodes().map(|(_, node)| node).collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.path().cmp(right.path()));
-    let mut hidden = HashSet::<String>::new();
+    let mut hidden = FxHashSet::<String>::default();
     nodes
         .into_iter()
         .map(|node| {
@@ -645,7 +646,7 @@ mod tests {
                         .w(px(100.0))
                         .h(px(40.0))
                         .on_click({
-                            let clicked = self.clicked.clone();
+                            let clicked = Rc::clone(&self.clicked);
                             move |_, _, _| clicked.set(true)
                         })
                         .child(div().id("save-label").child(StyledText::new("Save"))),
@@ -660,7 +661,7 @@ mod tests {
         let automation = Automation::isolated();
         let clicked = Rc::new(Cell::new(false));
         let automation_for_window = automation.clone();
-        let clicked_by_handler = clicked.clone();
+        let clicked_by_handler = Rc::clone(&clicked);
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);
             SemanticFixture { clicked: clicked_by_handler }
@@ -1382,7 +1383,7 @@ mod tests {
     fn semantic_increment_steps_a_numeric_node_without_a_keyboard(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let seen = Rc::new(Cell::new(0.0));
-        let seen_by_view = seen.clone();
+        let seen_by_view = Rc::clone(&seen);
         let automation_for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);
@@ -1472,7 +1473,7 @@ mod tests {
     fn semantic_expand_and_collapse_toggle_a_disclosure_node(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let seen = Rc::new(Cell::new(None));
-        let seen_by_view = seen.clone();
+        let seen_by_view = Rc::clone(&seen);
         let automation_for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);
@@ -1517,7 +1518,7 @@ mod tests {
     fn a_click_needs_no_listener_because_gpui_dispatches_it_itself(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
         let clicked = Rc::new(Cell::new(false));
-        let clicked_by_handler = clicked.clone();
+        let clicked_by_handler = Rc::clone(&clicked);
         let automation_for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);

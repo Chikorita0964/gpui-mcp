@@ -25,6 +25,10 @@ struct AppView {
 }
 
 impl AppView {
+    #[expect(
+        clippy::print_stderr,
+        reason = "the showcase reports a watcher or reload error on stderr and keeps running"
+    )]
     fn poll_project(&mut self) {
         let change = match self.watcher.poll() {
             Ok(change) => change,
@@ -92,29 +96,29 @@ fn runtime_hooks(state: &RuntimeState) -> Result<HookRegistry, String> {
 }
 
 fn register_state_hooks(hooks: &mut HookRegistry, state: &RuntimeState) -> Result<(), String> {
-    let explorer_visible = state.explorer_visible.clone();
+    let explorer_visible = Rc::clone(&state.explorer_visible);
     hooks
         .register_state(StateBindingId::new("explorer_visible"), move |_, _| {
             StateValue::Boolean(explorer_visible.get())
         })
         .map_err(|error| error.to_string())?;
 
-    let panel_visible = state.panel_visible.clone();
+    let panel_visible = Rc::clone(&state.panel_visible);
     hooks
         .register_state(StateBindingId::new("panel_visible"), move |_, _| {
             StateValue::Boolean(panel_visible.get())
         })
         .map_err(|error| error.to_string())?;
 
-    let active_file = state.active_file.clone();
+    let active_file = Rc::clone(&state.active_file);
     hooks
         .register_state(StateBindingId::new("active_file"), move |_, _| {
             StateValue::Text(active_file.borrow().clone())
         })
         .map_err(|error| error.to_string())?;
 
-    let editor_reader = state.editor_value.clone();
-    let editor_writer = state.editor_value.clone();
+    let editor_reader = Rc::clone(&state.editor_value);
+    let editor_writer = Rc::clone(&state.editor_value);
     hooks
         .register_state_mut(
             StateBindingId::new("editor_value"),
@@ -132,7 +136,7 @@ fn register_state_hooks(hooks: &mut HookRegistry, state: &RuntimeState) -> Resul
         )
         .map_err(|error| error.to_string())?;
 
-    let status = state.status.clone();
+    let status = Rc::clone(&state.status);
     hooks
         .register_state(StateBindingId::new("status_message"), move |_, _| {
             StateValue::Text(status.borrow().clone())
@@ -142,8 +146,8 @@ fn register_state_hooks(hooks: &mut HookRegistry, state: &RuntimeState) -> Resul
 }
 
 fn register_action_hooks(hooks: &mut HookRegistry, state: &RuntimeState) -> Result<(), String> {
-    let explorer_visible = state.explorer_visible.clone();
-    let status = state.status.clone();
+    let explorer_visible = Rc::clone(&state.explorer_visible);
+    let status = Rc::clone(&state.status);
     hooks
         .register_event(HandlerId::new("toggle_explorer"), move |_, window, _| {
             explorer_visible.set(!explorer_visible.get());
@@ -157,8 +161,8 @@ fn register_action_hooks(hooks: &mut HookRegistry, state: &RuntimeState) -> Resu
         })
         .map_err(|error| error.to_string())?;
 
-    let panel_visible = state.panel_visible.clone();
-    let status = state.status.clone();
+    let panel_visible = Rc::clone(&state.panel_visible);
+    let status = Rc::clone(&state.status);
     hooks
         .register_event(HandlerId::new("toggle_panel"), move |_, window, _| {
             panel_visible.set(!panel_visible.get());
@@ -200,7 +204,7 @@ fn register_action_hooks(hooks: &mut HookRegistry, state: &RuntimeState) -> Resu
         ("select_ayu", "Theme changed to Ayu Mirage"),
         ("clear_terminal", "Terminal cleared"),
     ] {
-        let status = state.status.clone();
+        let status = Rc::clone(&state.status);
         hooks
             .register_event(HandlerId::new(handler), move |_, window, _| {
                 message.clone_into(&mut status.borrow_mut());
@@ -219,9 +223,9 @@ fn register_file_event(
     file: &'static str,
     source: &'static str,
 ) -> Result<(), String> {
-    let active_file = state.active_file.clone();
-    let editor_value = state.editor_value.clone();
-    let status = state.status.clone();
+    let active_file = Rc::clone(&state.active_file);
+    let editor_value = Rc::clone(&state.editor_value);
+    let status = Rc::clone(&state.status);
     hooks
         .register_event(handler, move |_, window, _| {
             file.clone_into(&mut active_file.borrow_mut());
@@ -251,6 +255,10 @@ fn build_live(window: &mut Window, cx: &App) -> Result<AppView, String> {
     Ok(AppView { session, watcher, _bridge: bridge })
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "the showcase reports a startup failure on stderr before it exits"
+)]
 fn main() {
     gpui_platform::application().run(|cx: &mut App| {
         gpui_mcp_html::init(cx);
