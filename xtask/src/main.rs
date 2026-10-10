@@ -21,8 +21,8 @@ enum Task {
     /// Write a patched crates.io GPUI crate, or verify the vendored copy.
     ///
     /// Downloads the release from crates.io, checks its checksum, and applies
-    /// the crate's patch series from vendor/patches/<crate>/<version>/.
-    /// Without --output, writes vendor/<crate>. Nothing is replaced if a
+    /// the crate's patch series from `vendor/patches/<crate>/<version>/`.
+    /// Without --output, writes `vendor/<crate>`. Nothing is replaced if a
     /// patch fails to apply.
     Vendor(vendor::VendorArgs),
     /// Build a fresh app that installs the bridge from a pushed Git commit.

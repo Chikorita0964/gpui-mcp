@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::future::Future;
 use std::io::Cursor;
 use std::sync::atomic::AtomicU64;
@@ -9,7 +9,8 @@ use base64::Engine as _;
 use gpui_mcp_protocol::{
     BridgeResult, Capability, ContextResourceDescriptor, FrameReport, FrameStats, InputCommand,
     LiveDocumentSource, MouseButton, NodeAction, NodeState, Operation, Point, PointerCommand,
-    PointerScrollDelta, Rect, Role, Screenshot, ScreenshotTarget, UiNode, UiTree, ValueInfo,
+    PointerScrollDelta, Rect, Role, Screenshot, ScreenshotTarget, SemanticAction, UiNode, UiTree,
+    ValueInfo,
 };
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use rmcp::{
@@ -23,7 +24,7 @@ use rmcp::{
         ResourceContents, ServerCapabilities, ServerInfo, SubscribeRequestParams,
         SubscriptionFilter, UnsubscribeRequestParams, UpdateTaskParams,
     },
-    service::{RequestContext, SubscriptionContext},
+    service::{MaybeSendFuture, RequestContext, SubscriptionContext},
     task_manager::{TaskExit, TaskManager, TaskOptions},
     tool, tool_handler, tool_router,
 };
@@ -107,6 +108,24 @@ struct ElementArgs {
     id: String,
 }
 
+/// Selection and reply-shape arguments for `get_ui_tree`; unset, they return
+/// the whole tree in full.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+struct TreeArgs {
+    /// Return only this node and its descendants instead of the tree's roots.
+    #[serde(default)]
+    root: Option<String>,
+    /// Levels to include below the starting nodes; `0` returns the starting nodes only.
+    #[serde(default)]
+    max_depth: Option<u16>,
+    /// Omit nodes whose state is not visible.
+    #[serde(default)]
+    visible_only: bool,
+    /// Return the generation, the node count, the roots, and an ordered id list, without the nodes.
+    #[serde(default)]
+    ids_only: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SelectAppArgs {
     /// Opaque target ID returned by `list_apps`.
@@ -128,6 +147,9 @@ struct FindArgs {
     /// Maximum matches, capped at 200.
     #[serde(default = "default_result_limit")]
     limit: u16,
+    /// Return only the match count and the matching ids, without the elements.
+    #[serde(default)]
+    ids_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -235,6 +257,19 @@ struct SetValueArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct PerformActionArgs {
+    /// Semantic node identifier from the latest tree.
+    id: String,
+    /// Accessibility action to perform, the way assistive technology requests it:
+    /// `click`, `increment`, `decrement`, `expand`, `collapse`, or `set_value`
+    /// with the new `value`. Unlike `click_element`, this needs no coordinates
+    /// and no keyboard: the element's own AccessKit handler runs on the UI
+    /// thread. Use it for controls whose value cannot be typed, such as a
+    /// slider or a disclosure trigger.
+    action: SemanticAction,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct ScrollArgs {
     /// Optional semantic node identifier. Its center is used when supplied.
     id: Option<String>,
@@ -330,6 +365,17 @@ struct SnapshotArgs {
     name: String,
 }
 
+/// Arguments for `load_ui_snapshot`; `save_ui_snapshot` takes the bare name
+/// without the compact flag.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct LoadSnapshotArgs {
+    /// In-memory snapshot name: 1-64 ASCII letters, digits, `.`, `_`, or `-`.
+    name: String,
+    /// Return the generation, the node count, the roots, and an ordered id list, without the nodes.
+    #[serde(default)]
+    ids_only: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct DiffSnapshotsArgs {
     /// Left/base in-memory snapshot name.
@@ -388,6 +434,9 @@ struct CompareImagesArgs {
 struct RecordPerformanceArgs {
     /// Sampling interval in milliseconds, capped at 30000.
     duration_ms: u64,
+    /// Return the embedded frame report without per-frame samples or the last frame's view draws.
+    #[serde(default)]
+    summary_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -400,6 +449,9 @@ struct FrameReportArgs {
     #[serde(default = "default_frame_limit")]
     #[schemars(range(min = 1, max = 512))]
     frame_limit: u16,
+    /// Return the summary and view activity without per-frame samples.
+    #[serde(default)]
+    summary_only: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -636,7 +688,10 @@ impl GpuiMcp {
             return Err(format!("element {id:?} is not visible and enabled"));
         }
         if !node.actions.contains(&action) {
-            return Err(format!("element {id:?} does not support {action:?}"));
+            return Err(format!(
+                "element {id:?} does not support {action:?} (it advertises {:?})",
+                node.actions
+            ));
         }
         Ok(node.clone())
     }
@@ -847,6 +902,9 @@ impl CacheHints for ReadResourceResult {
     }
 }
 
+// `tool_handler` expands to dispatcher methods that never await; that shape
+// belongs to the macro, so it cannot be fixed in this impl.
+#[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GpuiMcp {
     fn get_info(&self) -> ServerInfo {
@@ -894,12 +952,15 @@ impl ServerHandler for GpuiMcp {
         Ok(ListResourcesResult::with_all_items(resources).uncacheable(&context))
     }
 
-    async fn list_resource_templates(
+    fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
-    ) -> Result<ListResourceTemplatesResult, ErrorData> {
-        Ok(ListResourceTemplatesResult::with_all_items(Vec::new()).uncacheable(&context))
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + MaybeSendFuture + '_
+    {
+        std::future::ready(Ok(
+            ListResourceTemplatesResult::with_all_items(Vec::new()).uncacheable(&context)
+        ))
     }
 
     async fn read_resource(
@@ -1482,6 +1543,104 @@ fn object_output(value: JsonValue) -> Json<ObjectOutput> {
     Json(ObjectOutput { fields })
 }
 
+/// A structured tool result built from one `serde_json::Value`.
+///
+/// Returning `Json<T>` instead makes rmcp convert the value into a second
+/// `Value` before encoding its text, which a large tree pays for in full.
+fn serialized_result(value: &impl Serialize) -> Result<CallToolResult, String> {
+    let structured = serde_json::to_value(value).map_err(encode_error)?;
+    Ok(CallToolResult::structured(structured))
+}
+
+/// The `get_ui_tree` reply for `args`, or the whole tree when it selects all of it.
+///
+/// The compact `ids_only` reply is shaped from the same selected-or-whole tree,
+/// so its count, roots and ids describe exactly the nodes the full reply would
+/// have carried.
+fn tree_result(tree: &UiTree, args: &TreeArgs) -> Result<CallToolResult, String> {
+    let selected = select_tree(tree, args)?;
+    let tree = selected.as_ref().unwrap_or(tree);
+    if args.ids_only {
+        return serialized_result(&tree_ids_reply(tree));
+    }
+    serialized_result(tree)
+}
+
+/// The `find_elements` reply for `nodes`: every match, or just the count and
+/// their ids in the order the full reply lists the elements.
+fn find_reply(nodes: &[&UiNode], ids_only: bool) -> JsonValue {
+    if ids_only {
+        json!({
+            "count": nodes.len(),
+            "ids": nodes.iter().map(|node| node.id.as_str()).collect::<Vec<_>>(),
+        })
+    } else {
+        json!({ "count": nodes.len(), "elements": nodes })
+    }
+}
+
+/// The compact `get_ui_tree`/`load_ui_snapshot` reply: the generation, the node
+/// count, the starting ids and every selected node's id, in the order the full
+/// reply's `nodes` map lists them.
+fn tree_ids_reply(tree: &UiTree) -> JsonValue {
+    json!({
+        "generation": tree.generation,
+        "node_count": tree.nodes.len(),
+        "roots": tree.roots,
+        "ids": tree.nodes.keys().collect::<Vec<_>>(),
+    })
+}
+
+/// The part of `tree` that `args` asks for, or `None` when it asks for all of it.
+///
+/// A returned node keeps its full `children` list, so a child left out by the
+/// depth limit or the visibility filter is named but absent from `nodes`.
+fn select_tree(tree: &UiTree, args: &TreeArgs) -> Result<Option<UiTree>, String> {
+    if args.root.is_none() && args.max_depth.is_none() && !args.visible_only {
+        return Ok(None);
+    }
+    let starts = match &args.root {
+        Some(root) => vec![get_node(tree, root)?.id.clone()],
+        None => tree.roots.clone(),
+    };
+    let mut nodes = BTreeMap::new();
+    // A well-formed tree is a forest, so nothing is reached twice and this set
+    // costs one lookup per node. It is what terminates the walk on a malformed
+    // one: a `children` cycle, or a child named by two parents, would otherwise
+    // be pushed again for every pass through it, without bound when no depth
+    // limit was given.
+    let mut visited: HashSet<&str> = HashSet::new();
+    let mut stack: Vec<(&str, u16)> = starts.iter().rev().map(|id| (id.as_str(), 0)).collect();
+    while let Some((id, depth)) = stack.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let Some(node) = tree.nodes.get(id) else {
+            continue;
+        };
+        // Saturating: an unlimited depth still walks a chain deeper than u16::MAX.
+        if args.max_depth.is_none_or(|max| depth < max) {
+            stack.extend(
+                node.children
+                    .iter()
+                    .rev()
+                    .map(|child| (child.as_str(), depth.saturating_add(1))),
+            );
+        }
+        // Visibility filters the node, not the traversal: a hidden container's
+        // visible descendant is still selected on its own.
+        if !args.visible_only || node.state.visible {
+            nodes.insert(node.id.clone(), node.clone());
+        }
+    }
+    Ok(Some(UiTree {
+        generation: tree.generation,
+        roots: starts,
+        nodes,
+        diagnostics: tree.diagnostics.clone(),
+    }))
+}
+
 fn encode_error(_error: serde_json::Error) -> String {
     "could not encode the tool result".to_owned()
 }
@@ -1506,13 +1665,16 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use gpui_mcp_protocol::{BridgeResult, FrameStats, NodeState, Operation, PendingFrame, UiNode};
+    use gpui_mcp_protocol::{
+        BridgeResult, FrameStats, NodeState, Operation, PendingFrame, SemanticDiagnostic,
+        SemanticDiagnosticCode, UiNode,
+    };
     use serde_json::json;
 
     use super::{
-        FindArgs, MAX_SETTLE_FRAMES, Role, StartVideoRecordingArgs, UiTree, WaitStateArgs,
-        default_result_limit_for_test, find_nodes, settle_pending_frames, settle_requested_frames,
-        state_matches, tree_diff,
+        FindArgs, MAX_SETTLE_FRAMES, Role, StartVideoRecordingArgs, TreeArgs, UiTree,
+        WaitStateArgs, default_result_limit_for_test, find_nodes, find_reply, select_tree,
+        settle_pending_frames, settle_requested_frames, state_matches, tree_diff, tree_result,
     };
 
     fn stats(frame_count: u64) -> BridgeResult {
@@ -1704,6 +1866,7 @@ mod tests {
                 exact: false,
                 visible_only: true,
                 limit: default_result_limit_for_test(),
+                ids_only: false,
             },
         );
         assert_eq!(found.len(), 1);
@@ -1781,6 +1944,520 @@ mod tests {
         assert_eq!(tree_diff(&left, &right)["added"], json!(["new"]));
     }
 
+    fn plain_node(id: &str, parent: Option<&str>, children: &[&str], visible: bool) -> UiNode {
+        UiNode {
+            id: id.to_owned(),
+            parent: parent.map(str::to_owned),
+            children: children.iter().map(|child| (*child).to_owned()).collect(),
+            role: Role::Group,
+            label: None,
+            description: None,
+            bounds: None,
+            state: NodeState {
+                visible,
+                ..NodeState::default()
+            },
+            actions: Vec::new(),
+            text: None,
+            value: None,
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    /// A visible chain, and an invisible container with a visible child in it.
+    fn selection_fixture() -> UiTree {
+        let nodes = [
+            plain_node("app", None, &["panel", "hidden"], true),
+            plain_node("panel", Some("app"), &["row"], true),
+            plain_node("row", Some("panel"), &[], true),
+            plain_node("hidden", Some("app"), &["inside"], false),
+            plain_node("inside", Some("hidden"), &[], true),
+        ];
+        UiTree {
+            generation: 3,
+            roots: vec!["app".to_owned()],
+            nodes: nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect(),
+            diagnostics: vec![SemanticDiagnostic {
+                code: SemanticDiagnosticCode::DuplicateId,
+                node_id: Some("app".to_owned()),
+                message: "kept so the selection test can see it survive".to_owned(),
+            }],
+        }
+    }
+
+    fn args(root: Option<&str>, max_depth: Option<u16>, visible_only: bool) -> TreeArgs {
+        TreeArgs {
+            root: root.map(str::to_owned),
+            max_depth,
+            visible_only,
+            ids_only: false,
+        }
+    }
+
+    /// The ids the selection returns, or the whole tree's when it selects all of it.
+    fn selected_ids(tree: &UiTree, args: &TreeArgs) -> Result<Vec<String>, String> {
+        Ok(match select_tree(tree, args)? {
+            Some(selected) => selected.nodes.into_keys().collect(),
+            None => tree.nodes.keys().cloned().collect(),
+        })
+    }
+
+    #[test]
+    fn tree_selection_limits_root_depth_and_visibility() -> Result<(), String> {
+        let tree = selection_fixture();
+
+        assert_eq!(
+            selected_ids(&tree, &args(Some("panel"), None, false))?,
+            ["panel", "row"],
+            "root alone returns that node and its descendants, not its ancestors"
+        );
+        assert_eq!(
+            selected_ids(&tree, &args(None, Some(0), false))?,
+            ["app"],
+            "max_depth 0 returns the starting nodes only"
+        );
+        assert_eq!(
+            selected_ids(&tree, &args(None, Some(1), false))?,
+            ["app", "hidden", "panel"],
+            "max_depth 1 adds the starting nodes' children"
+        );
+        assert_eq!(
+            selected_ids(&tree, &args(None, None, true))?,
+            ["app", "inside", "panel", "row"],
+            "visible_only omits the invisible node but judges its descendant on its own"
+        );
+        assert_eq!(
+            selected_ids(&tree, &args(Some("app"), Some(1), true))?,
+            ["app", "panel"],
+            "root, max_depth and visible_only combine, depth counted from root"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tree_selection_walks_a_chain_deeper_than_its_level_counter() -> Result<(), String> {
+        // An unlimited depth walks levels past u16::MAX; the counter must saturate
+        // rather than overflow. `visible_only` makes this a real selection, not the
+        // no-arguments early return.
+        let depth = usize::from(u16::MAX) + 2;
+        let mut nodes = BTreeMap::new();
+        for level in 0..depth {
+            let id = format!("level-{level}");
+            let parent = level.checked_sub(1).map(|above| format!("level-{above}"));
+            let child = (level + 1 < depth).then(|| format!("level-{}", level + 1));
+            nodes.insert(
+                id.clone(),
+                plain_node(
+                    &id,
+                    parent.as_deref(),
+                    &child.iter().map(String::as_str).collect::<Vec<_>>(),
+                    true,
+                ),
+            );
+        }
+        let tree = UiTree {
+            generation: 1,
+            roots: vec!["level-0".to_owned()],
+            nodes,
+            diagnostics: Vec::new(),
+        };
+
+        assert_eq!(
+            selected_ids(&tree, &args(None, None, true))?.len(),
+            depth,
+            "every level of an unbounded chain is selected"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tree_selection_counts_depth_from_the_requested_root() -> Result<(), String> {
+        // "panel" sits one level below the tree's root, so an implementation that
+        // measured depth from the whole tree instead of the requested start would
+        // stop one level early here.
+        let nodes = [
+            plain_node("app", None, &["panel"], true),
+            plain_node("panel", Some("app"), &["row"], true),
+            plain_node("row", Some("panel"), &["cell"], true),
+            plain_node("cell", Some("row"), &[], true),
+        ];
+        let tree = UiTree {
+            generation: 1,
+            roots: vec!["app".to_owned()],
+            nodes: nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect(),
+            diagnostics: Vec::new(),
+        };
+
+        assert_eq!(
+            selected_ids(&tree, &args(Some("panel"), Some(0), false))?,
+            ["panel"],
+            "depth 0 at a non-root start returns the start alone, not the whole tree"
+        );
+        assert_eq!(
+            selected_ids(&tree, &args(Some("panel"), Some(1), false))?,
+            ["panel", "row"],
+            "the start's own depth does not count against its max_depth"
+        );
+        assert_eq!(
+            selected_ids(&tree, &args(Some("panel"), Some(2), false))?,
+            ["cell", "panel", "row"],
+            "max_depth 2 reaches the grandchild of the start"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tree_selection_terminates_on_a_cyclic_child_list() -> Result<(), String> {
+        // The bridge's tree builder drops cycles and duplicate ids, so this is a
+        // malformed tree the tool never sees in practice; without the visited set
+        // the walk below would push "loop" again on every pass and never end, with
+        // max_depth absent, which is what `root` alone leaves it as.
+        let nodes = [
+            plain_node("loop", None, &["loop", "tail"], true),
+            plain_node("tail", Some("loop"), &["loop"], true),
+        ];
+        let tree = UiTree {
+            generation: 1,
+            roots: vec!["loop".to_owned()],
+            nodes: nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect(),
+            diagnostics: Vec::new(),
+        };
+
+        let selected = select_tree(&tree, &args(Some("loop"), None, false))?
+            .ok_or("a root argument selects a subtree")?;
+        assert_eq!(
+            selected.nodes.keys().collect::<Vec<_>>(),
+            ["loop", "tail"],
+            "a self-referencing node is returned once, not walked again"
+        );
+        assert_eq!(selected.roots, ["loop"]);
+        Ok(())
+    }
+
+    #[test]
+    fn tree_selection_names_the_children_it_leaves_out() -> Result<(), String> {
+        let tree = selection_fixture();
+
+        let cut = select_tree(&tree, &args(Some("app"), Some(0), false))?
+            .ok_or("a subtree is selected")?;
+        assert_eq!(
+            cut.nodes["app"].children,
+            ["panel", "hidden"],
+            "a node keeps its full child list, so a caller can see what the depth limit cut"
+        );
+        assert!(!cut.nodes.contains_key("panel"));
+        assert_eq!(
+            cut.roots,
+            ["app"],
+            "roots names the requested starting node"
+        );
+        assert_eq!(cut.generation, 3, "the frame generation survives selection");
+        assert_eq!(
+            cut.diagnostics.len(),
+            1,
+            "the full tree's diagnostics survive selection"
+        );
+
+        let error = select_tree(&tree, &args(Some("missing"), None, false))
+            .err()
+            .ok_or("an id that is not in the tree is an error")?;
+        assert!(
+            error.contains("missing"),
+            "the error names the requested id, got {error:?}"
+        );
+        Ok(())
+    }
+
+    /// The reply `get_ui_tree` produced before it built its own `CallToolResult`:
+    /// rmcp converts `Json<ObjectOutput>` through `into_call_tool_result`.
+    fn legacy_tree_result(tree: &UiTree) -> Result<super::CallToolResult, String> {
+        use rmcp::handler::server::tool::IntoCallToolResult as _;
+
+        let value = serde_json::to_value(tree).map_err(|error| error.to_string())?;
+        match super::object_output(value)
+            .into_call_tool_result()
+            .map_err(|error| error.to_string())?
+        {
+            rmcp::model::CallToolResponse::Complete(result) => Ok(result),
+            _ => Err("a Json tool result completes the call".to_owned()),
+        }
+    }
+
+    fn serialized_reply(result: &super::CallToolResult) -> Result<serde_json::Value, String> {
+        serde_json::to_value(result).map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn tree_reply_without_arguments_is_the_whole_tree_byte_for_byte() -> Result<(), String> {
+        let tree = selection_fixture();
+        assert!(
+            select_tree(&tree, &TreeArgs::default())?.is_none(),
+            "no arguments must not copy the tree at all"
+        );
+
+        let current = serialized_reply(&tree_result(&tree, &TreeArgs::default())?)?;
+        assert_eq!(
+            current,
+            serialized_reply(&legacy_tree_result(&tree)?)?,
+            "the whole reply, content text and structured content alike, is unchanged"
+        );
+
+        let filtered = serialized_reply(&tree_result(&tree, &args(None, None, true))?)?;
+        assert_ne!(
+            filtered, current,
+            "an argument that selects less must change the reply"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn find_reply_ids_only_lists_the_same_matches_in_the_same_order() -> Result<(), String> {
+        let nodes = [
+            plain_node("beta", None, &[], true),
+            plain_node("alpha", None, &[], true),
+        ];
+        let tree = UiTree {
+            generation: 1,
+            roots: vec!["alpha".to_owned(), "beta".to_owned()],
+            nodes: nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect(),
+            diagnostics: Vec::new(),
+        };
+        let found = find_nodes(
+            &tree,
+            &FindArgs {
+                query: None,
+                role: None,
+                exact: false,
+                visible_only: true,
+                limit: 100,
+                ids_only: true,
+            },
+        );
+        assert_eq!(
+            found
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "beta"],
+            "matches come out in the tree's own order"
+        );
+
+        let full = find_reply(&found, false);
+        let compact = find_reply(&found, true);
+        let elements = full["elements"]
+            .as_array()
+            .ok_or("the full reply lists elements")?;
+        let element_ids: Vec<&str> = elements
+            .iter()
+            .map(|element| {
+                element["id"]
+                    .as_str()
+                    .ok_or_else(|| "an element carries an id".to_owned())
+            })
+            .collect::<Result<_, String>>()?;
+        assert_eq!(compact["count"], full["count"]);
+        assert_eq!(
+            compact["ids"],
+            json!(element_ids),
+            "the compact ids are the full reply's element ids in the same order"
+        );
+        assert!(compact.get("elements").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn tree_ids_only_reply_describes_the_same_selection() -> Result<(), String> {
+        let tree = selection_fixture();
+
+        let visible = TreeArgs {
+            ids_only: true,
+            ..args(None, None, true)
+        };
+        let reply = serialized_reply(&tree_result(&tree, &visible)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({
+                "generation": 3,
+                "node_count": 4,
+                "roots": ["app"],
+                "ids": ["app", "inside", "panel", "row"],
+            })),
+            "the compact reply counts and names exactly the selected nodes"
+        );
+
+        let rooted = TreeArgs {
+            root: Some("panel".to_owned()),
+            ids_only: true,
+            ..TreeArgs::default()
+        };
+        let reply = serialized_reply(&tree_result(&tree, &rooted)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({
+                "generation": 3,
+                "node_count": 2,
+                "roots": ["panel"],
+                "ids": ["panel", "row"],
+            })),
+            "a root argument shapes the compact reply from that subtree's nodes"
+        );
+
+        let whole = TreeArgs {
+            ids_only: true,
+            ..TreeArgs::default()
+        };
+        let reply = serialized_reply(&tree_result(&tree, &whole)?)?;
+        assert_eq!(
+            reply.get("structuredContent").cloned(),
+            Some(json!({
+                "generation": 3,
+                "node_count": 5,
+                "roots": ["app"],
+                "ids": ["app", "hidden", "inside", "panel", "row"],
+            })),
+            "without a selection the compact reply lists the whole tree, hidden nodes included"
+        );
+        Ok(())
+    }
+
+    /// A wide tree: one list node whose `rows` children each hold a label child.
+    fn stress_tree(rows: usize) -> UiTree {
+        let row_ids: Vec<String> = (0..rows).map(|row| format!("stress-row-{row}")).collect();
+        let mut nodes = BTreeMap::from([(
+            "stress-list".to_owned(),
+            plain_node(
+                "stress-list",
+                None,
+                &row_ids.iter().map(String::as_str).collect::<Vec<_>>(),
+                true,
+            ),
+        )]);
+        for (row, row_id) in row_ids.into_iter().enumerate() {
+            let label_id = format!("{row_id}/label");
+            let mut node = plain_node(&row_id, Some("stress-list"), &[&label_id], row % 7 != 0);
+            node.label = Some(format!("Row {row}"));
+            node.bounds = Some(super::Rect {
+                x: 32.0,
+                y: 313.333_34,
+                width: 576.0,
+                height: 2.0,
+            });
+            node.metadata =
+                BTreeMap::from([("accesskit_id".to_owned(), "17437630179299350513".to_owned())]);
+            nodes.insert(row_id.clone(), node);
+            nodes.insert(
+                label_id.clone(),
+                plain_node(&label_id, Some(&row_id), &[], true),
+            );
+        }
+        UiTree {
+            generation: 1,
+            roots: vec!["stress-list".to_owned()],
+            nodes,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// What one `get_ui_tree` reply costs, whole and selected. Run with
+    /// `cargo test --release -p gpui-mcp-server --bin gpui-mcp tree_reply_stage_costs -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "benchmark; prints numbers rather than asserting"]
+    fn tree_reply_stage_costs() -> Result<(), String> {
+        use std::time::Instant as StdInstant;
+
+        const ROUNDS: u32 = 10;
+        let tree = stress_tree(2_500);
+        let one_row = args(Some("stress-row-3"), Some(1), true);
+        let wide = args(Some("stress-list"), Some(2), true);
+        let reply_bytes = |args: &TreeArgs| -> Result<usize, String> {
+            serialized_reply(&tree_result(&tree, args)?).map(|reply| reply.to_string().len())
+        };
+
+        // The first conversion every reply pays for, whatever shape it returns.
+        let started = StdInstant::now();
+        let mut floor_bytes = 0;
+        for _ in 0..ROUNDS {
+            floor_bytes = serde_json::to_value(&tree)
+                .map_err(|error| error.to_string())?
+                .to_string()
+                .len();
+        }
+        let floor_ms = started.elapsed().as_secs_f64() * 1000.0 / f64::from(ROUNDS);
+
+        let started = StdInstant::now();
+        let mut whole_bytes = 0;
+        for _ in 0..ROUNDS {
+            whole_bytes = reply_bytes(&TreeArgs::default())?;
+        }
+        let whole_ms = started.elapsed().as_secs_f64() * 1000.0 / f64::from(ROUNDS);
+
+        let started = StdInstant::now();
+        let mut legacy_bytes = 0;
+        for _ in 0..ROUNDS {
+            legacy_bytes = serialized_reply(&legacy_tree_result(&tree)?)?
+                .to_string()
+                .len();
+        }
+        let legacy_ms = started.elapsed().as_secs_f64() * 1000.0 / f64::from(ROUNDS);
+
+        let select_only = |args: &TreeArgs, rounds: u32| -> Result<(usize, f64), String> {
+            let nodes = select_tree(&tree, args)?
+                .ok_or("the subtree arguments select")?
+                .nodes
+                .len();
+            let started = StdInstant::now();
+            for _ in 0..rounds {
+                drop(select_tree(&tree, args)?);
+            }
+            Ok((
+                nodes,
+                started.elapsed().as_secs_f64() * 1000.0 / f64::from(rounds),
+            ))
+        };
+        let (row_nodes, row_select_ms) = select_only(&one_row, ROUNDS * 1_000)?;
+        let (wide_nodes, wide_select_ms) = select_only(&wide, ROUNDS * 10)?;
+
+        let started = StdInstant::now();
+        let mut row_bytes = 0;
+        for _ in 0..ROUNDS {
+            row_bytes = reply_bytes(&one_row)?;
+        }
+        let row_ms = started.elapsed().as_secs_f64() * 1000.0 / f64::from(ROUNDS);
+
+        eprintln!(
+            "get_ui_tree costs over a {}-node tree ({floor_bytes} bytes as JSON)",
+            tree.nodes.len()
+        );
+        eprintln!("  first conversion to Value, then to text  {floor_ms:8.2} ms");
+        eprintln!(
+            "  whole tree reply, serialized_result      {whole_bytes} bytes  {whole_ms:8.2} ms/reply"
+        );
+        eprintln!(
+            "  whole tree reply, rmcp Json wrapper      {legacy_bytes} bytes  {legacy_ms:8.2} ms/reply"
+        );
+        eprintln!(
+            "  one-row subtree: selection {row_select_ms:8.3} ms -> {row_nodes} nodes, \
+             reply {row_bytes} bytes in {row_ms:8.3} ms"
+        );
+        eprintln!(
+            "  wide subtree (root + max_depth 2 + visible_only): selection {wide_select_ms:8.3} ms \
+             -> {wide_nodes} nodes"
+        );
+        Ok(())
+    }
+
     #[test]
     fn complete_tool_suite_is_registered() {
         let names: BTreeSet<String> = super::GpuiMcp::production_router()
@@ -1823,6 +2500,7 @@ mod tests {
                 "set_text",
                 "get_value",
                 "set_value",
+                "perform_action",
                 "get_selection_count",
                 "get_element_state",
                 "scroll",

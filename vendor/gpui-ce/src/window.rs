@@ -2166,6 +2166,16 @@ impl Window {
         }
     }
 
+    /// The AccessKit node a uniquely identified element from the last observed
+    /// frame was built from.
+    ///
+    /// Returns `None` when the ID is absent or duplicated, the same rule
+    /// [`Self::focus_observed_element`] applies. The returned ID is only
+    /// meaningful for the frame it came from; resolve it again after a frame.
+    pub fn a11y_node_id(&self, id: &str) -> Option<accesskit::NodeId> {
+        self.rendered_frame.observed.accessibility_id(id)
+    }
+
     /// Move focus to a uniquely identified element from the last observed frame.
     ///
     /// Returns `false` when the ID is absent, duplicated, or not focusable.
@@ -6467,6 +6477,47 @@ impl Window {
             .entry(node_id)
             .or_default()
             .push((action, Box::new(listener)));
+    }
+
+    /// Perform an accessibility action on a node the way assistive technology
+    /// requests it, through the node's action listeners and GPUI's built-in
+    /// handling.
+    ///
+    /// Returns nothing and reports nothing: use
+    /// [`Self::a11y_action_is_handled`] to tell "the element handles this"
+    /// from "GPUI's built-in fallback will run".
+    #[cfg(not(target_family = "wasm"))]
+    pub fn perform_a11y_action(
+        &mut self,
+        node_id: accesskit::NodeId,
+        action: accesskit::Action,
+        data: Option<accesskit::ActionData>,
+        cx: &mut App,
+    ) {
+        self.handle_a11y_action(
+            accesskit::ActionRequest {
+                action,
+                target_tree: accesskit::TreeId::ROOT,
+                target_node: node_id,
+                data,
+            },
+            cx,
+        );
+    }
+
+    /// Whether a node has a listener for `action` this frame.
+    ///
+    /// A `false` result does not mean the action is impossible: GPUI handles
+    /// click, focus, and blur itself, without a registered listener.
+    pub fn a11y_action_is_handled(
+        &self,
+        node_id: accesskit::NodeId,
+        action: accesskit::Action,
+    ) -> bool {
+        self.a11y
+            .action_listeners
+            .get(&node_id)
+            .is_some_and(|listeners| listeners.iter().any(|(candidate, _)| *candidate == action))
     }
 
     #[cfg(not(target_family = "wasm"))]

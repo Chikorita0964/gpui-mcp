@@ -59,6 +59,9 @@ impl ConnectionPool {
 #[derive(Clone)]
 pub(crate) struct BridgeClient {
     descriptor: Arc<EndpointDescriptor>,
+    /// The descriptor's file: the bridge rewrites it when the application
+    /// publishes a capability after install (`on_message`, `on_annotations`).
+    path: Arc<PathBuf>,
     next_request_id: Arc<AtomicU64>,
     pool: Arc<ConnectionPool>,
 }
@@ -78,9 +81,33 @@ impl BridgeClient {
         validate_descriptor(&descriptor, path)?;
         Ok(Self {
             descriptor: Arc::new(descriptor),
+            path: Arc::new(path.to_path_buf()),
             next_request_id: Arc::new(AtomicU64::new(1)),
             pool: Arc::new(ConnectionPool::new()),
         })
+    }
+
+    /// This client with its descriptor as the file holds it now. A bridge
+    /// publishes the capabilities an application registers after install by
+    /// rewriting its descriptor, so the copy read at discovery can lack them
+    /// for the rest of the session. The connection pool and request counter
+    /// are kept; a file that no longer reads, validates or names the same
+    /// target leaves the client as it was (discovery handles a restart).
+    fn with_current_descriptor(&self) -> Self {
+        let Ok(descriptor) = read_descriptor(&self.path) else {
+            return self.clone();
+        };
+        if validate_descriptor(&descriptor, &self.path).is_err()
+            || TargetId::from_descriptor(&descriptor) != self.target_id()
+            || descriptor.endpoint != self.descriptor.endpoint
+            || descriptor.token != self.descriptor.token
+        {
+            return self.clone();
+        }
+        Self {
+            descriptor: Arc::new(descriptor),
+            ..self.clone()
+        }
     }
 
     pub(crate) fn descriptor(&self) -> &EndpointDescriptor {
@@ -297,8 +324,9 @@ impl BridgeRegistry {
     }
 
     pub(crate) async fn client(&self) -> Result<BridgeClient, String> {
-        if let Some(client) = self.selected.read().await.clone() {
-            return Ok(client);
+        if let Some(selected) = self.selected.write().await.as_mut() {
+            *selected = selected.with_current_descriptor();
+            return Ok(selected.clone());
         }
         let clients = self
             .discover()
@@ -446,6 +474,7 @@ async fn discover_clients(
             probes.spawn(async move {
                 let client = BridgeClient {
                     descriptor: Arc::new(descriptor),
+                    path: Arc::new(path),
                     next_request_id: Arc::new(AtomicU64::new(1)),
                     pool: Arc::new(ConnectionPool::new()),
                 };
@@ -642,8 +671,9 @@ mod tests {
 
     use anyhow::Result;
     use gpui_mcp_protocol::{
-        AppId, BridgeResult, Capabilities, EndpointDescriptor, InstanceId, LocalEndpoint,
-        NativeWindowId, Operation, PROTOCOL_VERSION, ProcessId, WireRequest, WireResponse,
+        AppId, BridgeResult, Capabilities, Capability, EndpointDescriptor, InstanceId,
+        LocalEndpoint, NativeWindowId, Operation, PROTOCOL_VERSION, ProcessId, WireRequest,
+        WireResponse,
     };
     use interprocess::local_socket::{
         GenericFilePath, GenericNamespaced, ListenerOptions, ToFsName as _, ToNsName as _,
@@ -800,6 +830,46 @@ mod tests {
         let apps = registry.list_apps().await.map_err(anyhow::Error::msg)?;
         assert_eq!(apps.len(), 1);
         assert!(apps[0].selected);
+        listener_task.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn the_selected_application_shows_a_capability_published_after_discovery() -> Result<()> {
+        let directory = tempdir()?;
+        let endpoint = test_endpoint_named(directory.path(), "late");
+        let listener_task = serve_test_listener(create_test_listener(&endpoint)?);
+        let path = directory.path().join("late.json");
+        write_named_test_descriptor(&path, std::process::id(), endpoint.clone(), "late-app", 0x7)?;
+        let registry = BridgeRegistry::new(None, None, Some(directory.path().to_path_buf()));
+        let before = registry.client().await.map_err(anyhow::Error::msg)?;
+        assert!(
+            !before
+                .descriptor()
+                .capabilities
+                .supports(Capability::Messages)
+        );
+
+        // The bridge rewrites the descriptor when the application registers
+        // `on_message` after install; the selection must not keep the old copy.
+        let mut capabilities = Capabilities::default();
+        capabilities.available.insert(Capability::Messages);
+        write_test_descriptor_with(
+            &path,
+            std::process::id(),
+            endpoint,
+            "late-app",
+            0x7,
+            capabilities,
+        )?;
+        let after = registry.client().await.map_err(anyhow::Error::msg)?;
+        assert!(
+            after
+                .descriptor()
+                .capabilities
+                .supports(Capability::Messages)
+        );
+        assert_eq!(after.target_id(), before.target_id());
         listener_task.abort();
         Ok(())
     }
@@ -988,6 +1058,24 @@ mod tests {
         app_id: &str,
         instance_id: u64,
     ) -> Result<()> {
+        write_test_descriptor_with(
+            path,
+            pid,
+            endpoint,
+            app_id,
+            instance_id,
+            Capabilities::default(),
+        )
+    }
+
+    fn write_test_descriptor_with(
+        path: &Path,
+        pid: u32,
+        endpoint: LocalEndpoint,
+        app_id: &str,
+        instance_id: u64,
+        capabilities: Capabilities,
+    ) -> Result<()> {
         let descriptor = EndpointDescriptor {
             protocol_version: PROTOCOL_VERSION,
             app_id: AppId::new(app_id)?,
@@ -998,7 +1086,7 @@ mod tests {
             endpoint,
             token: "ab".repeat(32),
             native_window_id: None,
-            capabilities: Capabilities::default(),
+            capabilities,
         };
         fs::write(path, serde_json::to_vec(&descriptor)?)?;
         #[cfg(unix)]

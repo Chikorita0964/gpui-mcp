@@ -17,27 +17,13 @@ zed = ["runtime", "dep:gpui", "gpui-mcp/zed"]
 # GPUI Kit's backend. CSS transitions and @keyframes run on GPUI Kit's motion
 # runtime (`gpui_base::motion`), which generated GPUI Kit code uses too. On
 # `zed`, animated properties take their end values at once.
-gpui-pre = [
-    "runtime",
-    "dep:gpui_pre",
-    "dep:gpui-base",
-    "dep:gpui-view-transitions",
-    "gpui-mcp/gpui-pre",
-]
+gpui-pre = ["runtime", "dep:gpui_pre", "dep:gpui-base", "dep:gpui-view-transitions", "gpui-mcp/gpui-pre"]
 # GPUI test contexts for this crate's tests and for apps testing rendered HTML.
 test-support = ["gpui?/test-support", "gpui_pre?/test-support", "gpui-mcp/test-support"]
 dev-watch = ["runtime", "dep:notify", "ron"]
 json = ["dep:serde_json"]
 ron = ["dep:ron"]
-visual-parity = [
-    "zed",
-    "dep:anyhow",
-    "dep:clap",
-    "dep:gpui-mcp-capture",
-    "dep:gpui_platform",
-    "dep:image",
-    "gpui-mcp/test-support",
-]
+visual-parity = ["zed", "dep:anyhow", "dep:clap", "dep:gpui-mcp-capture", "dep:gpui_platform", "dep:image", "gpui-mcp/test-support"]
 
 [dependencies]
 anyhow = { workspace = true, optional = true }

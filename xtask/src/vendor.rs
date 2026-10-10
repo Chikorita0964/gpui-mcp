@@ -12,7 +12,12 @@ use sha2::{Digest as _, Sha256};
 use crate::patch::{self, Files};
 
 /// The patches in each version's series, applied in this order.
-const SERIES: [Patch; 3] = [Patch::Automation, Patch::FontFallback, Patch::Grid];
+const SERIES: [Patch; 4] = [
+    Patch::Automation,
+    Patch::Accessibility,
+    Patch::FontFallback,
+    Patch::Grid,
+];
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Crate {
@@ -45,6 +50,10 @@ impl Crate {
 pub(crate) enum Patch {
     /// Everything the bridge needs.
     Automation,
+    /// Semantic accessibility actions for the bridge's `perform_action` tool.
+    /// Only the `gpui-ce` series carries it.
+    #[value(name = "accessibility-actions")]
+    Accessibility,
     /// An unrelated font fix that consumers may skip.
     FontFallback,
     /// CSS grid track lists, which gpui-mcp-html renders `grid-template-*` with.
@@ -56,9 +65,24 @@ impl Patch {
     fn name(self) -> &'static str {
         match self {
             Self::Automation => "automation",
+            Self::Accessibility => "accessibility-actions",
             Self::FontFallback => "font-fallback",
             Self::Grid => "grid",
         }
+    }
+
+    /// Whether this crate's series carries the patch: only `gpui-ce` needs the
+    /// accessibility actions.
+    fn applies_to(self, krate: Crate) -> bool {
+        match self {
+            Self::Accessibility => krate == Crate::GpuiCe,
+            _ => true,
+        }
+    }
+
+    /// Whether the bridge needs it, so `--without` may not leave it out.
+    fn required(self) -> bool {
+        matches!(self, Self::Automation | Self::Accessibility)
     }
 }
 
@@ -70,21 +94,24 @@ pub(crate) struct VendorArgs {
     /// A supported release (default: the vendored one).
     #[arg(long)]
     version: Option<String>,
-    /// Write the patched crate here instead of vendor/<crate>.
+    /// Write the patched crate here instead of `vendor/<crate>`.
     #[arg(long)]
     output: Option<PathBuf>,
     /// Leave out an optional patch: font-fallback or grid.
     #[arg(long, value_enum)]
     without: Vec<Patch>,
-    /// Verify vendor/<crate> instead of writing anything.
+    /// Verify `vendor/<crate>` instead of writing anything.
     #[arg(long, conflicts_with = "output")]
     check: bool,
 }
 
 pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
     let name = args.krate.name();
-    if args.without.contains(&Patch::Automation) {
-        bail!("the automation patch is what the bridge needs and can't be left out");
+    if let Some(patch) = args.without.iter().find(|patch| patch.required()) {
+        bail!(
+            "the {} patch is what the bridge needs and can't be left out",
+            patch.name()
+        );
     }
     let vendor = root.join("vendor").join(name);
     let patches = root.join("vendor/patches").join(name);
@@ -100,7 +127,10 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
         .context("missing `versions`")?;
     check_requirement(root, args.krate, supported.keys().map(String::as_str))?;
     for version in supported.keys() {
-        for patch in SERIES {
+        for patch in SERIES
+            .into_iter()
+            .filter(|patch| patch.applies_to(args.krate))
+        {
             let path = patches
                 .join(version)
                 .join(format!("{}.patch", patch.name()));
@@ -138,7 +168,7 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
 
     let applied: Vec<_> = SERIES
         .into_iter()
-        .filter(|patch| !args.without.contains(patch))
+        .filter(|patch| patch.applies_to(args.krate) && !args.without.contains(patch))
         .collect();
     let files = patched_release(name, version, release, &patches.join(version), &applied)?;
     let applied: Vec<_> = applied.iter().map(|patch| patch.name()).collect();
@@ -178,7 +208,7 @@ fn patched_release(
     let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
     let archive = download(&url)?;
     let sha256 = release["sha256"].as_str().context("missing `sha256`")?;
-    if format!("{:x}", Sha256::digest(&archive)) != sha256 {
+    if hex(&Sha256::digest(&archive)) != sha256 {
         bail!("{name} archive checksum mismatch");
     }
     let mut files = extract(&archive, &format!("{name}-{version}"))?;
@@ -208,6 +238,17 @@ fn patched_release(
             .with_context(|| format!("applying vendor/patches/{name}/{version}/{file}"))?;
     }
     Ok(files)
+}
+
+/// Lowercase hex, matching the `sha256` fields in `vendor/*.json`.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        // Writing into a `String` cannot fail.
+        let _ = write!(text, "{byte:02x}");
+    }
+    text
 }
 
 fn crlf_to_lf(content: &[u8]) -> Vec<u8> {

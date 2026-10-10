@@ -55,7 +55,7 @@ impl StateValue {
 
     /// Interpret this value as a finite, non-negative pixel length, accepting
     /// a `Number` or a numeric `Text`. Returns `None` for empty, negative,
-    /// non-finite, or unparseable values.
+    /// non-finite, or unparsable values.
     // A `Number` is application-owned `f64` state narrowed to the `f32` pixel
     // lengths GPUI styling expects; any precision beyond `f32` is irrelevant
     // to layout, so truncation here is intentional.
@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn as_pixels_rejects_negative_non_finite_and_unparseable_values() {
+    fn as_pixels_rejects_negative_non_finite_and_unparsable_values() {
         assert_eq!(StateValue::Number(-1.0).as_pixels(), None);
         assert_eq!(StateValue::Number(f64::NAN).as_pixels(), None);
         assert_eq!(StateValue::Number(f64::INFINITY).as_pixels(), None);

@@ -2,6 +2,8 @@ use gpui::{
     App, Keystroke, Modifiers, MouseButton as GpuiMouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point, px,
 };
+#[cfg(not(feature = "gpui-pre"))]
+use gpui_mcp_protocol::SemanticAction;
 use gpui_mcp_protocol::{
     BridgeError, ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
     PointerCommand, PointerScrollDelta,
@@ -197,7 +199,7 @@ fn validate_point(point: Point) -> Result<(), BridgeError> {
     Ok(())
 }
 
-fn validate_text(text: &str) -> Result<(), BridgeError> {
+pub(crate) fn validate_text(text: &str) -> Result<(), BridgeError> {
     if text.len() > MAX_TEXT_BYTES {
         return Err(invalid("text exceeds the 64 KiB safety bound"));
     }
@@ -206,6 +208,35 @@ fn validate_text(text: &str) -> Result<(), BridgeError> {
 
 fn invalid(message: &'static str) -> BridgeError {
     BridgeError::new(ErrorCode::InvalidRequest, message)
+}
+
+/// The AccessKit action and payload that assistive technology sends for `action`.
+///
+/// Only the backends whose vendored window dispatches accessibility actions have a caller; the
+/// gpui-pre tree carries no action dispatch and compiles without this mapping.
+#[cfg(not(feature = "gpui-pre"))]
+pub(crate) fn accesskit_action(
+    action: SemanticAction,
+) -> (gpui::accesskit::Action, Option<gpui::accesskit::ActionData>) {
+    use gpui::accesskit::{Action, ActionData};
+    match action {
+        SemanticAction::Click => (Action::Click, None),
+        SemanticAction::Increment => (Action::Increment, None),
+        SemanticAction::Decrement => (Action::Decrement, None),
+        SemanticAction::Expand => (Action::Expand, None),
+        SemanticAction::Collapse => (Action::Collapse, None),
+        // The value is always the string the caller asked for, never a parsed number.
+        // A `SetValue` handler in this ecosystem reads `ActionData::Value` and ignores
+        // every other payload: gpui-component's `TextInputState` returns at
+        // `let Some(ActionData::Value(value)) = data else { return; }`, so a numeric-looking
+        // value sent as `NumericValue` would leave the control untouched while the bridge
+        // still acknowledged success. Selecting the payload by the *node*'s value type is
+        // the alternative, and no control here consumes `NumericValue` at all.
+        SemanticAction::SetValue { value } => (
+            Action::SetValue,
+            Some(ActionData::Value(value.into_boxed_str())),
+        ),
+    }
 }
 
 #[cfg(all(test, feature = "test-support"))]
@@ -218,9 +249,66 @@ mod tests {
         MouseButton as GpuiMouseButton, ParentElement as _, Render,
         StatefulInteractiveElement as _, Styled as _, TestAppContext, Window, div, point, px, size,
     };
-    use gpui_mcp_protocol::{InputCommand, MAX_KEY_SEQUENCE, MouseButton, Point, PointerCommand};
+    #[cfg(not(feature = "gpui-pre"))]
+    use gpui_mcp_protocol::SemanticAction;
+    use gpui_mcp_protocol::{
+        ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
+        PointerCommand,
+    };
 
-    use super::{dispatch_pointer, validate};
+    #[cfg(not(feature = "gpui-pre"))]
+    use super::accesskit_action;
+    use super::{dispatch_pointer, validate, validate_text};
+
+    #[cfg(not(feature = "gpui-pre"))]
+    #[test]
+    fn set_value_always_carries_the_string_a_text_handler_reads() {
+        use gpui::accesskit::{Action, ActionData};
+
+        // Values a naive parser would take for numbers are exactly the ones that break a
+        // text field: gpui-component's handler drops anything but `ActionData::Value`.
+        for value in ["42", "0", "1e2", "-3.5", "abc", ""] {
+            let (action, data) = accesskit_action(SemanticAction::SetValue {
+                value: value.to_owned(),
+            });
+            assert_eq!(action, Action::SetValue);
+            assert_eq!(
+                data,
+                Some(ActionData::Value(value.to_owned().into_boxed_str())),
+                "{value:?} must reach the handler as the string the caller asked for"
+            );
+        }
+    }
+
+    #[cfg(not(feature = "gpui-pre"))]
+    #[test]
+    fn the_other_semantic_actions_carry_no_payload() {
+        use gpui::accesskit::Action;
+
+        for (action, expected) in [
+            (SemanticAction::Click, Action::Click),
+            (SemanticAction::Increment, Action::Increment),
+            (SemanticAction::Decrement, Action::Decrement),
+            (SemanticAction::Expand, Action::Expand),
+            (SemanticAction::Collapse, Action::Collapse),
+        ] {
+            let (mapped, data) = accesskit_action(action);
+            assert_eq!(mapped, expected);
+            assert!(data.is_none(), "{expected:?} needs no payload");
+        }
+    }
+
+    #[test]
+    fn a_set_value_payload_is_bounded_like_typed_text() {
+        assert!(validate_text(&"x".repeat(MAX_TEXT_BYTES)).is_ok());
+        assert_eq!(
+            validate_text(&"x".repeat(MAX_TEXT_BYTES + 1))
+                .err()
+                .map(|error| error.code),
+            Some(ErrorCode::InvalidRequest),
+            "an over-sized value must be refused"
+        );
+    }
 
     #[test]
     fn key_sequences_are_bounded_and_fully_validated() {

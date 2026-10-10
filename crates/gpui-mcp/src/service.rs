@@ -19,7 +19,8 @@ use gpui_mcp_protocol::{
     MAX_CONTEXT_RESOURCES, MAX_FRAME_SAMPLES, MAX_ID_BYTES, MAX_LABEL_BYTES,
     MAX_LIVE_DOCUMENT_DIAGNOSTICS, MAX_LIVE_DOCUMENT_SOURCE_BYTES, MAX_MESSAGE_PAGE,
     MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, MAX_WAIT_MS, Message, MessageSender, NativeWindowId,
-    NewMessage, Operation, PROTOCOL_VERSION, PendingFrame, ProcessId, WireRequest, WireResponse,
+    NewMessage, Operation, PROTOCOL_VERSION, PendingFrame, ProcessId, SemanticAction, WireRequest,
+    WireResponse,
 };
 use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName as _, ToNsName as _,
@@ -802,6 +803,9 @@ fn handle_ui_operation(
             }
             Ok(BridgeResult::Ack)
         }
+        Operation::PerformAction { node_id, action } => {
+            dispatch_semantic_action(&node_id, action, window, cx)
+        }
         Operation::Refresh => {
             let completed = state.frame_stats();
             window.refresh();
@@ -910,6 +914,50 @@ fn handle_ui_operation(
             "operation was routed to the wrong executor",
         )),
     }
+}
+
+/// Dispatch one semantic accessibility action through the node's AccessKit handle.
+///
+/// The vendored trees that carry the accessibility action tail compile this: the zed tree and the
+/// gpui-ce 0.2.2 series. GPUI handles click, focus, and blur itself, so a node without a
+/// listener for them is still actionable; anything else must register one.
+#[cfg(not(feature = "gpui-pre"))]
+fn dispatch_semantic_action(
+    node_id: &str,
+    action: SemanticAction,
+    window: &mut Window,
+    cx: &mut App,
+) -> Result<BridgeResult, BridgeError> {
+    let target = window
+        .a11y_node_id(node_id)
+        .ok_or_else(|| BridgeError::new(ErrorCode::NotFound, "semantic node was not found"))?;
+    let (action, data) = input::accesskit_action(action);
+    if !window.a11y_action_is_handled(target, action)
+        && !matches!(action, gpui::accesskit::Action::Click)
+    {
+        return Err(BridgeError::new(
+            ErrorCode::Unsupported,
+            "the semantic node does not handle this action",
+        ));
+    }
+    window.perform_a11y_action(target, action, data, cx);
+    window.refresh();
+    Ok(BridgeResult::Ack)
+}
+
+/// The gpui-pre tree carries no accessibility action dispatch, so this backend refuses the
+/// operation instead of failing to compile.
+#[cfg(feature = "gpui-pre")]
+fn dispatch_semantic_action(
+    _node_id: &str,
+    _action: SemanticAction,
+    _window: &mut Window,
+    _cx: &mut App,
+) -> Result<BridgeResult, BridgeError> {
+    Err(BridgeError::new(
+        ErrorCode::Unsupported,
+        "the gpui-pre backend does not support semantic accessibility actions",
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1200,6 +1248,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         operation @ (Operation::Input { .. }
         | Operation::PointerInput { .. }
         | Operation::Focus { .. }
+        | Operation::PerformAction { .. }
         | Operation::Refresh
         | Operation::RequestFrame
         | Operation::GetPendingFrame
@@ -1254,17 +1303,25 @@ async fn dispatch_to_ui(
         .map_err(|_| BridgeError::new(ErrorCode::Internal, "UI command pump stopped"))?
 }
 
+fn validate_node_id(node_id: &str) -> Result<(), BridgeError> {
+    if node_id.is_empty() || node_id.len() > MAX_ID_BYTES || node_id.chars().any(char::is_control) {
+        return Err(invalid("semantic node identifier is invalid"));
+    }
+    Ok(())
+}
 #[allow(clippy::too_many_lines)]
 fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
     match operation {
         Operation::Input { command } => input::validate(command),
         Operation::PointerInput { command } => input::validate_pointer(command),
-        Operation::Focus { node_id } => {
-            if node_id.is_empty()
-                || node_id.len() > MAX_ID_BYTES
-                || node_id.chars().any(char::is_control)
-            {
-                return Err(invalid("semantic node identifier is invalid"));
+        Operation::Focus { node_id } => validate_node_id(node_id),
+        Operation::PerformAction { node_id, action } => {
+            validate_node_id(node_id)?;
+            // A value is the one action payload that carries caller-owned text, so it gets
+            // the bound every other path into app-visible text has: otherwise a control
+            // handler is handed a request-sized string to insert and lay out.
+            if let SemanticAction::SetValue { value } = action {
+                input::validate_text(value)?;
             }
             Ok(())
         }
@@ -1758,11 +1815,186 @@ fn invalid(message: &'static str) -> BridgeError {
 
 #[cfg(test)]
 mod tests {
-    use gpui_mcp_protocol::{AppId, ContextResource, ContextResourceDescriptor};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use gpui::{
+        AccessibleAction, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+        Render, Role, StatefulInteractiveElement as _, Styled as _, TestAppContext, Window, div,
+        px,
+    };
+    use gpui_mcp_protocol::{
+        AppId, ContextResource, ContextResourceDescriptor, ErrorCode, MAX_TEXT_BYTES, Operation,
+        PROTOCOL_VERSION, ProcessId, RequestId, SemanticAction, WireRequest,
+    };
 
     use super::{
-        BridgeConfig, encode_hex, validate_context_resource, validate_context_resource_list,
+        BridgeConfig, ConnectionContext, SharedState, UiCommand, encode_hex, process_request,
+        validate_context_resource, validate_context_resource_list, validate_operation,
     };
+    use crate::Automation;
+
+    /// A control registering the AccessKit Increment action a slider registers, next to a node
+    /// registering nothing, for the bridge's `perform_action` path to reach.
+    struct ActionFixture {
+        steps: Rc<Cell<usize>>,
+    }
+
+    impl Render for ActionFixture {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let steps = self.steps.clone();
+            div()
+                .id("root")
+                .role(Role::Application)
+                .size_full()
+                .child(
+                    div()
+                        .id("volume")
+                        .role(Role::Slider)
+                        .w(px(200.))
+                        .h(px(24.))
+                        .on_a11y_action(AccessibleAction::Increment, move |_, _, _| {
+                            steps.set(steps.get() + 1);
+                        }),
+                )
+                .child(div().id("status").child("Ready"))
+        }
+    }
+
+    /// `perform_action` runs the node's own accessibility listener, and an action the node does not
+    /// handle or a node the frame does not carry comes back as an error instead of an ack.
+    #[gpui::test]
+    fn perform_action_reaches_the_nodes_listener_and_refuses_what_it_cannot_do(
+        cx: &mut TestAppContext,
+    ) {
+        let automation = Automation::isolated();
+        let steps = Rc::new(Cell::new(0));
+        let steps_by_view = steps.clone();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            ActionFixture {
+                steps: steps_by_view,
+            }
+        });
+        visual.run_until_parked();
+
+        // The gpui-pre tree carries no accessibility action dispatch, so that backend refuses.
+        if cfg!(feature = "gpui-pre") {
+            let refusal = visual.update(|window, cx| {
+                super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)
+                    .err()
+                    .map(|error| (error.code, error.message))
+            });
+            assert_eq!(
+                refusal,
+                Some((
+                    ErrorCode::Unsupported,
+                    "the gpui-pre backend does not support semantic accessibility actions"
+                        .to_owned(),
+                ))
+            );
+            return;
+        }
+
+        let ack = visual.update(|window, cx| {
+            super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)
+        });
+        assert!(
+            ack.is_ok(),
+            "the node registered an Increment listener, so the action is handled"
+        );
+        visual.run_until_parked();
+        assert_eq!(steps.get(), 1, "the node's own listener ran");
+
+        let unhandled = visual.update(|window, cx| {
+            super::dispatch_semantic_action("status", SemanticAction::Increment, window, cx)
+                .err()
+                .map(|error| (error.code, error.message))
+        });
+        assert_eq!(
+            unhandled,
+            Some((
+                ErrorCode::Unsupported,
+                "the semantic node does not handle this action".to_owned(),
+            )),
+            "an action no listener handles is refused, not silently acked"
+        );
+
+        let missing = visual.update(|window, cx| {
+            super::dispatch_semantic_action("absent", SemanticAction::Increment, window, cx)
+                .err()
+                .map(|error| error.code)
+        });
+        assert_eq!(
+            missing,
+            Some(ErrorCode::NotFound),
+            "a node the frame does not carry is reported as not found"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_peer_speaking_an_older_protocol_version_is_refused() -> Result<(), String> {
+        let (command_tx, _commands) = async_channel::unbounded::<UiCommand>();
+        let context = ConnectionContext {
+            command_tx,
+            state: SharedState::new(),
+            token: "token".to_owned(),
+            pid: ProcessId::new(2).ok_or_else(|| "process ID must be nonzero".to_owned())?,
+            app_id: AppId::new("app").map_err(|error| error.to_string())?,
+            operation_timeout: std::time::Duration::from_secs(1),
+        };
+
+        let response = process_request(
+            WireRequest {
+                protocol_version: 14,
+                request_id: RequestId::new(1)
+                    .ok_or_else(|| "request ID must be nonzero".to_owned())?,
+                token: "token".to_owned(),
+                operation: Operation::Ping,
+            },
+            context,
+        )
+        .await;
+
+        let error = response
+            .error
+            .ok_or_else(|| "a peer offering version 14 must be refused".to_owned())?;
+        assert_eq!(error.code, ErrorCode::ProtocolMismatch);
+        assert!(
+            error.message.contains(&PROTOCOL_VERSION.to_string()),
+            "the refusal names the required version, got: {}",
+            error.message
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_performed_action_bounds_its_value_like_injected_text() {
+        let perform = |value: String| {
+            validate_operation(&Operation::PerformAction {
+                node_id: "volume".to_owned(),
+                action: SemanticAction::SetValue { value },
+            })
+            .err()
+            .map(|error| error.code)
+        };
+        assert_eq!(
+            perform("x".repeat(MAX_TEXT_BYTES + 1)),
+            Some(ErrorCode::InvalidRequest),
+            "an unbounded value is the one action payload that can exhaust the app with text"
+        );
+        assert_eq!(perform("x".repeat(MAX_TEXT_BYTES)), None);
+        assert_eq!(perform(String::new()), None);
+        assert!(
+            validate_operation(&Operation::PerformAction {
+                node_id: "volume".to_owned(),
+                action: SemanticAction::Increment,
+            })
+            .is_ok(),
+            "an action with no payload needs no text bound"
+        );
+    }
 
     #[test]
     fn application_identifier_blocks_path_traversal() {

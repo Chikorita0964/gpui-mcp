@@ -3,10 +3,11 @@
 This directory tracks Zed GPUI at commit
 `16c9aa7ea6d897a8044d9501cde1b295256722f2` (`gpui` 0.2.2).
 
-gpui-mcp carries ten focused changes that are not available from upstream
+gpui-mcp carries eleven focused changes that are not available from upstream
 GPUI yet. The first six were last checked against `zed-industries/zed` `main`
 on 2026-09-22, at the commit named above; the next three were written against
-the same commit on 2026-09-23, and the last on 2026-10-02:
+the same commit on 2026-09-23, the accessibility actions on 2026-09-27, and
+the grid track lists on 2026-10-02:
 
 - read-only observation of each completed rendered AccessKit tree, with stable
   GPUI element paths, frame-unique node identities, bounds, text provenance,
@@ -75,7 +76,18 @@ the same commit on 2026-09-23, and the last on 2026-10-02:
   hover status, and switching between keyboard and pointer input still refresh
   the window: a drag is drawn at window level, any view may read
   `Window::is_window_hovered`, and input modality changes hover and
-  focus-visible styling everywhere; and
+  focus-visible styling everywhere;
+- semantic accessibility actions through the window's own AccessKit
+  handling. Upstream registers elements' `on_a11y_action` listeners and
+  handles click, focus, and blur internally, but `handle_a11y_action` is
+  private, so only the platform adapter can reach it.
+  `Window::perform_a11y_action` runs one requested action through that same
+  path, and `Window::a11y_action_is_handled` reports whether the node
+  registered a listener for it, so a caller can tell "the element handles
+  this" from "GPUI's built-in fallback will run". `Window::a11y_node_id`
+  resolves an element's stable ID to the AccessKit node of the last observed
+  frame, the lookup `focus_observed_element` already needed; both keep its
+  rule that a duplicated ID resolves to nothing;
 - CSS grid track lists. Upstream exposes only `grid_cols(n)` / `grid_rows(n)`,
   which always mean `repeat(n, minmax(0, 1fr))`, although taffy implements
   full CSS grid. `GridTrack`, `GridTrackSize`, `GridTrackBreadth`,

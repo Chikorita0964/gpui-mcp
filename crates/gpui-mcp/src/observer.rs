@@ -315,12 +315,14 @@ fn paint_label(
     );
 }
 
+// zed and gpui-pre convert through `From`, gpui-ce through its own function; `lib.rs`
+// refuses combinations of the backend features, so these two arms cover every build.
 #[cfg(feature = "gpui-ce")]
 fn hsla(color: u32) -> Hsla {
     gpui::rgb_to_hsla(rgba(color))
 }
 
-#[cfg(not(feature = "gpui-ce"))]
+#[cfg(any(feature = "zed", feature = "gpui-pre"))]
 fn hsla(color: u32) -> Hsla {
     Hsla::from(rgba(color))
 }
@@ -469,10 +471,20 @@ fn actions(accessible: Option<&accesskit::Node>, rendered: &FrameNode) -> Vec<No
             ) && supports(Action::SetValue)),
         NodeAction::SetText,
     );
+    let steps = supports(Action::Increment) || supports(Action::Decrement);
+    // Only a node that actually registers SetValue advertises value replacement. A
+    // stepping-only control (a slider) would otherwise tell tree consumers it accepts a
+    // new value, and the bridge would honestly refuse the call it invited.
     push_action(
         &mut actions,
         supports(Action::SetValue),
         NodeAction::SetValue,
+    );
+    push_action(&mut actions, steps, NodeAction::Step);
+    push_action(
+        &mut actions,
+        supports(Action::Expand) || supports(Action::Collapse),
+        NodeAction::Expand,
     );
     push_action(
         &mut actions,
@@ -640,11 +652,15 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    #[cfg(not(feature = "gpui-pre"))]
+    use gpui::{AccessibleAction, App};
     use gpui::{
         AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
         Render, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled as _,
         StyledText, TestAppContext, Window, div, px, rgb,
     };
+    #[cfg(not(feature = "gpui-pre"))]
+    use gpui_mcp_protocol::SemanticAction;
     use gpui_mcp_protocol::{
         MouseButton, NodeAction, Point, PointerCommand, Role as McpRole, ViewOutcome,
         ViewRenderCause,
@@ -1492,6 +1508,248 @@ mod tests {
             "the nested pair must be pushed past the id it would otherwise spell, got {:?}",
             tree.nodes.keys().collect::<Vec<_>>()
         );
+    }
+
+    /// A numeric control that registers the AccessKit actions a real slider
+    /// does, using the same `on_a11y_action` path gpui-component's slider uses.
+    /// Like a real one, the listener updates the owning view, which repaints.
+    #[cfg(not(feature = "gpui-pre"))]
+    struct SliderFixture {
+        value: f64,
+        seen: Rc<Cell<f64>>,
+    }
+
+    #[cfg(not(feature = "gpui-pre"))]
+    impl Render for SliderFixture {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let step = |delta: f64| {
+                let view = cx.entity();
+                move |_: Option<&gpui::accesskit::ActionData>, _: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| {
+                        this.value = (this.value + delta).clamp(0., 100.);
+                        this.seen.set(this.value);
+                        cx.notify();
+                    });
+                }
+            };
+            div().id("root").role(Role::Application).size_full().child(
+                div()
+                    .id("volume")
+                    .role(Role::Slider)
+                    .w(px(200.))
+                    .h(px(24.))
+                    .aria_numeric_value(self.value)
+                    .aria_numeric_value_step(1.)
+                    .on_a11y_action(AccessibleAction::Increment, step(1.))
+                    .on_a11y_action(AccessibleAction::Decrement, step(-1.)),
+            )
+        }
+    }
+
+    #[cfg(not(feature = "gpui-pre"))]
+    #[gpui::test]
+    fn semantic_increment_steps_a_numeric_node_without_a_keyboard(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let seen = Rc::new(Cell::new(0.0));
+        let seen_by_view = seen.clone();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            SliderFixture {
+                value: 0.0,
+                seen: seen_by_view,
+            }
+        });
+        visual.run_until_parked();
+
+        let before = automation.snapshot();
+        assert!(
+            before.nodes["volume"].actions.contains(&NodeAction::Step),
+            "a node stepping up or down advertises Step, got {:?}",
+            before.nodes["volume"].actions
+        );
+        assert!(
+            !before.nodes["volume"]
+                .actions
+                .contains(&NodeAction::SetValue),
+            "a node that only registers Increment and Decrement must not advertise value \
+             replacement: the bridge would refuse it, so the advertisement would be a promise \
+             the tree cannot keep. Got {:?}",
+            before.nodes["volume"].actions
+        );
+        assert_eq!(
+            before.nodes["volume"]
+                .value
+                .as_ref()
+                .map(|v| v.value.clone()),
+            Some("0".to_owned())
+        );
+
+        visual.update(|window, cx| {
+            let target = window
+                .a11y_node_id("volume")
+                .unwrap_or_else(|| unreachable!("the fixture publishes its slider"));
+            let (action, data) = crate::input::accesskit_action(SemanticAction::Increment);
+            assert!(
+                window.a11y_action_is_handled(target, action),
+                "the node registered an Increment listener (C17)"
+            );
+            window.perform_a11y_action(target, action, data, cx);
+        });
+        visual.run_until_parked();
+
+        assert!(
+            (seen.get() - 1.0).abs() < f64::EPSILON,
+            "the node's own listener ran (C17), saw {}",
+            seen.get()
+        );
+        assert_eq!(
+            automation.snapshot().nodes["volume"]
+                .value
+                .as_ref()
+                .map(|value| value.value.clone()),
+            Some("1".to_owned()),
+            "the published value follows the step"
+        );
+    }
+
+    /// A disclosure control: a trigger that reports expansion and handles
+    /// Expand and Collapse, the way an accordion trigger does.
+    #[cfg(not(feature = "gpui-pre"))]
+    struct DisclosureFixture {
+        expanded: bool,
+        seen: Rc<Cell<Option<bool>>>,
+    }
+
+    #[cfg(not(feature = "gpui-pre"))]
+    impl Render for DisclosureFixture {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let set = |expanded: bool| {
+                let view = cx.entity();
+                move |_: Option<&gpui::accesskit::ActionData>, _: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| {
+                        this.expanded = expanded;
+                        this.seen.set(Some(expanded));
+                        cx.notify();
+                    });
+                }
+            };
+            div().id("root").role(Role::Application).size_full().child(
+                div()
+                    .id("details")
+                    .role(Role::Button)
+                    .w(px(120.))
+                    .h(px(24.))
+                    .aria_expanded(self.expanded)
+                    .on_a11y_action(AccessibleAction::Expand, set(true))
+                    .on_a11y_action(AccessibleAction::Collapse, set(false)),
+            )
+        }
+    }
+
+    #[cfg(not(feature = "gpui-pre"))]
+    #[gpui::test]
+    fn semantic_expand_and_collapse_toggle_a_disclosure_node(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let seen = Rc::new(Cell::new(None));
+        let seen_by_view = seen.clone();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            DisclosureFixture {
+                expanded: false,
+                seen: seen_by_view,
+            }
+        });
+        visual.run_until_parked();
+
+        let tree = automation.snapshot();
+        assert!(
+            tree.nodes["details"].actions.contains(&NodeAction::Expand),
+            "a disclosure advertises Expand, got {:?}",
+            tree.nodes["details"].actions
+        );
+        assert_eq!(tree.nodes["details"].state.expanded, Some(false));
+
+        for (action, expected) in [
+            (SemanticAction::Expand, true),
+            (SemanticAction::Collapse, false),
+        ] {
+            visual.update(|window, cx| {
+                let target = window
+                    .a11y_node_id("details")
+                    .unwrap_or_else(|| unreachable!("the fixture publishes its trigger"));
+                let (accesskit, data) = crate::input::accesskit_action(action.clone());
+                assert!(
+                    window.a11y_action_is_handled(target, accesskit),
+                    "{action:?} has a listener (C17)"
+                );
+                window.perform_a11y_action(target, accesskit, data, cx);
+            });
+            visual.run_until_parked();
+            assert_eq!(
+                seen.get(),
+                Some(expected),
+                "{action:?} reached the listener"
+            );
+            assert_eq!(
+                automation.snapshot().nodes["details"].state.expanded,
+                Some(expected),
+                "{action:?} is reflected in the published state"
+            );
+        }
+    }
+
+    #[cfg(not(feature = "gpui-pre"))]
+    #[gpui::test]
+    fn a_click_needs_no_listener_because_gpui_dispatches_it_itself(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let clicked = Rc::new(Cell::new(false));
+        let clicked_by_handler = clicked.clone();
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            SemanticFixture {
+                clicked: clicked_by_handler,
+            }
+        });
+        visual.run_until_parked();
+
+        assert!(
+            !clicked.get(),
+            "nothing has clicked the button before the action"
+        );
+
+        visual.update(|window, cx| {
+            let status = window
+                .a11y_node_id("status")
+                .unwrap_or_else(|| unreachable!("the fixture publishes its status line"));
+            let (increment, data) = crate::input::accesskit_action(SemanticAction::Increment);
+            assert!(
+                !window.a11y_action_is_handled(status, increment),
+                "an element with no listener handles nothing: this is the case the \
+                 bridge reports as Unsupported instead of silently doing nothing"
+            );
+            assert!(data.is_none(), "Increment carries no payload");
+
+            let save = window
+                .a11y_node_id("save")
+                .unwrap_or_else(|| unreachable!("the fixture publishes its button"));
+            assert!(
+                !window.a11y_action_is_handled(save, gpui::accesskit::Action::Click),
+                "the button registers no a11y listener; its click handler is a pointer handler"
+            );
+            // This is why the bridge must not refuse a click: GPUI clicks the
+            // node's center itself, so the action still reaches the application.
+            window.perform_a11y_action(save, gpui::accesskit::Action::Click, None, cx);
+        });
+        visual.run_until_parked();
+
+        assert!(
+            clicked.get(),
+            "performing the click action ran the button's own click handler"
+        );
+        assert!(automation.snapshot().nodes.contains_key("save"));
     }
 }
 
