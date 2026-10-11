@@ -18,7 +18,7 @@ use htmlswap::{
 
 /// Interaction states of one element.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub(crate) struct Interaction {
+pub struct Interaction {
     pub(crate) hovered: bool,
     pub(crate) focused: bool,
     pub(crate) active: bool,
@@ -45,7 +45,7 @@ impl Interaction {
 /// Interaction states an element's styles, or its descendants' styles,
 /// depend on, so the renderer tracks them and redraws when they change.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct StateNeeds {
+pub struct StateNeeds {
     pub(crate) hover: bool,
     pub(crate) focus: bool,
     pub(crate) active: bool,
@@ -64,7 +64,7 @@ impl StateNeeds {
 
 /// What conditions are evaluated against while rendering.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Environment<'a> {
+pub struct Environment<'a> {
     pub(crate) media: MediaEnvironment,
     /// Types of the running view transition, if one is running.
     pub(crate) view_transition_types: Option<&'a [gpui::SharedString]>,
@@ -92,7 +92,7 @@ fn active_type(active: &[gpui::SharedString], types: &[CompactString]) -> bool {
 
 /// Whether a variant applies now.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Applies {
+pub enum Applies {
     Yes,
     No,
     /// It depends on something the renderer cannot evaluate.
@@ -102,7 +102,7 @@ pub(crate) enum Applies {
 /// Evaluate a variant. `ancestors` lists the ancestors' interaction states,
 /// nearest last. `starting` selects `@starting-style` variants instead of
 /// excluding them.
-pub(crate) fn applies(
+pub fn applies(
     variant: &RenderStyleVariant,
     environment: &Environment<'_>,
     own: Interaction,
@@ -151,7 +151,7 @@ pub(crate) fn applies(
 }
 
 /// Whether the renderer can evaluate every condition of a variant.
-pub(crate) fn supported(variant: &RenderStyleVariant) -> bool {
+pub fn supported(variant: &RenderStyleVariant) -> bool {
     variant.conditions.iter().all(|condition| match condition {
         RenderStyleCondition::Media(query) => MediaEnvironment::default().matches(query).is_some(),
         RenderStyleCondition::PseudoClass(pseudo)
@@ -170,10 +170,7 @@ pub(crate) fn supported(variant: &RenderStyleVariant) -> bool {
 /// Whether a condition holds in an environment, for rules outside the
 /// element tree (view-transition pseudo-elements). Interaction states do
 /// not apply there.
-pub(crate) fn condition_holds(
-    condition: &RenderStyleCondition,
-    environment: &Environment<'_>,
-) -> bool {
+pub fn condition_holds(condition: &RenderStyleCondition, environment: &Environment<'_>) -> bool {
     match condition {
         RenderStyleCondition::Media(query) => environment.media.matches(query).unwrap_or(false),
         RenderStyleCondition::ActiveViewTransitionType(types) => {
@@ -184,7 +181,7 @@ pub(crate) fn condition_holds(
 }
 
 /// The element's declarations that apply now, in cascade order.
-pub(crate) fn declarations<'a>(
+pub fn declarations<'a>(
     element: &'a RenderElement,
     environment: &Environment<'_>,
     own: Interaction,
@@ -194,7 +191,7 @@ pub(crate) fn declarations<'a>(
 }
 
 /// The document root's declarations that apply now.
-pub(crate) fn root_declarations<'a>(
+pub fn root_declarations<'a>(
     root: &'a htmlswap::RenderRoot,
     environment: &Environment<'_>,
 ) -> Vec<&'a StyleDeclaration> {
@@ -209,7 +206,7 @@ pub(crate) fn root_declarations<'a>(
 
 /// The element's declarations including `@starting-style`, for the values an
 /// entry transition starts from.
-pub(crate) fn starting_declarations<'a>(
+pub fn starting_declarations<'a>(
     element: &'a RenderElement,
     environment: &Environment<'_>,
     own: Interaction,
@@ -240,7 +237,7 @@ fn collect<'a>(
 }
 
 /// Whether an element's styles depend on an ancestor's interaction state.
-pub(crate) fn depends_on_ancestors(element: &RenderElement) -> bool {
+pub fn depends_on_ancestors(element: &RenderElement) -> bool {
     element.style_variants.iter().any(|variant| {
         variant.conditions.iter().any(|condition| {
             matches!(condition, RenderStyleCondition::ElementState { ancestor, .. } if *ancestor > 0)
@@ -249,7 +246,7 @@ pub(crate) fn depends_on_ancestors(element: &RenderElement) -> bool {
 }
 
 /// The interaction states an element's own styles depend on.
-pub(crate) fn own_state_needs(element: &RenderElement) -> StateNeeds {
+pub fn own_state_needs(element: &RenderElement) -> StateNeeds {
     let mut needs = StateNeeds::default();
     for variant in &element.style_variants {
         for condition in &variant.conditions {
@@ -267,7 +264,7 @@ pub(crate) fn own_state_needs(element: &RenderElement) -> StateNeeds {
 
 /// What one element computes to in its context.
 #[derive(Clone, Debug)]
-pub(crate) struct Computed {
+pub struct Computed {
     /// The element's scope, which its children inherit.
     pub(crate) scope: ComputedScope,
     pub(crate) style: ComputedStyle,
@@ -280,7 +277,7 @@ pub(crate) struct Computed {
 
 /// Compute an element's scope and typed style from its applicable
 /// declarations.
-pub(crate) fn compute(
+pub fn compute(
     parent: &ComputedScope,
     declarations: &[&StyleDeclaration],
     starting: Option<&[&StyleDeclaration]>,
@@ -298,7 +295,7 @@ pub(crate) fn compute(
 }
 
 /// Typed styles for declarations in a scope, ignoring what does not compute.
-pub(crate) fn typed(
+pub fn typed(
     scope: &ComputedScope,
     parent: &ComputedScope,
     declarations: &[&StyleDeclaration],

@@ -15,7 +15,7 @@ const NEW_LAYER: usize = 1;
 const OLD_LAYER: usize = 2;
 
 /// An element's measured layout box, shared with the frame that drew it.
-pub(crate) type Measured = Rc<Cell<Option<Bounds<Pixels>>>>;
+pub type Measured = Rc<Cell<Option<Bounds<Pixels>>>>;
 
 fn lerp_bounds(from: Bounds<Pixels>, to: Bounds<Pixels>, t: f32) -> Bounds<Pixels> {
     let lerp = |a: Pixels, b: Pixels| a + (b - a) * t;
@@ -27,10 +27,10 @@ fn lerp_bounds(from: Bounds<Pixels>, to: Bounds<Pixels>, t: f32) -> Bounds<Pixel
 
 /// Offset applied to the subtree being prepainted by transition elements,
 /// which measurements subtract to report layout boxes.
-pub(crate) type Shift = Rc<Cell<Point<Pixels>>>;
+pub type Shift = Rc<Cell<Point<Pixels>>>;
 
 /// The document, with the old root image over it while a transition runs.
-pub(crate) struct Stage {
+pub struct Stage {
     content: AnyElement,
     /// The old root image, laid out at the old root's box.
     old_root: Option<OldRoot>,
@@ -40,7 +40,7 @@ pub(crate) struct Stage {
     shift: Shift,
 }
 
-pub(crate) struct OldRoot {
+pub struct OldRoot {
     pub(crate) image: AnyElement,
     pub(crate) bounds: Bounds<Pixels>,
     pub(crate) translate: Translate,
@@ -133,7 +133,7 @@ impl Element for Stage {
 /// A named element of the live document. Always measures the element for a
 /// future capture; during a transition it also lifts the element above the
 /// old root image and moves it along its group's path from the old box.
-pub(crate) struct Morph {
+pub struct Morph {
     child: AnyElement,
     measured: Measured,
     shift: Shift,
@@ -141,7 +141,7 @@ pub(crate) struct Morph {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct MorphMotion {
+pub struct MorphMotion {
     /// The old box's origin, when the name existed before.
     pub(crate) from: Option<Point<Pixels>>,
     pub(crate) progress: f32,
@@ -237,7 +237,7 @@ impl Element for Morph {
 
 /// An old named image: the outgoing element, stretched over its group's
 /// box as the group moves from the old box to the new one.
-pub(crate) struct OldImage {
+pub struct OldImage {
     child: AnyElement,
     from: Bounds<Pixels>,
     to: Option<Measured>,

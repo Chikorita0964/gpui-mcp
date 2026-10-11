@@ -13,7 +13,7 @@ use super::{
 use crate::client::BridgeRegistry;
 
 /// Resource URI of the message log.
-pub(crate) const MESSAGES_URI: &str = "gpui://messages";
+pub const MESSAGES_URI: &str = "gpui://messages";
 /// Messages the resource shows.
 const RESOURCE_MESSAGES: u64 = 50;
 /// How long one subscription poll waits in the bridge.
@@ -216,7 +216,7 @@ fn default_message_wait_ms() -> u64 {
 /// Each wait is a bounded long poll in the bridge, so this costs nothing while
 /// the application is quiet. A restarted or reselected application starts its
 /// ids again, which resets the position.
-pub(crate) async fn watch_app_messages<F, Fut>(
+pub async fn watch_app_messages<F, Fut>(
     registry: BridgeRegistry,
     cancellation: CancellationToken,
     mut notify: F,

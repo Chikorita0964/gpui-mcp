@@ -30,7 +30,7 @@ impl Offset {
     /// The length along an axis of `size` pixels.
     #[must_use]
     pub fn resolve(self, size: f32) -> f32 {
-        self.px + self.fraction * size
+        self.fraction.mul_add(size, self.px)
     }
 }
 

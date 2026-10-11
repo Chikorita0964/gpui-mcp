@@ -1524,7 +1524,7 @@ fn index_bindings<'a>(
     index.into_iter().map(|(element_id, bindings)| (element_id, Rc::from(bindings))).collect()
 }
 
-pub(crate) fn generated_id(path: &[usize]) -> String {
+pub fn generated_id(path: &[usize]) -> String {
     let suffix = path.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
     format!("html-node-{suffix}")
 }
@@ -1966,7 +1966,7 @@ fn event_handlers(bindings: &[Binding], events: &[UiEvent]) -> Vec<(UiEvent, Han
         .collect()
 }
 
-pub(crate) fn dispatch_input_change(
+pub fn dispatch_input_change(
     hooks: &HookRegistry,
     element_id: &ElementId,
     bindings: &[Binding],

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use anyhow::{Context as _, Result, bail};
 
 /// A crate's files, keyed by path relative to the crate root.
-pub(crate) type Files = BTreeMap<PathBuf, Vec<u8>>;
+pub type Files = BTreeMap<PathBuf, Vec<u8>>;
 
 struct Hunk {
     old_start: usize,
@@ -26,7 +26,7 @@ struct FilePatch {
 }
 
 /// Apply `patch` to `files`, or fail without a partial result being usable.
-pub(crate) fn apply(files: &mut Files, patch: &str) -> Result<()> {
+pub fn apply(files: &mut Files, patch: &str) -> Result<()> {
     for file in parse(patch)? {
         let display = file.path.display().to_string();
         let mut lines = if file.created {

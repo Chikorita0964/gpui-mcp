@@ -16,14 +16,14 @@ use openh264::{
 };
 use tempfile::{NamedTempFile, TempPath};
 
-pub(crate) const MAX_RECORDING_FRAMES: usize = 30 * 120;
+pub const MAX_RECORDING_FRAMES: usize = 30 * 120;
 const MAX_ARTIFACT_NAME_BYTES: usize = 128;
 const MAX_RECORDING_FRAME_DIMENSION: u32 = 4_096;
 const MAX_RECORDING_FRAME_PIXELS: u64 = 16 * 1024 * 1024;
 const MAX_RECORDING_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct FrameTiming {
+pub struct FrameTiming {
     frames_per_second: u8,
 }
 
@@ -46,7 +46,7 @@ impl FrameTiming {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ArtifactStore {
+pub struct ArtifactStore {
     directory: Arc<Path>,
 }
 
@@ -132,7 +132,7 @@ struct PreparedArtifact {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct RecordingArtifact {
+pub struct RecordingArtifact {
     pub(crate) path: PathBuf,
     pub(crate) frame_count: usize,
     pub(crate) timeline_frames: u64,
@@ -148,7 +148,7 @@ pub(crate) struct RecordingArtifact {
 ///
 /// Frames are converted and written immediately. No PNGs, base64 payloads, or decoded
 /// frame history are retained while recording.
-pub(crate) struct LiveRecorder {
+pub struct LiveRecorder {
     encoder: Encoder,
     rgb: Vec<u8>,
     yuv: YUVBuffer,
@@ -343,7 +343,7 @@ impl LiveRecorder {
     }
 }
 
-pub(crate) fn validate_artifact_name(name: &str) -> Result<(), String> {
+pub fn validate_artifact_name(name: &str) -> Result<(), String> {
     if name.is_empty() || name.len() > MAX_ARTIFACT_NAME_BYTES {
         return Err(format!(
             "artifact_name must contain 1 through {MAX_ARTIFACT_NAME_BYTES} ASCII bytes"

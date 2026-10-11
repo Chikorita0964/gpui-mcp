@@ -9,7 +9,7 @@ use gpui_mcp_protocol::{
 };
 
 /// Group that the legacy highlight operations write to.
-pub(crate) const HIGHLIGHT_GROUP: &str = "highlights";
+pub const HIGHLIGHT_GROUP: &str = "highlights";
 
 #[derive(Debug)]
 struct Entry {
@@ -22,7 +22,7 @@ struct Entry {
 
 /// What one annotation needs to be drawn in a frame.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PaintItem {
+pub struct PaintItem {
     pub(crate) id: String,
     pub(crate) target: AnnotationTarget,
     pub(crate) color: u32,
@@ -31,7 +31,7 @@ pub(crate) struct PaintItem {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct AnnotationStore {
+pub struct AnnotationStore {
     /// Draw order: earlier entries are drawn first.
     entries: Vec<Entry>,
     next_id: u64,

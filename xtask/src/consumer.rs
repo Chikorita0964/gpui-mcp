@@ -16,7 +16,7 @@ use rustc_hash::FxHashMap;
 use serde_json::Value;
 
 #[derive(Clone, Copy, ValueEnum)]
-pub(crate) enum Backend {
+pub enum Backend {
     /// GPUI Kit from its GitHub main with its `gpui-fast` feature, on GPUI Fast
     /// 0.1.6.
     #[value(name = "gpui-kit")]
@@ -66,7 +66,7 @@ impl Backend {
 }
 
 #[derive(Args)]
-pub(crate) struct ConsumerArgs {
+pub struct ConsumerArgs {
     /// Which README recipe to check.
     #[arg(long, value_enum, default_value = "gpui-kit")]
     backend: Backend,
@@ -82,7 +82,7 @@ pub(crate) struct ConsumerArgs {
 }
 
 #[expect(clippy::print_stdout, reason = "xtask is a command-line tool: its result goes to stdout")]
-pub(crate) fn run(args: &ConsumerArgs) -> Result<()> {
+pub fn run(args: &ConsumerArgs) -> Result<()> {
     ensure!(
         args.rev.len() == 40 && args.rev.chars().all(|c| c.is_ascii_hexdigit()),
         "--rev must be a full 40-character commit SHA"

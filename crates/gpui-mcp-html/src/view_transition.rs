@@ -15,7 +15,7 @@ use crate::{Binding, ElementId, HtmlUi, StateValue, UiProperty};
 
 /// Whether an element can take part in a transition: it declares
 /// `view-transition-name` somewhere, so the name is worth computing.
-pub(crate) fn declares_name(element: &htmlswap::RenderElement) -> bool {
+pub fn declares_name(element: &htmlswap::RenderElement) -> bool {
     element
         .stylesheet_declarations
         .iter()
@@ -25,7 +25,7 @@ pub(crate) fn declares_name(element: &htmlswap::RenderElement) -> bool {
 }
 
 /// The name `view-transition-name` computes to on an element, if any.
-pub(crate) fn transition_name<'a>(
+pub fn transition_name<'a>(
     declarations: impl IntoIterator<Item = &'a StyleDeclaration>,
     element_id: &str,
 ) -> Option<SharedString> {
@@ -45,7 +45,7 @@ pub(crate) fn transition_name<'a>(
 }
 
 /// `view-transition-class` names.
-pub(crate) fn transition_classes<'a>(
+pub fn transition_classes<'a>(
     declarations: impl IntoIterator<Item = &'a StyleDeclaration>,
 ) -> Vec<SharedString> {
     declarations
@@ -65,7 +65,7 @@ pub(crate) fn transition_classes<'a>(
 }
 
 /// The element at a child-index path.
-pub(crate) fn element_at<'a>(
+pub fn element_at<'a>(
     plan: &'a htmlswap::RenderPlan,
     path: &[usize],
 ) -> Option<&'a htmlswap::RenderElement> {
@@ -84,10 +84,10 @@ pub(crate) fn element_at<'a>(
 }
 
 /// Bound property values by element.
-pub(crate) type PropertySnapshot = FxHashMap<ElementId, FxHashMap<UiProperty, StateValue>>;
+pub type PropertySnapshot = FxHashMap<ElementId, FxHashMap<UiProperty, StateValue>>;
 
 /// The outgoing document of a transition, which the renderer draws again.
-pub(crate) struct OldState {
+pub struct OldState {
     pub(crate) ui: Rc<HtmlUi>,
     pub(crate) bindings: FxHashMap<ElementId, Rc<[Binding]>>,
     /// Bound property values at capture time, or `None` to read the hooks
@@ -96,7 +96,7 @@ pub(crate) struct OldState {
     pub(crate) disclosures: FxHashMap<ElementId, bool>,
 }
 
-pub(crate) use kit::DocumentTransitions;
+pub use kit::DocumentTransitions;
 
 mod kit {
     use std::cell::{Cell, RefCell};
@@ -127,7 +127,7 @@ mod kit {
     /// A document's view transitions, with named elements keyed by their
     /// child-index paths.
     #[derive(Clone, Default)]
-    pub(crate) struct DocumentTransitions {
+    pub struct DocumentTransitions {
         inner: ViewTransitions<OldState, Vec<usize>>,
         /// The incoming document, whose CSS styles the pseudo-elements.
         incoming: Rc<RefCell<Option<Rc<HtmlUi>>>>,
@@ -226,7 +226,7 @@ mod kit {
     /// How author CSS styles one name's pseudo-elements: the user-agent
     /// style, then `::view-transition-group/old/new` rules for the name, its
     /// classes and the transition's types.
-    pub(crate) fn name_style(
+    pub fn name_style(
         name: &str,
         classes: &[SharedString],
         types: &[SharedString],

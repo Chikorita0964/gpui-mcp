@@ -58,7 +58,7 @@ impl ConnectionPool {
 }
 
 #[derive(Clone)]
-pub(crate) struct BridgeClient {
+pub struct BridgeClient {
     descriptor: Arc<EndpointDescriptor>,
     /// The descriptor's file: the bridge rewrites it when the application
     /// publishes a capability after install (`on_message`, `on_annotations`).
@@ -170,7 +170,7 @@ impl BridgeClient {
 /// Opaque, validated selection identity for one bridge instance.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub(crate) struct TargetId(String);
+pub struct TargetId(String);
 
 impl TargetId {
     fn from_descriptor(descriptor: &EndpointDescriptor) -> Self {
@@ -207,7 +207,7 @@ impl fmt::Display for TargetId {
 
 /// Public, non-secret identity for one discoverable GPUI bridge.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct AppInfo {
+pub struct AppInfo {
     pub(crate) target_id: TargetId,
     pub(crate) app_id: AppId,
     pub(crate) app_name: String,
@@ -237,7 +237,7 @@ impl AppInfo {
 /// [`Self::list_apps`]. The optional application ID is an explicit discovery
 /// filter; normal MCP configuration does not need one.
 #[derive(Clone)]
-pub(crate) struct BridgeRegistry {
+pub struct BridgeRegistry {
     endpoint: Option<PathBuf>,
     app_id: Option<AppId>,
     endpoint_dir: Option<PathBuf>,
@@ -614,7 +614,7 @@ fn validate_descriptor_permissions(metadata: &fs::Metadata) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn default_runtime_root() -> Result<PathBuf> {
+pub fn default_runtime_root() -> Result<PathBuf> {
     gpui_mcp_protocol::runtime_root().context("resolve the GPUI MCP runtime directory")
 }
 

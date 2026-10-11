@@ -77,7 +77,6 @@ widestring = "1.2.1"
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
-unreachable_pub = "warn"
 absolute_paths_not_starting_with_crate = "warn"
 non_ascii_idents = "warn"
 unit_bindings = "warn"
@@ -146,10 +145,6 @@ branches_sharing_code = "allow"
 fallible_impl_from = "allow"
 useless_let_if_seq = "allow"
 impl_trait_in_params = "allow"
-# The opposite of rustc's `unreachable_pub` above: an item in a private module stays `pub(crate)`.
-redundant_pub_crate = "allow"
-# `mul_add` is a slow libm call unless the build targets FMA.
-suboptimal_flops = "allow"
 # GPUI's futures run on its foreground executor and are never sent.
 future_not_send = "allow"
 # cargo

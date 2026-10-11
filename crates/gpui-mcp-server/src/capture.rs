@@ -15,10 +15,7 @@ const CAPTURE_WORKER_DEADLINE: Duration = Duration::from_secs(15);
 /// Keeping native capture outside the GPUI process is required on Windows, where native window
 /// enumeration intentionally excludes windows owned by the calling process. The bridge only
 /// supplies the stable process/window identity and current logical client-area geometry.
-pub(crate) async fn capture(
-    client: &BridgeClient,
-    area: ScreenshotTarget,
-) -> Result<Screenshot, String> {
+pub async fn capture(client: &BridgeClient, area: ScreenshotTarget) -> Result<Screenshot, String> {
     let descriptor = client.descriptor();
     if !descriptor.capabilities.supports(Capability::Screenshot) {
         return Err("the application platform does not expose native window capture".to_owned());

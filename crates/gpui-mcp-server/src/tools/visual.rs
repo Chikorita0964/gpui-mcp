@@ -348,9 +348,10 @@ fn draw_pointer(image: &mut image::RgbaImage, pointer: Point, root: Rect) -> boo
         return false;
     }
     let scale = f64::from(image.width()) / f64::from(root.width);
-    let top_inset = (f64::from(image.height()) - f64::from(root.height) * scale).max(0.0);
+    let top_inset =
+        f64::mul_add(f64::from(root.height), -scale, f64::from(image.height())).max(0.0);
     let x = rounded_i32(f64::from(pointer.x - root.x) * scale);
-    let y = rounded_i32(top_inset + f64::from(pointer.y - root.y) * scale);
+    let y = rounded_i32(f64::mul_add(f64::from(pointer.y - root.y), scale, top_inset));
     draw_pointer_marker(image, x, y)
 }
 

@@ -16,7 +16,7 @@ use htmlswap::{RenderMotionPlan, StyleDeclaration};
 use crate::cascade::Computed;
 
 /// What one element animates this frame.
-pub(crate) struct Inputs<'a> {
+pub struct Inputs<'a> {
     /// The element's runtime id, which keys its motion state.
     pub(crate) key: &'a str,
     pub(crate) computed: &'a Computed,
@@ -33,7 +33,7 @@ pub(crate) struct Inputs<'a> {
 
 /// What an element's motion produced.
 #[derive(Debug, Default)]
-pub(crate) struct Output {
+pub struct Output {
     /// Values to draw over the element's computed style.
     pub(crate) style: ComputedStyle,
     /// Whether anything still moves, so another frame is needed.
@@ -41,12 +41,12 @@ pub(crate) struct Output {
 }
 
 /// Whether an element's styles involve motion at all.
-pub(crate) fn has_motion(computed: &Computed) -> bool {
+pub fn has_motion(computed: &Computed) -> bool {
     computed.transitions.iter().any(htmlswap::motion::Transition::is_active)
         || computed.animations.iter().any(|animation| animation.name.is_some())
 }
 
-pub(crate) use kit::{animate, duration, easing, frames, keyframes, timing};
+pub use kit::{animate, duration, easing, frames, keyframes, timing};
 
 mod kit {
     use std::time::Duration;
@@ -76,7 +76,7 @@ mod kit {
         }
     }
 
-    pub(crate) fn easing(easing: Easing) -> KitEasing {
+    pub fn easing(easing: Easing) -> KitEasing {
         match easing {
             Easing::Linear => KitEasing::Linear,
             Easing::CubicBezier(x1, y1, x2, y2) => {
@@ -95,7 +95,7 @@ mod kit {
         }
     }
 
-    pub(crate) fn duration(ms: f32) -> Duration {
+    pub fn duration(ms: f32) -> Duration {
         Duration::from_secs_f32(ms.max(0.0) / 1000.0)
     }
 
@@ -119,7 +119,7 @@ mod kit {
             SharedString::from(suffix.to_owned()),
         )
     }
-    pub(crate) fn animate(inputs: &Inputs<'_>, window: &mut Window, cx: &mut App) -> Output {
+    pub fn animate(inputs: &Inputs<'_>, window: &mut Window, cx: &mut App) -> Output {
         let mut output = Output::default();
         let computed = inputs.computed;
         // Entry transitions start from @starting-style (CSS Transitions 2
@@ -210,7 +210,7 @@ mod kit {
 
     /// A `@keyframes` rule's frames as typed styles, with each frame's
     /// easing (its `animation-timing-function`, else the animation's).
-    pub(crate) fn frames(
+    pub fn frames(
         source: &RenderKeyframes,
         easing: Easing,
         compute: &dyn Fn(&[StyleDeclaration]) -> ComputedStyle,
@@ -233,7 +233,7 @@ mod kit {
 
     /// An animation's timing. Easing is per keyframe, as in CSS, so the
     /// timing itself is linear.
-    pub(crate) fn timing(animation: &Animation) -> Timing {
+    pub fn timing(animation: &Animation) -> Timing {
         Timing::new(duration(animation.duration_ms))
             .delay(delay(animation.delay_ms))
             .iterations(match animation.iterations {
@@ -254,7 +254,7 @@ mod kit {
     /// One property's keyframes, with missing `0%` and `100%` keyframes
     /// taking the underlying value (CSS Animations 1 §3), each value
     /// converted by `value`.
-    pub(crate) fn keyframes<T: Interpolate>(
+    pub fn keyframes<T: Interpolate>(
         frames: &[(f32, ComputedStyle, Easing)],
         property: AnimatableProperty,
         underlying: Option<AnimatedValue>,
@@ -281,7 +281,7 @@ mod kit {
 /// laid-out size. The move happens in prepaint, so layout, siblings and
 /// scroll extents are unaffected, while hit testing and semantic bounds
 /// follow the painted position.
-pub(crate) struct Translated {
+pub struct Translated {
     child: AnyElement,
     x: LengthPercentage,
     y: LengthPercentage,
@@ -355,6 +355,6 @@ impl Element for Translated {
 }
 
 /// A translation that moves nothing.
-pub(crate) fn is_zero(translate: (LengthPercentage, LengthPercentage)) -> bool {
+pub fn is_zero(translate: (LengthPercentage, LengthPercentage)) -> bool {
     translate.0 == LengthPercentage::ZERO && translate.1 == LengthPercentage::ZERO
 }

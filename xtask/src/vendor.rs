@@ -15,7 +15,7 @@ use crate::patch::{self, Files};
 const SERIES: [Patch; 3] = [Patch::Automation, Patch::Accessibility, Patch::Grid];
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Crate {
+pub enum Crate {
     /// Longbridge's GPUI with retained rendering, which GPUI Kit selects
     /// with its `gpui-fast` feature: the one GPUI the workspace builds on.
     #[value(name = "gpui-fast")]
@@ -38,7 +38,7 @@ impl Crate {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Patch {
+pub enum Patch {
     /// Everything the bridge needs.
     Automation,
     /// Semantic accessibility actions for the bridge's `perform_action` tool.
@@ -65,7 +65,7 @@ impl Patch {
 }
 
 #[derive(Args)]
-pub(crate) struct VendorArgs {
+pub struct VendorArgs {
     /// The crate to patch.
     #[arg(long = "crate", value_enum, default_value = "gpui-fast")]
     krate: Crate,
@@ -84,7 +84,7 @@ pub(crate) struct VendorArgs {
 }
 
 #[expect(clippy::print_stdout, reason = "xtask is a command-line tool: its result goes to stdout")]
-pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
+pub fn run(root: &Path, args: &VendorArgs) -> Result<()> {
     let name = args.krate.name();
     if let Some(patch) = args.without.iter().find(|patch| patch.required()) {
         bail!("the {} patch is what the bridge needs and can't be left out", patch.name());

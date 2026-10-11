@@ -263,12 +263,12 @@ fn mutation_channel(binding: &Binding, element: &RenderElement) -> Option<Mutati
     }
 }
 
-pub(crate) fn is_text_editable(element: &RenderElement) -> bool {
+pub fn is_text_editable(element: &RenderElement) -> bool {
     matches!(element.role, UiRole::TextInput)
         && !attribute(element, "type").is_some_and(|kind| matches!(kind, "checkbox" | "radio"))
 }
 
-pub(crate) fn attribute<'a>(element: &'a RenderElement, name: &str) -> Option<&'a str> {
+pub fn attribute<'a>(element: &'a RenderElement, name: &str) -> Option<&'a str> {
     element
         .attributes
         .iter()

@@ -277,12 +277,12 @@ pub fn screenshot(
         let geometry = options.geometry.ok_or(CaptureFailure::MissingGeometry)?;
         let mapping =
             region_mapping(image.width(), image.height(), native_origin, reported_size, geometry)?;
-        let left = (mapping.offset_x + rect.x * mapping.scale_x).floor().max(0.0) as u32;
-        let top = (mapping.offset_y + rect.y * mapping.scale_y).floor().max(0.0) as u32;
-        let right = (mapping.offset_x + (rect.x + rect.width) * mapping.scale_x)
+        let left = f32::mul_add(rect.x, mapping.scale_x, mapping.offset_x).floor().max(0.0) as u32;
+        let top = f32::mul_add(rect.y, mapping.scale_y, mapping.offset_y).floor().max(0.0) as u32;
+        let right = f32::mul_add(rect.x + rect.width, mapping.scale_x, mapping.offset_x)
             .ceil()
             .clamp(0.0, image.width() as f32) as u32;
-        let bottom = (mapping.offset_y + (rect.y + rect.height) * mapping.scale_y)
+        let bottom = f32::mul_add(rect.y + rect.height, mapping.scale_y, mapping.offset_y)
             .ceil()
             .clamp(0.0, image.height() as f32) as u32;
         if right <= left || bottom <= top || left >= image.width() || top >= image.height() {
@@ -522,7 +522,7 @@ mod platform_stream {
 
     use super::{CaptureFailure, CaptureTarget, live_frame};
 
-    pub(super) struct PlatformFrameStream {
+    pub struct PlatformFrameStream {
         target: CaptureTarget,
     }
 
@@ -949,7 +949,7 @@ mod tests {
         );
         // A 104-pixel-wide region at x=32 ends at the 137th image column, not the
         // 138th that the leftover ratio would have reached.
-        let right = mapping.offset_x + (32.0 + 104.0) * mapping.scale_x;
+        let right = f32::mul_add(32.0 + 104.0, mapping.scale_x, mapping.offset_x);
         assert!(
             (right.ceil() - 137.0).abs() < f32::EPSILON,
             "the right edge of the crop must be the requested edge, got {right}"

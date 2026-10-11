@@ -55,7 +55,7 @@ struct TreeBuilder {
 
 /// One view drawn in a retained frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ViewRecord {
+pub struct ViewRecord {
     pub(crate) entity_id: u64,
     pub(crate) type_name: &'static str,
     /// Why the view rendered, or `None` when it replayed from cache.
@@ -128,7 +128,7 @@ impl TimingState {
 }
 
 #[derive(Debug)]
-pub(crate) struct SharedState {
+pub struct SharedState {
     tree: RwLock<UiTree>,
     intake: Mutex<SemanticIntake>,
     /// Serializes conversions so two readers never convert one frame twice.
@@ -1238,7 +1238,7 @@ fn level_rank(level: &str) -> u8 {
 
 /// The latest change to the annotation set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct AnnotationChange {
+pub struct AnnotationChange {
     /// Increases with every change.
     pub(crate) revision: u64,
     /// Who made the latest change.
@@ -1251,7 +1251,7 @@ impl Default for AnnotationChange {
     }
 }
 
-pub(crate) fn unix_ms() -> u64 {
+pub fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -1260,7 +1260,7 @@ pub(crate) fn unix_ms() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-pub(crate) fn rect_from_gpui(bounds: gpui::Bounds<gpui::Pixels>) -> Rect {
+pub fn rect_from_gpui(bounds: gpui::Bounds<gpui::Pixels>) -> Rect {
     Rect {
         x: f32::from(bounds.origin.x),
         y: f32::from(bounds.origin.y),

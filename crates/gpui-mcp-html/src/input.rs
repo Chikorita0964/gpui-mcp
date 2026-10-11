@@ -70,7 +70,7 @@ pub fn init(cx: &mut App) {
     ]);
 }
 
-pub(crate) struct RuntimeTextInput {
+pub struct RuntimeTextInput {
     focus_handle: FocusHandle,
     content: SharedString,
     placeholder: SharedString,
@@ -96,7 +96,7 @@ struct InputBehavior {
 }
 
 #[derive(Clone)]
-pub(crate) struct RuntimeTextInputOptions {
+pub struct RuntimeTextInputOptions {
     pub value: String,
     pub placeholder: String,
     pub multiline: bool,

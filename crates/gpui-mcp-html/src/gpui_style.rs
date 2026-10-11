@@ -30,12 +30,12 @@ use rustc_hash::FxHashSet;
 const FEATURES: Features = Features { grid_tracks: true, inset_shadows: true };
 
 /// The GPUI color for a computed color.
-pub(crate) fn color(color: Rgba) -> gpui::Hsla {
+pub fn color(color: Rgba) -> gpui::Hsla {
     rgba(color.to_u32()).into()
 }
 
 /// The runtime bases lengths resolve against in `window`.
-pub(crate) fn bases(window: &Window) -> Bases {
+pub fn bases(window: &Window) -> Bases {
     let viewport = window.viewport_size();
     Bases {
         rem: f32::from(window.rem_size()),
@@ -147,7 +147,7 @@ fn font_family(families: &[FontFamily], available: &FxHashSet<String>) -> (Strin
 }
 
 /// Apply every field the style sets.
-pub(crate) fn apply<T: Styled>(
+pub fn apply<T: Styled>(
     host: T,
     style: &ComputedStyle,
     fonts: &FxHashSet<String>,
@@ -497,7 +497,7 @@ fn apply_text<T: Styled>(
 
 /// Values in `style` that GPUI cannot draw, or draws only approximately, as
 /// `(property, reason)`.
-pub(crate) fn limits(style: &ComputedStyle) -> Vec<(&'static str, &'static str)> {
+pub fn limits(style: &ComputedStyle) -> Vec<(&'static str, &'static str)> {
     let planned = plan(style, FEATURES);
     planned
         .limits

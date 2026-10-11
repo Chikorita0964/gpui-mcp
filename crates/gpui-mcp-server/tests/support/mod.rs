@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 /// The GPUI Kit example the tests drive. It is a workspace member built beside
 /// the server binary (`cargo build -p gpui-mcp-kit-demo`), so it is found there:
 /// `CARGO_BIN_EXE` names only this package's own binaries.
-pub(crate) fn fixture_executable() -> Result<PathBuf, String> {
+pub fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
     let directory =
         server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
@@ -23,13 +23,13 @@ pub(crate) fn fixture_executable() -> Result<PathBuf, String> {
     }
 }
 
-pub(crate) trait FixtureClient {
+pub trait FixtureClient {
     async fn call_json(&mut self, tool: &str, arguments: Value) -> Result<Value, String>;
 }
 
 /// Endpoint discovery precedes rendering. Require the controls, not their
 /// expected states, so readiness does not hide a semantic regression.
-pub(crate) async fn wait_for_fixture(
+pub async fn wait_for_fixture(
     client: &mut impl FixtureClient,
     ids: &[&str],
     deadline: Duration,
@@ -72,7 +72,7 @@ fn missing_nodes<'a>(tree: &Value, ids: &[&'a str]) -> Vec<&'a str> {
 }
 
 /// Include only the bounded tail of fixture stderr in a failed test result.
-pub(crate) fn fixture_failure(log: &Path, error: &str) -> String {
+pub fn fixture_failure(log: &Path, error: &str) -> String {
     let tail = (|| {
         let mut file = File::open(log)?;
         let length = file.metadata()?.len();

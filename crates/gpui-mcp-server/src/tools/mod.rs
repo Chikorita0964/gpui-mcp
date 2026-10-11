@@ -71,7 +71,7 @@ struct SnapshotStore {
 
 /// MCP tool suite backed by a lazily selected, authenticated GPUI endpoint.
 #[derive(Clone)]
-pub(crate) struct GpuiMcp {
+pub struct GpuiMcp {
     registry: BridgeRegistry,
     tool_router: ToolRouter<Self>,
     snapshots: Arc<RwLock<SnapshotStore>>,
@@ -597,8 +597,8 @@ impl GpuiMcp {
         for step in 1..=steps {
             let progress = f32::from(step) / f32::from(steps);
             let point = Point {
-                x: from.x + (to.x - from.x) * progress,
-                y: from.y + (to.y - from.y) * progress,
+                x: (to.x - from.x).mul_add(progress, from.x),
+                y: (to.y - from.y).mul_add(progress, from.y),
             };
             if let Err(error) = self
                 .dispatch_pointer_input(PointerCommand::MouseMove {

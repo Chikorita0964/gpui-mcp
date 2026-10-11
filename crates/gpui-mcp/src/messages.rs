@@ -9,7 +9,7 @@ use gpui_mcp_protocol::{
 };
 
 #[derive(Debug, Default)]
-pub(crate) struct MessageLog {
+pub struct MessageLog {
     messages: VecDeque<Message>,
     latest_id: u64,
     /// Highest app message id the agent has read.

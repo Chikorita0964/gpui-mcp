@@ -321,8 +321,8 @@ async fn measure(server: &mut Server) -> Result<(), String> {
     let region = json!({
         "x": x - CROP_MARGIN,
         "y": y - CROP_MARGIN,
-        "width": width + CROP_MARGIN * 2.0,
-        "height": height + CROP_MARGIN * 2.0,
+        "width": CROP_MARGIN.mul_add(2.0, width),
+        "height": CROP_MARGIN.mul_add(2.0, height),
     });
 
     let away = (0.0, 0.0);

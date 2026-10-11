@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gpui::{AnyElement, App, Window};
 use rustc_hash::FxHashMap;
 
-pub(crate) type ComponentFactory =
+pub type ComponentFactory =
     Rc<dyn Fn(&ComponentNode, Vec<AnyElement>, &mut Window, &mut App) -> AnyElement>;
 
 /// Owned custom-element input supplied to an application component factory.

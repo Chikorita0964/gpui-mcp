@@ -8,7 +8,7 @@ use gpui_mcp_protocol::{
     PointerCommand, PointerScrollDelta,
 };
 
-pub(crate) fn validate(command: &InputCommand) -> Result<(), BridgeError> {
+pub fn validate(command: &InputCommand) -> Result<(), BridgeError> {
     match command {
         InputCommand::Key { keystroke } => {
             validate_text(keystroke)?;
@@ -31,7 +31,7 @@ pub(crate) fn validate(command: &InputCommand) -> Result<(), BridgeError> {
     Ok(())
 }
 
-pub(crate) fn validate_pointer(command: &PointerCommand) -> Result<(), BridgeError> {
+pub fn validate_pointer(command: &PointerCommand) -> Result<(), BridgeError> {
     match command {
         PointerCommand::MouseMove { point, .. } => validate_point(*point),
         PointerCommand::MouseDown { point, click_count, .. }
@@ -50,7 +50,7 @@ pub(crate) fn validate_pointer(command: &PointerCommand) -> Result<(), BridgeErr
     }
 }
 
-pub(crate) fn dispatch_pointer(
+pub fn dispatch_pointer(
     command: &PointerCommand,
     window: &mut Window,
     cx: &mut App,
@@ -103,12 +103,12 @@ pub(crate) fn dispatch_pointer(
 
 /// Return the GPUI input pipeline's latest pointer position in window-relative logical pixels.
 #[must_use]
-pub(crate) fn pointer_location(window: &Window) -> Point {
+pub fn pointer_location(window: &Window) -> Point {
     let position = window.mouse_position();
     Point { x: f32::from(position.x), y: f32::from(position.y) }
 }
 
-pub(crate) fn dispatch_keyboard(
+pub fn dispatch_keyboard(
     command: InputCommand,
     window: &mut Window,
     cx: &mut App,
@@ -185,7 +185,7 @@ fn validate_point(point: Point) -> Result<(), BridgeError> {
     Ok(())
 }
 
-pub(crate) fn validate_text(text: &str) -> Result<(), BridgeError> {
+pub fn validate_text(text: &str) -> Result<(), BridgeError> {
     if text.len() > MAX_TEXT_BYTES {
         return Err(invalid("text exceeds the 64 KiB safety bound"));
     }
@@ -198,7 +198,7 @@ fn invalid(message: &'static str) -> BridgeError {
 
 /// The AccessKit action and payload that assistive technology sends for `action`.
 ///
-pub(crate) fn accesskit_action(
+pub fn accesskit_action(
     action: SemanticAction,
 ) -> (gpui::accesskit::Action, Option<gpui::accesskit::ActionData>) {
     use gpui::accesskit::{Action, ActionData};

@@ -24,7 +24,7 @@ const LABEL_HEIGHT: f32 = 16.0;
 const LABEL_PADDING: f32 = 4.0;
 const OUTLINE_WIDTH: f32 = 2.0;
 
-pub(crate) struct BridgeObserver {
+pub struct BridgeObserver {
     state: Weak<SharedState>,
 }
 
@@ -147,7 +147,7 @@ impl BridgeObserver {
 /// Node targets are looked up in the frame's semantic nodes, so they follow
 /// layout, scrolling and zoom. A node that is missing, hidden, or scrolled
 /// entirely out of its scroll containers resolves to `None`.
-pub(crate) fn resolve_targets(
+pub fn resolve_targets(
     items: &[PaintItem],
     frame: Option<&AccessibilityFrame>,
     viewport: Rect,
@@ -199,7 +199,7 @@ fn visible_node_rect(
 }
 
 /// The overlap of two rectangles, or `None` when they do not overlap.
-pub(crate) fn intersect(a: Rect, b: Rect) -> Option<Rect> {
+pub fn intersect(a: Rect, b: Rect) -> Option<Rect> {
     let left = a.x.max(b.x);
     let top = a.y.max(b.y);
     let right = (a.x + a.width).min(b.x + b.width);
@@ -270,7 +270,7 @@ fn paint_label(
         &[run],
         None,
     );
-    let width = f32::from(line.width) + LABEL_PADDING * 2.0;
+    let width = LABEL_PADDING.mul_add(2.0, f32::from(line.width));
     let x = rect.x.min(viewport.width - width).max(0.0);
     let y = if rect.y >= LABEL_HEIGHT { rect.y - LABEL_HEIGHT } else { rect.y };
     let chip = Rect { x, y, width, height: LABEL_HEIGHT };
@@ -297,12 +297,12 @@ fn hsla(color: u32) -> Hsla {
 }
 
 /// `color` with a quarter of its alpha.
-pub(crate) const fn quarter_alpha(color: u32) -> u32 {
+pub const fn quarter_alpha(color: u32) -> u32 {
     (color & 0xffff_ff00) | ((color & 0xff) / 4)
 }
 
 /// Black or white, whichever reads better on the opaque form of `color`.
-pub(crate) const fn contrasting_text(color: u32) -> u32 {
+pub const fn contrasting_text(color: u32) -> u32 {
     let red = (color >> 24) & 0xff;
     let green = (color >> 16) & 0xff;
     let blue = (color >> 8) & 0xff;
@@ -327,7 +327,7 @@ const fn render_cause(cause: gpui::ViewRenderCause) -> ViewRenderCause {
 ///
 /// This runs when a client reads the tree rather than during the draw, so its
 /// cost never lands inside a measured frame.
-pub(crate) fn semantic_nodes(frame: &AccessibilityFrame) -> Vec<UiNode> {
+pub fn semantic_nodes(frame: &AccessibilityFrame) -> Vec<UiNode> {
     let mut nodes = frame.nodes().map(|(_, node)| node).collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.path().cmp(right.path()));
     let mut hidden = FxHashSet::<String>::default();
