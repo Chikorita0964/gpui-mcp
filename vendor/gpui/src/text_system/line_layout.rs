@@ -415,11 +415,10 @@ impl WrappedLineLayout {
                     .unwrapped_layout
                     .closest_index_for_x(position_in_unwrapped_line.x))
             } else {
-                // The shaper can place a trailing zero-width wrap boundary glyph slightly past
-                // the line's width, so the row can extend past where `index_for_x` has glyphs.
-                self.unwrapped_layout
+                Ok(self
+                    .unwrapped_layout
                     .index_for_x(position_in_unwrapped_line.x)
-                    .ok_or(wrapped_line_end_index)
+                    .unwrap())
             }
         }
     }

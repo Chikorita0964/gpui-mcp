@@ -2670,16 +2670,20 @@ impl Window {
 
     pub(crate) fn dispatch_keystroke_observers(
         &mut self,
-        keystroke: &Keystroke,
-        action: Option<&dyn Action>,
+        event: &dyn Any,
+        action: Option<Box<dyn Action>>,
         context_stack: Vec<KeyContext>,
         cx: &mut App,
     ) {
+        let Some(key_down_event) = event.downcast_ref::<KeyDownEvent>() else {
+            return;
+        };
+
         cx.keystroke_observers.clone().retain(&(), move |callback| {
             (callback)(
                 &KeystrokeEvent {
-                    keystroke: keystroke.clone(),
-                    action: action.map(|action| action.boxed_clone()),
+                    keystroke: key_down_event.keystroke.clone(),
+                    action: action.as_ref().map(|action| action.boxed_clone()),
                     context_stack: context_stack.clone(),
                 },
                 self,
@@ -2690,16 +2694,20 @@ impl Window {
 
     pub(crate) fn dispatch_keystroke_interceptors(
         &mut self,
-        keystroke: &Keystroke,
+        event: &dyn Any,
         context_stack: Vec<KeyContext>,
         cx: &mut App,
     ) {
+        let Some(key_down_event) = event.downcast_ref::<KeyDownEvent>() else {
+            return;
+        };
+
         cx.keystroke_interceptors
             .clone()
             .retain(&(), move |callback| {
                 (callback)(
                     &KeystrokeEvent {
-                        keystroke: keystroke.clone(),
+                        keystroke: key_down_event.keystroke.clone(),
                         action: None,
                         context_stack: context_stack.clone(),
                     },
@@ -6181,20 +6189,14 @@ impl Window {
         }
 
         let Some(keystroke) = keystroke else {
-            self.finish_dispatch_key_event(event, None, dispatch_path, self.context_stack(), cx);
+            self.finish_dispatch_key_event(event, dispatch_path, self.context_stack(), cx);
             return;
         };
 
         cx.propagate_event = true;
-        self.dispatch_keystroke_interceptors(&keystroke, self.context_stack(), cx);
+        self.dispatch_keystroke_interceptors(event, self.context_stack(), cx);
         if !cx.propagate_event {
-            self.finish_dispatch_key_event(
-                event,
-                Some(&keystroke),
-                dispatch_path,
-                self.context_stack(),
-                cx,
-            );
+            self.finish_dispatch_key_event(event, dispatch_path, self.context_stack(), cx);
             return;
         }
 
@@ -6205,7 +6207,7 @@ impl Window {
 
         let match_result = self.rendered_frame.dispatch_tree.dispatch_key(
             currently_pending.keystrokes,
-            keystroke.clone(),
+            keystroke,
             &dispatch_path,
         );
 
@@ -6273,8 +6275,8 @@ impl Window {
                 self.dispatch_action_on_node(node_id, binding.action.as_ref(), cx);
                 if !cx.propagate_event {
                     self.dispatch_keystroke_observers(
-                        &keystroke,
-                        Some(binding.action.as_ref()),
+                        event,
+                        Some(binding.action),
                         match_result.context_stack,
                         cx,
                     );
@@ -6284,13 +6286,7 @@ impl Window {
             }
         }
 
-        self.finish_dispatch_key_event(
-            event,
-            Some(&keystroke),
-            dispatch_path,
-            match_result.context_stack,
-            cx,
-        );
+        self.finish_dispatch_key_event(event, dispatch_path, match_result.context_stack, cx);
         self.pending_input_changed(cx);
     }
 
@@ -6335,7 +6331,6 @@ impl Window {
     fn finish_dispatch_key_event(
         &mut self,
         event: &dyn Any,
-        recognized_keystroke: Option<&Keystroke>,
         dispatch_path: SmallVec<[DispatchNodeId; 32]>,
         context_stack: Vec<KeyContext>,
         cx: &mut App,
@@ -6350,9 +6345,7 @@ impl Window {
             return;
         }
 
-        if let Some(keystroke) = recognized_keystroke {
-            self.dispatch_keystroke_observers(keystroke, None, context_stack, cx);
-        }
+        self.dispatch_keystroke_observers(event, None, context_stack, cx);
     }
 
     pub(crate) fn pending_input_changed(&mut self, cx: &mut App) {
@@ -6554,8 +6547,8 @@ impl Window {
                 self.dispatch_action_on_node(node_id, binding.action.as_ref(), cx);
                 if !cx.propagate_event {
                     self.dispatch_keystroke_observers(
-                        &replay.keystroke,
-                        Some(binding.action.as_ref()),
+                        &event,
+                        Some(binding.action),
                         Vec::default(),
                         cx,
                     );
@@ -7097,16 +7090,6 @@ impl Window {
     /// with the window, for others it's just a simple global function call.
     pub fn play_system_bell(&self) {
         self.platform_window.play_system_bell()
-    }
-
-    /// Returns whether accessibility support is enabled for this window.
-    ///
-    /// This is false when the app was created with [`crate::Application::new_inaccessible`].
-    /// Unlike [`Self::is_a11y_active`], this does not depend on whether assistive
-    /// technology is currently connected, so it can be used to gate subscriptions
-    /// that are only needed for accessibility.
-    pub fn is_a11y_enabled(&self) -> bool {
-        self.a11y.is_enabled()
     }
 
     /// Returns whether accessibility features are active for this frame,
@@ -7762,12 +7745,6 @@ impl TryInto<SharedString> for ElementId {
         } else {
             anyhow::bail!("element id is not string")
         }
-    }
-}
-
-impl From<u64> for ElementId {
-    fn from(id: u64) -> Self {
-        ElementId::Integer(id)
     }
 }
 

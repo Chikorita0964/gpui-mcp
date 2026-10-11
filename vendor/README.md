@@ -23,8 +23,9 @@ changes added on 2026-09-23 were written against the same commit.
 
 ## `gpui-pre/`, `gpui-fast/` and `gpui-ce/`
 
-All three carry the same changes as `gpui/`, so every backend behaves the same
-way. This includes the parts GPUI Kit depends on:
+All three carry the changes `gpui/` has upstream. This fork builds and tests
+only `gpui-fast`; its `gpui/` tree is upstream's as it is, without the fork's
+later additions. They include the parts GPUI Kit depends on:
 
 - Accessibility elements from other crates are observed.
 - Clicks and other interactions are still detected through wrapper elements.
