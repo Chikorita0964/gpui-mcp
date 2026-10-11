@@ -13,8 +13,13 @@ It works on Windows 11, macOS, and Linux.
 Install the MCP server and add it to your MCP client:
 
 ```console
-cargo install --git https://github.com/Chikorita0964/gpui-mcp --branch dev --locked gpui-mcp-server
+RUSTFLAGS="-C target-cpu=native" cargo install --git https://github.com/Chikorita0964/gpui-mcp --branch dev --locked gpui-mcp-server
 ```
+
+`target-cpu=native` builds the server for the machine it is installed on, with
+every instruction set that CPU has (FMA and AVX2 on a recent x86-64), so copy
+the binary only to machines with the same CPU features. In PowerShell, set
+`$env:RUSTFLAGS = "-C target-cpu=native"` first.
 
 ```json
 { "mcpServers": { "gpui": { "command": "gpui-mcp" } } }
