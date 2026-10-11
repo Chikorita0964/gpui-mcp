@@ -527,7 +527,6 @@ async fn an_os_cursor_hover_renders_only_the_hovered_cached_region() -> Result<(
         let report = server.report().await?;
         let first = one_region_rendered(&report, "the cursor entering the left region")?;
         draw_times_are_reported(&report)?;
-        println!("operating-system hover frames: {}", report.summary());
 
         move_os_cursor(fixture, parking).await?;
         wait_for_os_pointer(server, parking).await?;
@@ -539,7 +538,6 @@ async fn an_os_cursor_hover_renders_only_the_hovered_cached_region() -> Result<(
         if first == second {
             return Err("the two hovers rendered the same region".to_owned());
         }
-        println!("operating-system hover frames: {}", report.summary());
         Ok(())
     })
     .await

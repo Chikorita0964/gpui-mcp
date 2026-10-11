@@ -33,7 +33,7 @@ mod support;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::{Value as JsonValue, json};
 use tempfile::TempDir;
@@ -185,13 +185,11 @@ impl Server {
         tool: &str,
         arguments: JsonValue,
     ) -> Result<Measured, String> {
-        let started = Instant::now();
         let (result, reply_bytes) = self.call_raw(tool, arguments).await?;
-        let elapsed_ms = started.elapsed().as_millis();
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             return Err(format!("{tool} reported an error: {}", reply_text(&result)));
         }
-        Ok(Measured { payload: payload(tool, &result)?, reply_bytes, elapsed_ms })
+        Ok(Measured { payload: payload(tool, &result)?, reply_bytes })
     }
 
     /// The structured payload of a tool that answers with JSON.
@@ -224,24 +222,15 @@ impl Server {
     }
 }
 
-/// One `get_ui_tree` call with the numbers the acceptance measurement asks for:
-/// the node count, the byte size of the reply, and the wall-clock time.
+/// One `get_ui_tree` call's payload, with the byte size of the reply it came on.
 struct Measured {
     payload: JsonValue,
     reply_bytes: usize,
-    elapsed_ms: u128,
 }
 
 impl Measured {
     fn node_count(&self) -> Result<usize, String> {
         Ok(nodes(&self.payload)?.len())
-    }
-
-    /// The byte size of the tree payload alone, without the JSON-RPC envelope.
-    fn payload_bytes(&self) -> Result<usize, String> {
-        serde_json::to_string(&self.payload)
-            .map(|text| text.len())
-            .map_err(|error| format!("could not serialize the tree payload: {error}"))
     }
 }
 
@@ -758,41 +747,22 @@ async fn an_unknown_root_is_an_error_naming_the_requested_id() -> Result<(), Str
 }
 
 #[tokio::test]
-#[expect(
-    clippy::print_stdout,
-    reason = "the measured reply goes into the run's log for the report"
-)]
-async fn a_whole_tree_and_a_subtree_call_are_measured() -> Result<(), String> {
+async fn a_subtree_reply_is_smaller_than_the_whole_tree() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         let whole = server.call_measured("get_ui_tree", json!({})).await?;
         let root = only_root(&whole.payload)?;
-        println!(
-            "measure get_ui_tree {{}} whole tree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
-            whole.node_count()?,
-            whole.reply_bytes,
-            whole.payload_bytes()?,
-            whole.elapsed_ms
-        );
-        let subtree = server
-            .call_measured("get_ui_tree", json!({ "root": root, "max_depth": 1 }))
-            .await?;
+        let subtree =
+            server.call_measured("get_ui_tree", json!({ "root": root, "max_depth": 1 })).await?;
 
-        // The measured call has to be the selection it claims to be, or the
-        // numbers are not the ones the acceptance asks for.
+        // The call has to be the selection it claims to be, or the comparison
+        // below says nothing about selection.
         assert_eq!(
             ids(&subtree.payload)?,
             ids_within_depth(&whole.payload, &root, Some(1))?,
-            "the measured subtree call must still be the max_depth: 1 selection"
-        );
-        println!(
-            "measure get_ui_tree {{\"root\":\"{root}\",\"max_depth\":1}} subtree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
-            subtree.node_count()?,
-            subtree.reply_bytes,
-            subtree.payload_bytes()?,
-            subtree.elapsed_ms
+            "the subtree call must still be the max_depth: 1 selection"
         );
         assert!(
             whole.node_count()? > subtree.node_count()?,
