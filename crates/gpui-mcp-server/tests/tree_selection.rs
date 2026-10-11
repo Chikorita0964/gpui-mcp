@@ -10,7 +10,7 @@
 //! These tests drive `get_ui_tree` through the same JSON-RPC surface a client
 //! uses, against the GPUI Kit fixture, spawned with a private endpoint
 //! directory. The file
-//! names a few fixture ids as constants (`ROOT`, `LEAF`, `BRANCH`,
+//! names a few fixture ids as constants (`LEAF`, `BRANCH`,
 //! `BRANCH_CHILD`, `SIBLING`, `NAMED_NODES`) to choose what to exercise, but
 //! every expected id set, roots list and children list is computed from the
 //! fixture's own whole-tree reply, so the assertions are about the argument
@@ -46,10 +46,10 @@ use tokio::time::timeout;
 const REPLY_TIMEOUT: Duration = Duration::from_mins(1);
 const DISCOVERY_DEADLINE: Duration = Duration::from_secs(45);
 
-/// The fixture's nodes this file names: its root, a named node without
-/// descendants, a named node with one descendant, that descendant, and the
-/// sibling whose subtree must never leak into the other's.
-const ROOT: &str = "window-backdrop";
+/// The fixture's nodes this file names: a named node without descendants, a
+/// named node with one descendant, that descendant, and the sibling whose
+/// subtree must never leak into the other's. The root is read from the tree
+/// (`only_root`).
 const LEAF: &str = "increment";
 const BRANCH: &str = "probe-left";
 const BRANCH_CHILD: &str = "probe-left-target";
@@ -371,6 +371,16 @@ fn ids(tree: &JsonValue) -> Result<BTreeSet<String>, String> {
 }
 
 /// The roots the reply selected.
+/// The fixture's one root, read from the whole tree: GPUI Kit wraps the window
+/// in its own root node, and adds a backdrop above it where the window draws
+/// its own decorations, so the root depends on the display it opens on.
+fn only_root(tree: &JsonValue) -> Result<String, String> {
+    match roots(tree)?.as_slice() {
+        [root] => Ok(root.clone()),
+        other => Err(format!("the fixture must publish exactly one root, it publishes {other:?}")),
+    }
+}
+
 fn roots(tree: &JsonValue) -> Result<Vec<String>, String> {
     tree.get("roots")
         .and_then(JsonValue::as_array)
@@ -497,11 +507,7 @@ async fn no_arguments_returns_the_whole_fixture_tree() -> Result<(), String> {
                 ));
             }
         }
-        assert_eq!(
-            roots(&whole)?,
-            vec![ROOT.to_owned()],
-            "the fixture publishes {ROOT} as its only root"
-        );
+        only_root(&whole)?;
         assert_eq!(
             reachable_ids(&whole)?,
             tree_ids,
@@ -566,38 +572,39 @@ async fn max_depth_bounds_the_levels_below_the_starting_node() -> Result<(), Str
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         let whole = server.call_json("get_ui_tree", json!({})).await?;
+        let root = only_root(&whole)?;
         let all = ids(&whole)?;
 
         let only_start = server
-            .call_json("get_ui_tree", json!({ "root": ROOT, "max_depth": 0 }))
+            .call_json("get_ui_tree", json!({ "root": root, "max_depth": 0 }))
             .await?;
-        assert_eq!(roots(&only_start)?, vec![ROOT.to_owned()]);
+        assert_eq!(roots(&only_start)?, vec![root.clone()]);
         assert_eq!(
             ids(&only_start)?,
-            BTreeSet::from([ROOT.to_owned()]),
+            BTreeSet::from([root.clone()]),
             "max_depth: 0 returns the starting node alone"
         );
-        let root_children = children_of(&whole, ROOT)?;
+        let root_children = children_of(&whole, &root)?;
         assert!(
             !root_children.is_empty(),
-            "the fixture's {ROOT} publishes children"
+            "the fixture's {root} publishes children"
         );
         assert_eq!(
-            children_of(&only_start, ROOT)?,
+            children_of(&only_start, &root)?,
             root_children,
             "the starting node keeps its full children list even though max_depth: 0 left every child out"
         );
 
         let direct = server
-            .call_json("get_ui_tree", json!({ "root": ROOT, "max_depth": 1 }))
+            .call_json("get_ui_tree", json!({ "root": root, "max_depth": 1 }))
             .await?;
-        let one_level = ids_within_depth(&whole, ROOT, Some(1))?;
+        let one_level = ids_within_depth(&whole, &root, Some(1))?;
         assert_eq!(
             ids(&direct)?,
             one_level,
             "max_depth: 1 returns the starting node and its direct children, nothing deeper"
         );
-        assert_eq!(roots(&direct)?, vec![ROOT.to_owned()]);
+        assert_eq!(roots(&direct)?, vec![root.clone()]);
         let mut pruned_a_child = false;
         for id in &one_level {
             let whole_children = children_of(&whole, id)?;
@@ -614,12 +621,12 @@ async fn max_depth_bounds_the_levels_below_the_starting_node() -> Result<(), Str
         );
 
         let unlimited = server
-            .call_json("get_ui_tree", json!({ "root": ROOT }))
+            .call_json("get_ui_tree", json!({ "root": root }))
             .await?;
         assert_eq!(
             ids(&unlimited)?,
             all,
-            "without max_depth the whole subtree of {ROOT} comes back"
+            "without max_depth the whole subtree of {root} comes back"
         );
         assert!(
             all.len() > one_level.len(),
@@ -681,8 +688,9 @@ async fn root_max_depth_and_visible_only_compose() -> Result<(), String> {
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         let whole = server.call_json("get_ui_tree", json!({})).await?;
+        let root = only_root(&whole)?;
         let by_root = server
-            .call_json("get_ui_tree", json!({ "root": ROOT }))
+            .call_json("get_ui_tree", json!({ "root": root }))
             .await?;
         let by_depth = server
             .call_json("get_ui_tree", json!({ "max_depth": 1 }))
@@ -693,21 +701,21 @@ async fn root_max_depth_and_visible_only_compose() -> Result<(), String> {
         let combined = server
             .call_json(
                 "get_ui_tree",
-                json!({ "root": ROOT, "max_depth": 1, "visible_only": true }),
+                json!({ "root": root, "max_depth": 1, "visible_only": true }),
             )
             .await?;
 
         // max_depth without a root starts at the tree's own roots, and the
-        // fixture's only root is `window-backdrop`.
+        // fixture has one root.
         assert_eq!(
             ids(&by_depth)?,
-            ids_within_depth(&whole, ROOT, Some(1))?,
+            ids_within_depth(&whole, &root, Some(1))?,
             "max_depth without root starts at the tree's roots"
         );
         assert_eq!(
             ids(&by_root)?,
             ids(&whole)?,
-            "root: {ROOT} is the whole fixture tree"
+            "root: {root} is the whole fixture tree"
         );
 
         let root_ids = ids(&by_root)?;
@@ -722,12 +730,12 @@ async fn root_max_depth_and_visible_only_compose() -> Result<(), String> {
         );
         assert_eq!(
             roots(&combined)?,
-            vec![ROOT.to_owned()],
+            vec![root.clone()],
             "roots names the requested starting node, not the nodes the filters kept"
         );
         assert_eq!(
-            children_of(&combined, ROOT)?,
-            children_of(&whole, ROOT)?,
+            children_of(&combined, &root)?,
+            children_of(&whole, &root)?,
             "the starting node keeps its full children list after both filters"
         );
         Ok(())
@@ -762,6 +770,7 @@ async fn a_whole_tree_and_a_subtree_call_are_measured() -> Result<(), String> {
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         let whole = server.call_measured("get_ui_tree", json!({})).await?;
+        let root = only_root(&whole.payload)?;
         println!(
             "measure get_ui_tree {{}} whole tree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
             whole.node_count()?,
@@ -770,18 +779,18 @@ async fn a_whole_tree_and_a_subtree_call_are_measured() -> Result<(), String> {
             whole.elapsed_ms
         );
         let subtree = server
-            .call_measured("get_ui_tree", json!({ "root": ROOT, "max_depth": 1 }))
+            .call_measured("get_ui_tree", json!({ "root": root, "max_depth": 1 }))
             .await?;
 
         // The measured call has to be the selection it claims to be, or the
         // numbers are not the ones the acceptance asks for.
         assert_eq!(
             ids(&subtree.payload)?,
-            ids_within_depth(&whole.payload, ROOT, Some(1))?,
+            ids_within_depth(&whole.payload, &root, Some(1))?,
             "the measured subtree call must still be the max_depth: 1 selection"
         );
         println!(
-            "measure get_ui_tree {{\"root\":\"window-backdrop\",\"max_depth\":1}} subtree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
+            "measure get_ui_tree {{\"root\":\"{root}\",\"max_depth\":1}} subtree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
             subtree.node_count()?,
             subtree.reply_bytes,
             subtree.payload_bytes()?,
