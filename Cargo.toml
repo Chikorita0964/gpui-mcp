@@ -10,7 +10,7 @@ members = [
     "examples/runtime-showcase",
     "xtask",
 ]
-exclude = ["vendor/gpui", "vendor/gpui-pre", "vendor/gpui-ce", "vendor/gpui-fast", "examples/gpui-kit"]
+exclude = ["vendor/gpui", "vendor/gpui-pre", "vendor/gpui-ce", "examples/gpui-kit"]
 default-members = ["crates/gpui-mcp-server"]
 resolver = "3"
 
@@ -46,7 +46,6 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7e
 gpui-base = { git = "https://github.com/longbridge/gpui-kit", rev = "ed27c6293b585acc40c10be7138534243bee5841", default-features = false }
 htmlswap = { git = "https://github.com/themixednuts/htmlswap", rev = "80d36dff051050165ad8fdabc89abd288c9a72fc" }
 image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
-insta = "1.49.0"
 interprocess = { version = "2.4.2", features = ["tokio"] }
 notify = "8.2.0"
 mp4 = "0.14.0"
@@ -88,18 +87,14 @@ strip = "symbols"
 [profile.dev.package.image]
 opt-level = 2
 
-# Snapshot comparison and its diff, optimized as insta recommends.
-[profile.dev.package.insta]
-opt-level = 3
-
-[profile.dev.package.similar]
-opt-level = 3
-
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
 gpui-pre = { path = "vendor/gpui-pre" }
 gpui-ce = { path = "vendor/gpui-ce" }
-gpui-fast = { path = "vendor/gpui-fast" }
+# gpui-fast with the bridge's changes as commits on the published crate
+# (Chikorita0964/gpui-fast-mcp, PATCHES.md there); xtask check-consumer reads
+# this entry.
+gpui-fast = { git = "https://github.com/Chikorita0964/gpui-fast-mcp", rev = "4f14ed3b13fcafb8ef2e38e74426a12cfbcef79c" }
 
 [patch."https://github.com/zed-industries/zed"]
 gpui = { path = "vendor/gpui" }

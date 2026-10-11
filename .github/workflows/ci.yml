@@ -173,7 +173,6 @@ jobs:
 
       - run: cargo xtask vendor --crate gpui-pre --check
       - run: cargo xtask vendor --crate gpui-ce --check
-      - run: cargo xtask vendor --crate gpui-fast --check
 
   patch-series:
     # The main matrix builds the bridge against the vendored releases, every
@@ -198,9 +197,6 @@ jobs:
           - crate: gpui-ce
             version: 0.2.2
             without: font-fallback
-          - crate: gpui-fast
-            version: 0.1.6
-            without: grid
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

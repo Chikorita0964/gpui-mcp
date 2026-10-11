@@ -265,7 +265,7 @@ gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "ed27c6293b58
 gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-fast"] }
 
 [patch.crates-io]
-gpui-fast = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+gpui-fast = { git = "https://github.com/Chikorita0964/gpui-fast-mcp", rev = "4f14ed3b13fcafb8ef2e38e74426a12cfbcef79c" }
 ```
 
 The Kit demo runs on it too:
