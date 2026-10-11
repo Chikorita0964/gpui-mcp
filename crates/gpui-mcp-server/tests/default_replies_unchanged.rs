@@ -2,19 +2,19 @@
 //! change, over the real MCP stdio surface.
 //!
 //! Goal 07 adds opt-in compact shapes to the tools whose default reply exceeds
-//! 4 KiB on the demo or the runtime-showcase. The change is additive: a caller
+//! 4 KiB on the fixture or the runtime-showcase. The change is additive: a caller
 //! that passes no new argument must get today's reply. This file pins that
 //! promise. It drives the same JSON-RPC
-//! surface a client uses against the demo fixture and compares the serialized
+//! surface a client uses against the GPUI Kit fixture and compares the serialized
 //! `result` of each flagged tool with its committed insta snapshot under
 //! `tests/snapshots/`.
 //!
-//! Protocol (the check and the generator run exactly this): the demo is spawned
-//! beside the server binary with a private endpoint directory; after the
+//! Protocol (the check and the generator run exactly this): the fixture is spawned
+//! with a private endpoint directory; after the
 //! handshake and readiness, one session does
 //! `save_ui_snapshot "t4-baseline"`, `find_elements {}`, `get_ui_tree {}`,
 //! `load_ui_snapshot {"name":"t4-baseline"}`, `get_live_document {}` and
-//! `preview_live_document` (the demo answers both live-document calls with its
+//! `preview_live_document` (the fixture answers both live-document calls with its
 //! 98-byte "Unsupported" error), then `pointer_move` to the inert `heading`
 //! control, `mark_frames`, `pointer_move` to `probe-left-target` - the
 //! one-frame settling action `frame_cost.rs` proves deterministic -
@@ -54,14 +54,15 @@
 //! canonicalized recursively, so it is held to the same rule as the
 //! `structuredContent` copy of the same payload.
 //!
-//! Running: needs the demo built beside the server binary - `cargo build -p
-//! gpui-mcp-demo -p gpui-mcp-server` - and a desktop session; without `DISPLAY`
+//! Running: the fixture is the GPUI Kit example on GPUI Fast, which the test builds itself (`kit_fixture`),
+//! and the check needs a desktop session; without `DISPLAY`
 //! or `WAYLAND_DISPLAY` the check prints a note and passes. One window is open
 //! at a time through the static `WINDOW` mutex. After a deliberate
 //! default-reply change, review the new replies with `cargo insta test -p
 //! gpui-mcp-server --test default_replies_unchanged --review`, and say so in the
 //! report.
 
+mod kit_fixture;
 mod support;
 
 use std::path::{Path, PathBuf};
@@ -191,7 +192,7 @@ impl Server {
     }
 
     /// The raw `result` of a `tools/call`, `isError` included, because two of
-    /// the fixtures capture the demo's error replies.
+    /// the fixtures capture the fixture's error replies.
     async fn call_raw(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
         self.request(
             "tools/call",
@@ -249,7 +250,7 @@ impl Server {
     }
 }
 
-/// The instrumented GPUI application the workspace ships as its bridge demo.
+/// The GPUI Kit example on GPUI Fast, with the bridge installed.
 struct Fixture {
     child: Child,
     log: PathBuf,
@@ -260,7 +261,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(fixture_executable()?)
+        let child = Command::new(kit_fixture::executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())
@@ -274,24 +275,6 @@ impl Fixture {
 
     async fn stop(mut self) {
         let _ = self.child.kill().await;
-    }
-}
-
-/// The demo application is a separate workspace member, so its binary is found
-/// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
-fn fixture_executable() -> Result<PathBuf, String> {
-    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
-    let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
     }
 }
 

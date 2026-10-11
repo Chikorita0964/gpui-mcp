@@ -38,12 +38,12 @@
 //! held for the whole of each test body, and every wait is bounded by a
 //! deadline.
 
+mod kit_fixture;
 mod support;
 
 use serde_json::{Value as JsonValue, json};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
@@ -278,7 +278,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(fixture_executable()?)
+        let child = Command::new(kit_fixture::executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())
@@ -292,51 +292,6 @@ impl Fixture {
 
     async fn stop(mut self) {
         let _ = self.child.kill().await;
-    }
-}
-
-/// The fixture's binary, built once per test run.
-fn fixture_executable() -> Result<PathBuf, String> {
-    static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    BUILT.get_or_init(build_fixture).clone()
-}
-
-/// Build the GPUI Kit example on GPUI Fast into `target/kit-fast`, with the
-/// cargo running this test; the example is its own workspace, so no
-/// `CARGO_BIN_EXE` names it.
-fn build_fixture() -> Result<PathBuf, String> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target/kit-fast");
-    let status = std::process::Command::new(env!("CARGO"))
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(root.join("examples/gpui-kit/Cargo.toml"))
-        .args([
-            "--no-default-features",
-            "--features",
-            "gpui-fast",
-            "--locked",
-            "--quiet",
-        ])
-        .arg("--target-dir")
-        .arg(&target)
-        .status()
-        .map_err(|error| format!("could not run cargo to build the fixture: {error}"))?;
-    if !status.success() {
-        return Err(format!(
-            "building the GPUI Kit fixture on GPUI Fast failed: {status}"
-        ));
-    }
-    let path = target
-        .join("debug")
-        .join(format!("gpui-mcp-kit-demo{}", std::env::consts::EXE_SUFFIX));
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!(
-            "the GPUI Kit fixture is not at {} after its build",
-            path.display()
-        ))
     }
 }
 

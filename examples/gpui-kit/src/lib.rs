@@ -1,7 +1,7 @@
 //! GPUI Kit controls observed and driven by the ordinary MCP bridge.
 
 use gpui_kit::{
-    Context, Entity, IntoElement, Render, Role, Window,
+    Context, Entity, IntoElement, Render, Role, StyleRefinement, Window,
     component::{
         button::Button,
         checkbox::Checkbox,
@@ -10,12 +10,37 @@ use gpui_kit::{
     },
     div,
     prelude::*,
+    px, rgb,
 };
 use gpui_mcp::{Automation, BridgeHandle};
 
 /// The volume slider's range and its value at launch.
 const VOLUME_MAX: f32 = 10.0;
 const VOLUME_START: f32 = 5.0;
+
+/// A region drawn as a cached view, with one hoverable target inside: the
+/// server's subtree and frame tests read and hover it.
+pub struct ProbeRegion {
+    id: &'static str,
+    target: &'static str,
+    label: &'static str,
+}
+
+impl Render for ProbeRegion {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().id(self.id).size_full().flex().items_center().child(
+            div()
+                .id(self.target)
+                .px_4()
+                .py_2()
+                .rounded_md()
+                .bg(rgb(0x22_28_33))
+                .hover(|style| style.bg(rgb(0x39_42_53)))
+                .child(self.label)
+                .aria_label(self.label),
+        )
+    }
+}
 
 /// A small form that retains its bridge for the window's lifetime.
 pub struct Demo {
@@ -27,6 +52,7 @@ pub struct Demo {
     volume: Entity<SliderState>,
     /// The volume last logged, so only a change writes a line.
     logged_volume: f32,
+    probes: [Entity<ProbeRegion>; 2],
     /// Where the counter and the volume write their changes: the bridge's log,
     /// which `get_logs` returns. Tests attach their own observation and log
     /// nothing.
@@ -60,6 +86,18 @@ impl Demo {
             input: cx.new(|cx| InputState::new(window, cx).placeholder("Enter your name")),
             volume,
             logged_volume: VOLUME_START,
+            probes: [
+                cx.new(|_| ProbeRegion {
+                    id: "probe-left",
+                    target: "probe-left-target",
+                    label: "Left probe",
+                }),
+                cx.new(|_| ProbeRegion {
+                    id: "probe-right",
+                    target: "probe-right-target",
+                    label: "Right probe",
+                }),
+            ],
             automation: bridge.as_ref().map(BridgeHandle::automation),
             _bridge: bridge,
         }
@@ -83,6 +121,7 @@ impl Render for Demo {
             .flex_col()
             .p_6()
             .gap_4()
+            .child(div().id("heading").child("GPUI Kit MCP Demo"))
             .child(
                 Button::new("increment")
                     .label("Increment")
@@ -108,6 +147,16 @@ impl Render for Demo {
                     .id("volume-row")
                     .w_64()
                     .child(Slider::new(&self.volume)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_3()
+                    .children(self.probes.iter().map(|probe| {
+                        probe
+                            .clone()
+                            .cached(StyleRefinement::default().w(px(200.0)).h(px(40.0)))
+                    })),
             )
     }
 }

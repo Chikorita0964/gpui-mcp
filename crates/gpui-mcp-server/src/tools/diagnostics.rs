@@ -9,14 +9,24 @@ use gpui_mcp_protocol::FrameReport;
 /// Per-frame samples `record_performance` returns alongside its summary.
 const RECORDED_FRAME_LIMIT: u16 = 64;
 
+/// The busiest views a `summary_only` report keeps: how many views an app draws
+/// has no bound (every GPUI Kit component is one), the compact reply's size has.
+const SUMMARY_VIEWS: usize = 5;
+
 /// A frame report as JSON; `summary_only` removes the per-frame samples and the
-/// last frame's view draws, keeping every scalar, the summary and the view
-/// activity, so a caller still learns how many frames the report covers.
+/// last frame's view draws and keeps the busiest [`SUMMARY_VIEWS`] views of the
+/// activity, with `views_omitted` counting the rest, keeping every scalar and the
+/// summary, so a caller still learns how many frames the report covers.
 fn report_value(report: &FrameReport, summary_only: bool) -> Result<JsonValue, String> {
     let mut value = serde_json::to_value(report).map_err(encode_error)?;
     if summary_only && let Some(object) = value.as_object_mut() {
         object.remove("frames");
         object.remove("last_frame_views");
+        if let Some(JsonValue::Array(views)) = object.get_mut("views") {
+            views.truncate(SUMMARY_VIEWS);
+        }
+        let omitted = report.views.len().saturating_sub(SUMMARY_VIEWS);
+        object.insert("views_omitted".to_owned(), JsonValue::from(omitted));
     }
     Ok(value)
 }
@@ -48,7 +58,7 @@ impl GpuiMcp {
     }
 
     #[tool(
-        description = "Report every frame completed after the last mark_frames (or after since_frame_count): per-frame GPUI draw time, the application's share (app_draw_ms) and the bridge's (bridge_ms), p50/p95/max, and which views rendered, why, and which replayed from cache. Pass `summary_only` for the aggregates without per-frame samples."
+        description = "Report every frame completed after the last mark_frames (or after since_frame_count): per-frame GPUI draw time, the application's share (app_draw_ms) and the bridge's (bridge_ms), p50/p95/max, and which views rendered, why, and which replayed from cache. Pass `summary_only` for the aggregates without per-frame samples, with only the 5 busiest views (views_omitted counts the rest)."
     )]
     async fn get_frame_report(
         &self,
@@ -61,7 +71,7 @@ impl GpuiMcp {
     }
 
     #[tool(
-        description = "Observe frames over a bounded interval and report before/after statistics plus per-frame samples, percentiles, and view-cache activity for exactly the frames drawn in the interval. Pass `summary_only` for the same report without per-frame samples."
+        description = "Observe frames over a bounded interval and report before/after statistics plus per-frame samples, percentiles, and view-cache activity for exactly the frames drawn in the interval. Pass `summary_only` for the same report without per-frame samples, with only the 5 busiest views (views_omitted counts the rest)."
     )]
     async fn record_performance(
         &self,
@@ -137,7 +147,7 @@ mod tests {
         FrameReport, FrameSample, FrameSummary, ViewActivity, ViewDraw, ViewOutcome,
     };
 
-    use super::report_value;
+    use super::{JsonValue, report_value};
 
     fn fixture() -> FrameReport {
         FrameReport {
@@ -203,6 +213,11 @@ mod tests {
             !compact.contains_key("last_frame_views"),
             "the last frame's view draws are dropped"
         );
+        assert_eq!(
+            compact.get("views_omitted"),
+            Some(&JsonValue::from(0)),
+            "a report with few views omits none"
+        );
         for field in [
             "after_frame_count",
             "latest_frame_count",
@@ -216,6 +231,36 @@ mod tests {
                 "{field} survives the reduction"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn report_value_summary_only_keeps_the_busiest_views() -> Result<(), String> {
+        let mut report = fixture();
+        report.views = (0..13)
+            .map(|entity_id| ViewActivity {
+                entity_id,
+                type_name: "DemoView".to_owned(),
+                rendered: 1,
+                reused: 0,
+                causes: BTreeMap::new(),
+            })
+            .collect();
+        let compact = report_value(&report, true)?;
+        let views = compact
+            .get("views")
+            .and_then(JsonValue::as_array)
+            .ok_or("the compact report keeps views")?;
+        let kept: Vec<u64> = views
+            .iter()
+            .filter_map(|view| view.get("entity_id").and_then(JsonValue::as_u64))
+            .collect();
+        assert_eq!(
+            kept,
+            (0..5).collect::<Vec<u64>>(),
+            "the busiest five, in order"
+        );
+        assert_eq!(compact.get("views_omitted"), Some(&JsonValue::from(8)));
         Ok(())
     }
 }

@@ -8,8 +8,8 @@
 //! without the caller losing the shape of what it asked for.
 //!
 //! These tests drive `get_ui_tree` through the same JSON-RPC surface a client
-//! uses, against the demo fixture: the fixture `disabled_state.rs` drives,
-//! spawned beside the server binary with a private endpoint directory. The file
+//! uses, against the GPUI Kit fixture, spawned with a private endpoint
+//! directory. The file
 //! names a few fixture ids as constants (`ROOT`, `LEAF`, `BRANCH`,
 //! `BRANCH_CHILD`, `SIBLING`, `NAMED_NODES`) to choose what to exercise, but
 //! every expected id set, roots list and children list is computed from the
@@ -20,15 +20,15 @@
 //! gave it, even when the reply left a child out.
 //!
 //! Seven tests cover the three arguments, an unknown root, and the measurement.
-//! Running them needs the fixture built first — `cargo build -p gpui-mcp-demo
-//! -p gpui-mcp-server`, since the demo binary is looked up beside the server
-//! binary — and a desktop session: without `DISPLAY` or `WAYLAND_DISPLAY` each
+//! The fixture is the GPUI Kit example on GPUI Fast, which the test builds itself (`kit_fixture`),
+//! and running needs a desktop session: without `DISPLAY` or `WAYLAND_DISPLAY` each
 //! test prints a note and passes without opening a window. One window is open
 //! at a time, because the static `WINDOW` mutex is held for the whole of each
 //! test body. The last test records what one real subtree call saves against
 //! the whole-tree baseline (node count, reply bytes, wall-clock), one printed
 //! line per call, which `-- --nocapture` shows.
 
+mod kit_fixture;
 mod support;
 
 use std::collections::BTreeSet;
@@ -49,7 +49,7 @@ const DISCOVERY_DEADLINE: Duration = Duration::from_secs(45);
 /// The fixture's nodes this file names: its root, a named node without
 /// descendants, a named node with one descendant, that descendant, and the
 /// sibling whose subtree must never leak into the other's.
-const ROOT: &str = "demo-root";
+const ROOT: &str = "window-backdrop";
 const LEAF: &str = "increment";
 const BRANCH: &str = "probe-left";
 const BRANCH_CHILD: &str = "probe-left-target";
@@ -60,15 +60,11 @@ const SIBLING: &str = "probe-right";
 const UNKNOWN_ROOT: &str = "no-such-node-2f9c";
 
 /// The named nodes the fixture publishes, all of which the whole tree carries.
-const NAMED_NODES: [&str; 12] = [
+const NAMED_NODES: [&str; 8] = [
     "heading",
     "count",
-    "search",
-    "filter",
     "increment",
-    "reset",
-    "lock-toggle",
-    "locked-action",
+    "agree",
     "probe-left",
     "probe-left-target",
     "probe-right",
@@ -269,7 +265,7 @@ impl Measured {
     }
 }
 
-/// The instrumented GPUI application the workspace ships as its bridge demo.
+/// The GPUI Kit example on GPUI Fast, with the bridge installed.
 struct Fixture {
     child: Child,
     log: PathBuf,
@@ -280,7 +276,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(fixture_executable()?)
+        let child = Command::new(kit_fixture::executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())
@@ -294,24 +290,6 @@ impl Fixture {
 
     async fn stop(mut self) {
         let _ = self.child.kill().await;
-    }
-}
-
-/// The demo application is a separate workspace member, so its binary is found
-/// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
-fn fixture_executable() -> Result<PathBuf, String> {
-    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
-    let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
     }
 }
 
@@ -769,7 +747,7 @@ async fn root_max_depth_and_visible_only_compose() -> Result<(), String> {
             .await?;
 
         // max_depth without a root starts at the tree's own roots, and the
-        // fixture's only root is `demo-root`.
+        // fixture's only root is `window-backdrop`.
         assert_eq!(
             ids(&by_depth)?,
             ids_within_depth(&whole, ROOT, Some(1))?,
@@ -854,7 +832,7 @@ async fn a_whole_tree_and_a_subtree_call_are_measured() -> Result<(), String> {
             "the measured subtree call must still be the max_depth: 1 selection"
         );
         println!(
-            "measure get_ui_tree {{\"root\":\"demo-root\",\"max_depth\":1}} subtree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
+            "measure get_ui_tree {{\"root\":\"window-backdrop\",\"max_depth\":1}} subtree: nodes={} reply_bytes={} tree_bytes={} elapsed_ms={}",
             subtree.node_count()?,
             subtree.reply_bytes,
             subtree.payload_bytes()?,

@@ -1,7 +1,7 @@
 //! Compact tool replies, over the real MCP stdio surface.
 //!
 //! Goal 07 adds opt-in compact replies to the tools whose default result exceeds
-//! the 4096-byte budget on the demo or the runtime-showcase: `find_elements`,
+//! the 4096-byte budget on the fixture or the runtime-showcase: `find_elements`,
 //! `get_ui_tree` and `load_ui_snapshot` take `ids_only`, `get_frame_report` and
 //! `record_performance` take `summary_only`, and the two live-document tools take
 //! `summary_only` too.
@@ -10,8 +10,7 @@
 //! default replies).
 //!
 //! These tests drive each flag through the same JSON-RPC surface a client uses,
-//! against the demo fixture `tree_selection.rs` spawns beside the server binary
-//! with a private endpoint directory. Sizes are measured the way T1 measured them -
+//! against the GPUI Kit fixture, spawned with a private endpoint directory. Sizes are measured the way T1 measured them -
 //! the compact UTF-8 serialization of the raw `tools/call` `result` object - so a
 //! number here is comparable with the table this goal was planned from.
 //!
@@ -19,18 +18,18 @@
 //! compact argument is an unknown JSON field: rmcp deserializes arguments with
 //! serde and the argument structs do not deny unknown fields, so the call succeeds
 //! with the flag silently ignored and the compact tests fail on their shape and
-//! size assertions instead of on a schema rejection. On the demo neither
+//! size assertions instead of on a schema rejection. On the fixture neither
 //! live-document tool has a document to compact (the 81 KB document is published
 //! by the showcase, which this suite does not drive), so those two tests pass with
-//! or without the flag: they pin that the flag is accepted and the documented demo
+//! or without the flag: they pin that the flag is accepted and the documented fixture
 //! error is unchanged.
 //!
-//! Running them needs the fixture built first (`cargo build -p gpui-mcp-server -p
-//! gpui-mcp-demo`), since the demo binary is looked up beside the server binary,
-//! and a desktop session: without `DISPLAY` or `WAYLAND_DISPLAY` each test prints a
+//! The fixture is the GPUI Kit example on GPUI Fast, which the test builds itself (`kit_fixture`),
+//! and running needs a desktop session: without `DISPLAY` or `WAYLAND_DISPLAY` each test prints a
 //! note and passes without opening a window. One window is open at a time, because
 //! the static `WINDOW` mutex is held for the whole of each test body.
 
+mod kit_fixture;
 mod support;
 
 use std::collections::BTreeSet;
@@ -65,12 +64,12 @@ const COMPACT_LIMIT_BYTES: usize = 4096;
 /// and the cached region whose hover draws a frame.
 const READY_IDS: [&str; 3] = ["heading", "increment", "probe-left-target"];
 
-/// The fixture node the tree composition check selects; the demo publishes it
-/// without descendants, so its subtree is itself.
-const LEAF: &str = "increment";
+/// The fixture node the tree composition check selects; the GPUI Kit example
+/// publishes it without descendants, so its subtree is itself.
+const LEAF: &str = "heading";
 
-/// The demo's documented reply when no document host is registered: both
-/// live-document tools answer exactly this on the demo (T1 measured 98 bytes).
+/// The fixture's documented reply when no document host is registered: both
+/// live-document tools answer exactly this on the fixture (T1 measured 98 bytes).
 const UNSUPPORTED: &str = "Unsupported: document host is not registered";
 
 /// One window at a time: each test opens a real window on the shared desktop, and
@@ -245,7 +244,7 @@ struct Measured {
     result_bytes: usize,
 }
 
-/// The instrumented GPUI application the workspace ships as its bridge demo.
+/// The GPUI Kit example on GPUI Fast, with the bridge installed.
 struct Fixture {
     child: Child,
     log: PathBuf,
@@ -256,7 +255,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(fixture_executable()?)
+        let child = Command::new(kit_fixture::executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())
@@ -270,24 +269,6 @@ impl Fixture {
 
     async fn stop(mut self) {
         let _ = self.child.kill().await;
-    }
-}
-
-/// The demo application is a separate workspace member, so its binary is found
-/// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
-fn fixture_executable() -> Result<PathBuf, String> {
-    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
-    let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
     }
 }
 
@@ -548,7 +529,7 @@ fn assert_default_over_the_cap(tool: &str, measured: &Measured) -> Result<(), St
     Ok(())
 }
 
-/// The demo's documented unsupported live-document reply, whatever the flag says:
+/// The fixture's documented unsupported live-document reply, whatever the flag says:
 /// the call must be answered (not rejected) and the error text must be unchanged.
 #[expect(
     clippy::print_stdout,
@@ -557,13 +538,13 @@ fn assert_default_over_the_cap(tool: &str, measured: &Measured) -> Result<(), St
 fn assert_unsupported(tool: &str, result: &JsonValue) -> Result<(), String> {
     if result.get("isError").and_then(JsonValue::as_bool) != Some(true) {
         return Err(format!(
-            "{tool} must answer the documented demo error with the compact flag, it answered: {result}"
+            "{tool} must answer the documented fixture error with the compact flag, it answered: {result}"
         ));
     }
     let text = reply_text(result);
     if text.trim() != UNSUPPORTED {
         return Err(format!(
-            "{tool} must answer {UNSUPPORTED:?} on the demo, it answered {text:?}"
+            "{tool} must answer {UNSUPPORTED:?} on the fixture, it answered {text:?}"
         ));
     }
     println!(
@@ -579,7 +560,7 @@ async fn find_elements_ids_only_returns_the_count_and_the_ordered_ids() -> Resul
         return Ok(());
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        // The measured default: `{}` is what T1 sized at 11,594 bytes on the demo.
+        // The measured default: `{}` is what T1 sized at 11,594 bytes on the fixture.
         let full = server.call_measured("find_elements", json!({})).await?;
         assert_default_over_the_cap("find_elements", &full)?;
         let ordered: Vec<String> = array_at(&full.payload, "elements", "find_elements")?
@@ -592,7 +573,7 @@ async fn find_elements_ids_only_returns_the_count_and_the_ordered_ids() -> Resul
             })
             .collect::<Result<_, String>>()?;
         if ordered.is_empty() {
-            return Err("the demo matched no element, so the compact reply proves nothing".to_owned());
+            return Err("the fixture matched no element, so the compact reply proves nothing".to_owned());
         }
 
         let compact = server
@@ -622,7 +603,7 @@ async fn get_ui_tree_ids_only_returns_the_same_nodes_plus_their_count() -> Resul
         return Ok(());
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        // The measured default: `{}` is what T1 sized at 12,002 bytes on the demo.
+        // The measured default: `{}` is what T1 sized at 12,002 bytes on the fixture.
         let full = server.call_measured("get_ui_tree", json!({})).await?;
         assert_default_over_the_cap("get_ui_tree", &full)?;
         let full_ids: BTreeSet<String> = object(&full.payload, "get_ui_tree")?
@@ -658,7 +639,7 @@ async fn get_ui_tree_ids_only_returns_the_same_nodes_plus_their_count() -> Resul
             .collect();
         assert!(
             !ids.is_empty(),
-            "the demo renders nodes, so ids must not be empty"
+            "the fixture renders nodes, so ids must not be empty"
         );
         assert_eq!(
             u64::try_from(ids.len())
@@ -690,7 +671,7 @@ async fn get_ui_tree_ids_only_returns_the_same_nodes_plus_their_count() -> Resul
         assert_eq!(
             strings_at(&leaf.payload, "ids", "get_ui_tree root+ids_only")?,
             vec![LEAF.to_owned()],
-            "{LEAF} has no descendants in the demo, so its subtree is itself"
+            "{LEAF} has no descendants in the fixture, so its subtree is itself"
         );
         assert_eq!(
             u64_at(&leaf.payload, "node_count", "get_ui_tree root+ids_only")?,
@@ -780,7 +761,7 @@ async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> 
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         // Park the pointer, start a measurement window, then move it across the
-        // demo's two hover-styled control regions: every move hover-notifies one
+        // fixture's two hover-styled probe regions: every move hover-notifies one
         // region's view, so the report has frames and view activity to summarize
         // and the compact reply has something to drop. The moves go through
         // `pointer_move` because `hover_element` refuses a node that advertises no
@@ -820,6 +801,7 @@ async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> 
                 "truncated",
                 "summary",
                 "views",
+                "views_omitted",
             ],
         )?;
         assert_eq!(
@@ -879,7 +861,7 @@ async fn record_performance_summary_only_stays_well_formed_and_bounded() -> Resu
         return Ok(());
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        // The demo's default already fits (T1: 3,560 bytes), so this test does not
+        // The fixture's default already fits (T1: 3,560 bytes), so this test does not
         // assert the default is over the cap: it proves the option itself is safe -
         // the compact reply keeps the reply's top-level shape and stays bounded.
         server.call_json("mark_frames", json!({})).await?;
@@ -962,6 +944,7 @@ async fn record_performance_summary_only_stays_well_formed_and_bounded() -> Resu
                 "truncated",
                 "summary",
                 "views",
+                "views_omitted",
             ],
         )?;
         assert_under_the_cap("record_performance", &compact)
@@ -976,7 +959,7 @@ async fn get_live_document_summary_only_is_accepted_on_the_unsupported_path() ->
         return Ok(());
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
-        // The demo registers no document host, so the documented reply is the
+        // The fixture registers no document host, so the documented reply is the
         // "Unsupported" error either way; the 81,210-byte document lives on the
         // runtime showcase, which this suite does not drive, so there is no compact
         // shape to assert here. What is pinned: with the flag the call is still
@@ -998,7 +981,7 @@ async fn preview_live_document_summary_only_is_accepted_on_the_unsupported_path(
     }
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         // Same caveat as get_live_document: the required preview arguments are
-        // supplied, and on the demo the flag is accepted while the reply stays the
+        // supplied, and on the fixture the flag is accepted while the reply stays the
         // documented unsupported path.
         let result = server
             .call_raw(
