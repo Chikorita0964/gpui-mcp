@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io::Cursor;
@@ -556,7 +555,7 @@ impl GpuiMcp {
     }
 
     async fn click_at(&self, point: Point, button: MouseButton, count: u8) -> Result<(), String> {
-        validate_pointer_point(point)?;
+        gpui_mcp_protocol::check_input_point(point).map_err(str::to_owned)?;
         if !(1..=3).contains(&count) {
             return Err("click count must be between 1 and 3".to_owned());
         }
@@ -574,8 +573,8 @@ impl GpuiMcp {
     }
 
     async fn drag_between(&self, from: Point, to: Point, steps: u8) -> Result<(), String> {
-        validate_pointer_point(from)?;
-        validate_pointer_point(to)?;
+        gpui_mcp_protocol::check_input_point(from).map_err(str::to_owned)?;
+        gpui_mcp_protocol::check_input_point(to).map_err(str::to_owned)?;
         if !(1..=120).contains(&steps) {
             return Err("drag steps must be between 1 and 120".to_owned());
         }
@@ -619,8 +618,8 @@ impl GpuiMcp {
     }
 
     async fn scroll_at(&self, point: Point, delta_x: f32, delta_y: f32) -> Result<(), String> {
-        validate_pointer_point(point)?;
-        validate_scroll_delta(delta_x, delta_y)?;
+        gpui_mcp_protocol::check_input_point(point).map_err(str::to_owned)?;
+        gpui_mcp_protocol::check_scroll_delta(delta_x, delta_y).map_err(str::to_owned)?;
         self.dispatch_pointer_input(PointerCommand::ScrollWheel {
             point,
             delta: PointerScrollDelta::Pixels { delta_x: -delta_x, delta_y: -delta_y },
@@ -1115,19 +1114,10 @@ async fn guarded(
     call: impl Future<Output = Result<CallToolResponse, ErrorData>>,
 ) -> Result<CallToolResponse, ErrorData> {
     AssertUnwindSafe(call).catch_unwind().await.unwrap_or_else(|payload| {
-        let message = panic_message(&*payload);
+        let message = gpui_mcp_protocol::panic_message(&*payload);
         tracing::error!(%message, "a tool call panicked");
         Err(ErrorData::internal_error(format!("the tool call panicked: {message}"), None))
     })
-}
-
-/// The message a panic was raised with.
-fn panic_message(payload: &(dyn Any + Send)) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|message| (*message).to_owned())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "a panic without a message".to_owned())
 }
 
 fn messages_resource() -> Resource {
@@ -1207,26 +1197,6 @@ fn default_log_limit() -> u16 {
 
 fn default_frame_limit() -> u16 {
     64
-}
-
-fn validate_pointer_point(point: Point) -> Result<(), String> {
-    if !point.is_valid() {
-        return Err("native input coordinates must be finite".to_owned());
-    }
-    if point.x.abs() > 1_000_000.0 || point.y.abs() > 1_000_000.0 {
-        return Err("native input coordinates exceed the safety bound".to_owned());
-    }
-    Ok(())
-}
-
-fn validate_scroll_delta(delta_x: f32, delta_y: f32) -> Result<(), String> {
-    if !delta_x.is_finite() || !delta_y.is_finite() {
-        return Err("scroll deltas must be finite".to_owned());
-    }
-    if delta_x.abs() > 100_000.0 || delta_y.abs() > 100_000.0 {
-        return Err("scroll delta exceeds the safety bound".to_owned());
-    }
-    Ok(())
 }
 
 fn find_nodes<'a>(tree: &'a UiTree, args: &FindArgs) -> Vec<&'a UiNode> {

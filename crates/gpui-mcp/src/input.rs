@@ -5,7 +5,7 @@ use gpui::{
 use gpui_mcp_protocol::SemanticAction;
 use gpui_mcp_protocol::{
     BridgeError, ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
-    PointerCommand, PointerScrollDelta,
+    PointerCommand, PointerScrollDelta, check_click_count, check_input_point, check_scroll_delta,
 };
 
 pub fn validate(command: &InputCommand) -> Result<(), BridgeError> {
@@ -33,19 +33,19 @@ pub fn validate(command: &InputCommand) -> Result<(), BridgeError> {
 
 pub fn validate_pointer(command: &PointerCommand) -> Result<(), BridgeError> {
     match command {
-        PointerCommand::MouseMove { point, .. } => validate_point(*point),
+        PointerCommand::MouseMove { point, .. } => check_input_point(*point).map_err(invalid),
         PointerCommand::MouseDown { point, click_count, .. }
         | PointerCommand::MouseUp { point, click_count, .. } => {
-            validate_point(*point)?;
-            validate_click_count(*click_count)
+            check_input_point(*point).map_err(invalid)?;
+            check_click_count(*click_count).map_err(invalid)
         }
         PointerCommand::ScrollWheel { point, delta } => {
-            validate_point(*point)?;
+            check_input_point(*point).map_err(invalid)?;
             let (delta_x, delta_y) = match delta {
                 PointerScrollDelta::Pixels { delta_x, delta_y }
                 | PointerScrollDelta::Lines { delta_x, delta_y } => (*delta_x, *delta_y),
             };
-            validate_scroll_delta(delta_x, delta_y)
+            check_scroll_delta(delta_x, delta_y).map_err(invalid)
         }
     }
 }
@@ -156,33 +156,6 @@ const fn native_button(button: MouseButton) -> GpuiMouseButton {
         MouseButton::Right => GpuiMouseButton::Right,
         MouseButton::Middle => GpuiMouseButton::Middle,
     }
-}
-
-fn validate_click_count(click_count: u8) -> Result<(), BridgeError> {
-    if !(1..=3).contains(&click_count) {
-        return Err(invalid("click count must be between 1 and 3"));
-    }
-    Ok(())
-}
-
-fn validate_scroll_delta(delta_x: f32, delta_y: f32) -> Result<(), BridgeError> {
-    if !delta_x.is_finite() || !delta_y.is_finite() {
-        return Err(invalid("scroll deltas must be finite"));
-    }
-    if delta_x.abs() > 100_000.0 || delta_y.abs() > 100_000.0 {
-        return Err(invalid("scroll delta exceeds the safety bound"));
-    }
-    Ok(())
-}
-
-fn validate_point(point: Point) -> Result<(), BridgeError> {
-    if !point.is_valid() {
-        return Err(invalid("coordinates must be finite"));
-    }
-    if point.x.abs() > 1_000_000.0 || point.y.abs() > 1_000_000.0 {
-        return Err(invalid("coordinates exceed the safety bound"));
-    }
-    Ok(())
 }
 
 pub fn validate_text(text: &str) -> Result<(), BridgeError> {

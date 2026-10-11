@@ -300,30 +300,16 @@ struct AppView {{
 }}
 
 impl AppView {{
-    fn poll_project(&mut self) {{
-        let change = match self.watcher.poll() {{
-            Ok(change) => change,
-            Err(error) => {{
-                eprintln!("project watcher error: {{error}}");
-                return;
-            }}
-        }};
-        let Some(change) = change else {{ return; }};
-        let source = match ProjectSnapshot::load(self.watcher.paths()) {{
-            Ok(snapshot) => snapshot.into_document(),
-            Err(error) => {{
-                eprintln!("could not read changed project: {{error}}");
-                return;
-            }}
-        }};
-        match self.session.preview_source(self.session.revision(), source) {{
-            Ok(preview) if preview.applied => eprintln!(
+    fn poll_project(&self) {{
+        match self.watcher.preview_if_changed(&self.session) {{
+            Ok(None) => {{}}
+            Ok(Some(reload)) if reload.preview.applied => eprintln!(
                 "hot reloaded revision {{}} from {{:?}}",
-                preview.document.revision,
-                change.files()
+                reload.preview.document.revision,
+                reload.change.files()
             ),
-            Ok(preview) => eprintln!("hot reload rejected: {{:?}}", preview.diagnostics),
-            Err(error) => eprintln!("hot reload conflict: {{}}", error.message),
+            Ok(Some(reload)) => eprintln!("hot reload rejected: {{:?}}", reload.preview.diagnostics),
+            Err(error) => eprintln!("hot reload failed: {{error}}"),
         }}
     }}
 }}

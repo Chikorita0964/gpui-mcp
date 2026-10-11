@@ -398,7 +398,8 @@ async fn discover_clients(
 ) -> Result<Vec<BridgeClient>> {
     let directory = match endpoint_dir {
         Some(directory) => directory.to_path_buf(),
-        None => default_endpoint_dir()?,
+        None => gpui_mcp_protocol::default_endpoint_dir()
+            .context("resolve the GPUI MCP endpoint directory")?,
     };
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
@@ -616,10 +617,6 @@ fn validate_descriptor_permissions(metadata: &fs::Metadata) -> Result<()> {
 
 pub fn default_runtime_root() -> Result<PathBuf> {
     gpui_mcp_protocol::runtime_root().context("resolve the GPUI MCP runtime directory")
-}
-
-fn default_endpoint_dir() -> Result<PathBuf> {
-    default_runtime_root().map(|root| root.join("run"))
 }
 
 #[cfg(test)]

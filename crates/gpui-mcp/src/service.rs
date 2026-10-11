@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
@@ -367,7 +366,7 @@ impl BridgeHandle {
         let message_listener = Rc::new(ListenerSlot::new("message"));
         let endpoint_dir = match config.endpoint_dir.clone() {
             Some(directory) => directory,
-            None => default_endpoint_dir()?,
+            None => gpui_mcp_protocol::default_endpoint_dir()?,
         };
         secure_directory(&endpoint_dir)?;
         let endpoint_dir = endpoint_dir.canonicalize()?;
@@ -767,14 +766,6 @@ fn spawn_message_listener(
         })
         .detach();
 }
-/// The message a panic was raised with.
-fn panic_message(payload: &(dyn Any + Send)) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|message| (*message).to_owned())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "a panic without a message".to_owned())
-}
 
 fn handle_ui_operation(
     operation: Operation,
@@ -1023,7 +1014,7 @@ async fn handle_connection(
             .catch_unwind()
             .await
             .unwrap_or_else(|payload| {
-                let message = panic_message(&*payload);
+                let message = gpui_mcp_protocol::panic_message(&*payload);
                 tracing::error!(%message, "the bridge panicked handling a request");
                 WireResponse::failure(
                     request_id,
@@ -1713,10 +1704,6 @@ fn validate_config(config: &BridgeConfig) -> Result<(), StartError> {
 
 fn invalid_display_text(value: &str) -> bool {
     value.is_empty() || value.len() > 256 || value.chars().any(char::is_control)
-}
-
-fn default_endpoint_dir() -> Result<PathBuf, gpui_mcp_protocol::RuntimePathError> {
-    gpui_mcp_protocol::runtime_root().map(|root| root.join("run"))
 }
 
 fn secure_directory(path: &Path) -> io::Result<()> {

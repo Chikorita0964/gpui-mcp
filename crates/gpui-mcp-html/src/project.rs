@@ -5,14 +5,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
 
-use gpui_mcp::LiveDocumentSource;
+use gpui_mcp::{BridgeError, LiveDocumentPreview, LiveDocumentSource};
 use notify::{
     Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _,
     event::{AccessKind, AccessMode},
 };
 
 use crate::{
-    BindingDocument, BindingDocumentError, HtmlUi, HtmlUiError, LiveHtml, ReloadError, ReloadReport,
+    BindingDocument, BindingDocumentError, HtmlUi, HtmlUiError, LiveHtml, LiveHtmlSession,
+    ReloadError, ReloadReport,
 };
 
 const HTML_FILE: &str = "app.html";
@@ -278,6 +279,47 @@ impl ProjectWatcher {
         let report = live.reload(candidate)?;
         Ok(Some(ProjectReload { change, report }))
     }
+
+    /// Preview a changed source bundle in `session`, if one is queued: the same revision-checked
+    /// path an MCP edit takes, so a rejected document keeps the last good one and reports why.
+    ///
+    /// # Errors
+    ///
+    /// Read and watcher errors, and a stale revision when another producer updated the session
+    /// first.
+    pub fn preview_if_changed(
+        &self,
+        session: &LiveHtmlSession,
+    ) -> Result<Option<ProjectPreview>, ProjectPreviewError> {
+        let Some(change) = self.poll()? else {
+            return Ok(None);
+        };
+        let source = ProjectSnapshot::load(&self.paths)?.into_document();
+        let preview = session
+            .preview_source(session.revision(), source)
+            .map_err(ProjectPreviewError::Session)?;
+        Ok(Some(ProjectPreview { change, preview }))
+    }
+}
+
+/// One filesystem-driven preview in a [`LiveHtmlSession`].
+#[derive(Clone, Debug)]
+pub struct ProjectPreview {
+    /// Files that caused the preview.
+    pub change: ProjectChange,
+    /// Whether the session applied the document, its revision and its diagnostics.
+    pub preview: LiveDocumentPreview,
+}
+
+/// Failure to preview a filesystem change in a [`LiveHtmlSession`].
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectPreviewError {
+    /// Reading or watching the project failed.
+    #[error(transparent)]
+    Project(#[from] ProjectError),
+    /// The session refused the preview (another producer updated it first).
+    #[error("{}", .0.message)]
+    Session(BridgeError),
 }
 
 /// Failure while opening, reading, watching, or compiling a pure-HTML project.

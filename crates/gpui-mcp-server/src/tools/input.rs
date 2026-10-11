@@ -3,8 +3,7 @@ use super::{
     InputCommand, Json, KeyArgs, MouseButton, NodeAction, Operation, Parameters, PerformActionArgs,
     Point, PointerButtonArgs, PointerCommand, PointerMoveArgs, Role, ScrollArgs, ScrollPointArgs,
     SemanticAction, SetTextArgs, SetValueArgs, ToolRouter, TypeTextArgs, Value, ack_json,
-    encode_error, get_node, json, object_output, require_bounds, tool, tool_router,
-    validate_pointer_point, validate_value,
+    encode_error, get_node, json, object_output, require_bounds, tool, tool_router, validate_value,
 };
 use cow_utils::CowUtils as _;
 
@@ -30,7 +29,7 @@ impl GpuiMcp {
         Parameters(args): Parameters<PointerMoveArgs>,
     ) -> Result<Json<Value>, String> {
         let point = Point { x: args.x, y: args.y };
-        validate_pointer_point(point)?;
+        gpui_mcp_protocol::check_input_point(point).map_err(str::to_owned)?;
         self.dispatch_pointer_input(PointerCommand::MouseMove {
             point,
             pressed_button: args.held_button,
@@ -45,8 +44,8 @@ impl GpuiMcp {
         Parameters(args): Parameters<PointerButtonArgs>,
     ) -> Result<Json<Value>, String> {
         let point = Point { x: args.x, y: args.y };
-        validate_pointer_point(point)?;
-        validate_pointer_click_count(args.count)?;
+        gpui_mcp_protocol::check_input_point(point).map_err(str::to_owned)?;
+        gpui_mcp_protocol::check_click_count(args.count).map_err(str::to_owned)?;
         self.dispatch_pointer_input(PointerCommand::MouseDown {
             point,
             button: args.button,
@@ -62,8 +61,8 @@ impl GpuiMcp {
         Parameters(args): Parameters<PointerButtonArgs>,
     ) -> Result<Json<Value>, String> {
         let point = Point { x: args.x, y: args.y };
-        validate_pointer_point(point)?;
-        validate_pointer_click_count(args.count)?;
+        gpui_mcp_protocol::check_input_point(point).map_err(str::to_owned)?;
+        gpui_mcp_protocol::check_click_count(args.count).map_err(str::to_owned)?;
         self.dispatch_pointer_input(PointerCommand::MouseUp {
             point,
             button: args.button,
@@ -440,13 +439,6 @@ fn required_node_action(action: &SemanticAction) -> NodeAction {
         SemanticAction::Expand | SemanticAction::Collapse => NodeAction::Expand,
         SemanticAction::SetValue { .. } => NodeAction::SetValue,
     }
-}
-
-fn validate_pointer_click_count(count: u8) -> Result<(), String> {
-    (1..=3)
-        .contains(&count)
-        .then_some(())
-        .ok_or_else(|| "pointer click count must be between 1 and 3".to_owned())
 }
 
 fn parse_boolean(value: &str) -> Result<bool, String> {

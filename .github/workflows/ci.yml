@@ -49,16 +49,7 @@ jobs:
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
-            clang libclang-dev pkg-config cmake \
-            libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libxrandr-dev libegl-dev libgbm-dev \
-            libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
-            libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinput-dev \
-            libxcb-composite0-dev libpipewire-0.3-dev libdbus-1-dev libegl1-mesa-dev \
-            mesa-vulkan-drivers openbox xvfb x11-utils
+        run: bash .github/install-linux-deps.sh openbox xvfb x11-utils
 
       - name: Install pinned Rust toolchain
         shell: bash
@@ -176,16 +167,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Linux native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
-            clang libclang-dev pkg-config cmake \
-            libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libxrandr-dev libegl-dev libgbm-dev \
-            libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
-            libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinput-dev \
-            libxcb-composite0-dev libpipewire-0.3-dev libdbus-1-dev libegl1-mesa-dev \
-            mesa-vulkan-drivers
+        run: bash .github/install-linux-deps.sh
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.99.0 --profile minimal --component clippy && rustup default 1.99.0
@@ -243,16 +225,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Linux native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
-            clang libclang-dev pkg-config cmake \
-            libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libxrandr-dev libegl-dev libgbm-dev \
-            libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
-            libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinput-dev \
-            libxcb-composite0-dev libpipewire-0.3-dev libdbus-1-dev libegl1-mesa-dev \
-            mesa-vulkan-drivers
+        run: bash .github/install-linux-deps.sh
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.99.0 --profile minimal && rustup default 1.99.0

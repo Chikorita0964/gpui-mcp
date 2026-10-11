@@ -46,8 +46,8 @@ pub use hooks::{HookEvent, HookOutcome, HookRegistry, HookRegistryError, StateVa
 pub use input::init;
 #[cfg(feature = "dev-watch")]
 pub use project::{
-    ProjectChange, ProjectError, ProjectFile, ProjectPaths, ProjectReload, ProjectReloadError,
-    ProjectSnapshot, ProjectWatcher,
+    ProjectChange, ProjectError, ProjectFile, ProjectPaths, ProjectPreview, ProjectPreviewError,
+    ProjectReload, ProjectReloadError, ProjectSnapshot, ProjectWatcher,
 };
 #[cfg(feature = "runtime")]
 pub use render::{

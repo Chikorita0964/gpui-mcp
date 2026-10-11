@@ -3,6 +3,7 @@
 //! The protocol intentionally contains no platform-specific types. Coordinates are
 //! logical GPUI pixels relative to the target window.
 
+use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -218,6 +219,27 @@ pub fn runtime_root() -> Result<PathBuf, RuntimePathError> {
     Ok(root.join("gpui-mcp"))
 }
 
+/// The directory where applications publish their bridge endpoints by default: `run` under the
+/// [`runtime_root`].
+///
+/// # Errors
+///
+/// Returns [`RuntimePathError`] when the runtime root is unavailable.
+pub fn default_endpoint_dir() -> Result<PathBuf, RuntimePathError> {
+    runtime_root().map(|root| root.join("run"))
+}
+
+/// The message a panic was raised with, for an error that reports it: the server and the bridge
+/// each answer a request that panicked instead of dropping it.
+#[must_use]
+pub fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".to_owned())
+}
+
 /// The operating system did not expose a secure runtime location.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RuntimePathError {
@@ -241,6 +263,51 @@ impl Point {
     pub fn is_valid(self) -> bool {
         self.x.is_finite() && self.y.is_finite()
     }
+}
+
+/// The largest coordinate, on either axis in logical pixels, an injected input may name.
+pub const MAX_INPUT_COORDINATE: f32 = 1_000_000.0;
+/// The largest scroll delta, on either axis, an injected input may carry.
+pub const MAX_SCROLL_DELTA: f32 = 100_000.0;
+
+/// Whether an injected input may target `point`: finite and within [`MAX_INPUT_COORDINATE`]. The
+/// server checks before it sends and the bridge again when it receives.
+///
+/// # Errors
+///
+/// Returns why the point is refused.
+pub fn check_input_point(point: Point) -> Result<(), &'static str> {
+    if !point.is_valid() {
+        return Err("coordinates must be finite");
+    }
+    if point.x.abs() > MAX_INPUT_COORDINATE || point.y.abs() > MAX_INPUT_COORDINATE {
+        return Err("coordinates exceed the safety bound");
+    }
+    Ok(())
+}
+
+/// Whether an injected scroll may carry these deltas: finite and within [`MAX_SCROLL_DELTA`].
+///
+/// # Errors
+///
+/// Returns why the deltas are refused.
+pub fn check_scroll_delta(delta_x: f32, delta_y: f32) -> Result<(), &'static str> {
+    if !delta_x.is_finite() || !delta_y.is_finite() {
+        return Err("scroll deltas must be finite");
+    }
+    if delta_x.abs() > MAX_SCROLL_DELTA || delta_y.abs() > MAX_SCROLL_DELTA {
+        return Err("scroll delta exceeds the safety bound");
+    }
+    Ok(())
+}
+
+/// Whether an injected click may carry this click count: 1 to 3.
+///
+/// # Errors
+///
+/// Returns why the count is refused.
+pub fn check_click_count(count: u8) -> Result<(), &'static str> {
+    if (1..=3).contains(&count) { Ok(()) } else { Err("click count must be between 1 and 3") }
 }
 
 /// A rectangle in logical window pixels.
