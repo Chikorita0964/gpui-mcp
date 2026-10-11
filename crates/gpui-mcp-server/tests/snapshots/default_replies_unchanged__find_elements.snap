@@ -1,0 +1,595 @@
+---
+source: crates/gpui-mcp-server/tests/default_replies_unchanged.rs
+expression: "snapshot_text(tool, canonical)?"
+---
+{
+  "content": [
+    {
+      "text": "{\"count\":18,\"elements\":[{\"actions\":[\"click\",\"focus\"],\"bounds\":{\"height\":18.0,\"width\":592.0,\"x\":24.0,\"y\":156.0},\"children\":[],\"description\":null,\"id\":\"agree\",\"label\":\"Agree\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::checkbox::Checkbox.gpui_base::checkbox::Checkbox.agree\"},\"parent\":\"kit-demo\",\"role\":\"checkbox\",\"state\":{\"checked\":false,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":592.0,\"x\":24.0,\"y\":114.0},\"children\":[],\"description\":null,\"id\":\"count\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.count\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":592.0,\"x\":24.0,\"y\":24.0},\"children\":[],\"description\":null,\"id\":\"heading\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.heading\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"click\",\"focus\",\"hover\"],\"bounds\":{\"height\":32.0,\"width\":592.0,\"x\":24.0,\"y\":66.0},\"children\":[\"label\"],\"description\":null,\"id\":\"increment\",\"label\":\"Increment\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"hover\",\"scroll\"],\"bounds\":{\"height\":20.0,\"width\":570.0,\"x\":35.0,\"y\":196.0},\"children\":[],\"description\":null,\"id\":\"input-state\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name.view-4294967299.input-state\"},\"parent\":\"name\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":420.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"count\",\"increment\",\"agree\",\"name\",\"heading\",\"probe-left\",\"probe-right\",\"volume-row\"],\"description\":null,\"id\":\"kit-demo\",\"label\":\"GPUI Kit MCP Demo\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo\"},\"parent\":\"root\",\"role\":\"application\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":30.0,\"width\":570.0,\"x\":35.0,\"y\":67.0},\"children\":[],\"description\":null,\"id\":\"label\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment.label\"},\"parent\":\"increment\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"focus\",\"set_text\",\"set_value\"],\"bounds\":{\"height\":32.0,\"width\":592.0,\"x\":24.0,\"y\":190.0},\"children\":[\"input-state\"],\"description\":null,\"id\":\"name\",\"label\":\"Enter your name\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name\"},\"parent\":\"kit-demo\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"\"},\"value\":{\"max\":null,\"min\":null,\"step\":null,\"value\":\"\"}},{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":24.0,\"y\":278.0},\"children\":[\"probe-left-target\"],\"description\":null,\"id\":\"probe-left\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":108.0,\"x\":24.0,\"y\":277.0},\"children\":[],\"description\":null,\"id\":\"probe-left-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left.probe-left-target\"},\"parent\":\"probe-left\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":236.0,\"y\":278.0},\"children\":[\"probe-right-target\"],\"description\":null,\"id\":\"probe-right\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":118.0,\"x\":236.0,\"y\":277.0},\"children\":[],\"description\":null,\"id\":\"probe-right-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right.probe-right-target\"},\"parent\":\"probe-right\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":420.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"kit-demo\"],\"description\":null,\"id\":\"root\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root\"},\"parent\":null,\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"step\"],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":238.0},\"children\":[\"slider-bar-container\"],\"description\":null,\"id\":\"slider-4294967298\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298\"},\"parent\":\"volume-row\",\"role\":\"slider\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":{\"max\":0,\"min\":0.0,\"step\":1.0,\"value\":\"5\"}},{\"actions\":[],\"bounds\":{\"height\":6.0,\"width\":256.0,\"x\":24.0,\"y\":247.0},\"children\":[\"slider-thumb-0\"],\"description\":null,\"id\":\"slider-bar\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar\"},\"parent\":\"slider-bar-container\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"hover\",\"drag\"],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":238.0},\"children\":[\"slider-bar\"],\"description\":null,\"id\":\"slider-bar-container\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container\"},\"parent\":\"slider-4294967298\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[\"hover\",\"drag\"],\"bounds\":{\"height\":16.0,\"width\":16.0,\"x\":144.0,\"y\":242.0},\"children\":[],\"description\":null,\"id\":\"slider-thumb-0\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar.gpui_base::slider::SliderThumb.slider-thumb-0\"},\"parent\":\"slider-bar\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},{\"actions\":[],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":238.0},\"children\":[\"slider-4294967298\"],\"description\":null,\"id\":\"volume-row\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null}]}",
+      "type": "text"
+    }
+  ],
+  "isError": false,
+  "structuredContent": {
+    "count": 18,
+    "elements": [
+      {
+        "actions": [
+          "click",
+          "focus"
+        ],
+        "bounds": {
+          "height": 18.0,
+          "width": 592.0,
+          "x": 24.0,
+          "y": 156.0
+        },
+        "children": [],
+        "description": null,
+        "id": "agree",
+        "label": "Agree",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::checkbox::Checkbox.gpui_base::checkbox::Checkbox.agree"
+        },
+        "parent": "kit-demo",
+        "role": "checkbox",
+        "state": {
+          "checked": false,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 26.0,
+          "width": 592.0,
+          "x": 24.0,
+          "y": 114.0
+        },
+        "children": [],
+        "description": null,
+        "id": "count",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.count"
+        },
+        "parent": "kit-demo",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 26.0,
+          "width": 592.0,
+          "x": 24.0,
+          "y": 24.0
+        },
+        "children": [],
+        "description": null,
+        "id": "heading",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.heading"
+        },
+        "parent": "kit-demo",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "click",
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 32.0,
+          "width": 592.0,
+          "x": 24.0,
+          "y": 66.0
+        },
+        "children": [
+          "label"
+        ],
+        "description": null,
+        "id": "increment",
+        "label": "Increment",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment"
+        },
+        "parent": "kit-demo",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "hover",
+          "scroll"
+        ],
+        "bounds": {
+          "height": 20.0,
+          "width": 570.0,
+          "x": 35.0,
+          "y": 196.0
+        },
+        "children": [],
+        "description": null,
+        "id": "input-state",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name.view-4294967299.input-state"
+        },
+        "parent": "name",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 420.0,
+          "width": 640.0,
+          "x": 0.0,
+          "y": 0.0
+        },
+        "children": [
+          "count",
+          "increment",
+          "agree",
+          "name",
+          "heading",
+          "probe-left",
+          "probe-right",
+          "volume-row"
+        ],
+        "description": null,
+        "id": "kit-demo",
+        "label": "GPUI Kit MCP Demo",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo"
+        },
+        "parent": "root",
+        "role": "application",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 30.0,
+          "width": 570.0,
+          "x": 35.0,
+          "y": 67.0
+        },
+        "children": [],
+        "description": null,
+        "id": "label",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment.label"
+        },
+        "parent": "increment",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "focus",
+          "set_text",
+          "set_value"
+        ],
+        "bounds": {
+          "height": 32.0,
+          "width": 592.0,
+          "x": 24.0,
+          "y": 190.0
+        },
+        "children": [
+          "input-state"
+        ],
+        "description": null,
+        "id": "name",
+        "label": "Enter your name",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name"
+        },
+        "parent": "kit-demo",
+        "role": "text_input",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": {
+          "caret": null,
+          "redacted": false,
+          "selection": null,
+          "text": ""
+        },
+        "value": {
+          "max": null,
+          "min": null,
+          "step": null,
+          "value": ""
+        }
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 40.0,
+          "width": 200.0,
+          "x": 24.0,
+          "y": 278.0
+        },
+        "children": [
+          "probe-left-target"
+        ],
+        "description": null,
+        "id": "probe-left",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left"
+        },
+        "parent": "kit-demo",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "hover"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 108.0,
+          "x": 24.0,
+          "y": 277.0
+        },
+        "children": [],
+        "description": null,
+        "id": "probe-left-target",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left.probe-left-target"
+        },
+        "parent": "probe-left",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 40.0,
+          "width": 200.0,
+          "x": 236.0,
+          "y": 278.0
+        },
+        "children": [
+          "probe-right-target"
+        ],
+        "description": null,
+        "id": "probe-right",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right"
+        },
+        "parent": "kit-demo",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "hover"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 118.0,
+          "x": 236.0,
+          "y": 277.0
+        },
+        "children": [],
+        "description": null,
+        "id": "probe-right-target",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right.probe-right-target"
+        },
+        "parent": "probe-right",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 420.0,
+          "width": 640.0,
+          "x": 0.0,
+          "y": 0.0
+        },
+        "children": [
+          "kit-demo"
+        ],
+        "description": null,
+        "id": "root",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root"
+        },
+        "parent": null,
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "step"
+        ],
+        "bounds": {
+          "height": 24.0,
+          "width": 256.0,
+          "x": 24.0,
+          "y": 238.0
+        },
+        "children": [
+          "slider-bar-container"
+        ],
+        "description": null,
+        "id": "slider-4294967298",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298"
+        },
+        "parent": "volume-row",
+        "role": "slider",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": {
+          "max": 0,
+          "min": 0.0,
+          "step": 1.0,
+          "value": "5"
+        }
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 6.0,
+          "width": 256.0,
+          "x": 24.0,
+          "y": 247.0
+        },
+        "children": [
+          "slider-thumb-0"
+        ],
+        "description": null,
+        "id": "slider-bar",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar"
+        },
+        "parent": "slider-bar-container",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "hover",
+          "drag"
+        ],
+        "bounds": {
+          "height": 24.0,
+          "width": 256.0,
+          "x": 24.0,
+          "y": 238.0
+        },
+        "children": [
+          "slider-bar"
+        ],
+        "description": null,
+        "id": "slider-bar-container",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container"
+        },
+        "parent": "slider-4294967298",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [
+          "hover",
+          "drag"
+        ],
+        "bounds": {
+          "height": 16.0,
+          "width": 16.0,
+          "x": 144.0,
+          "y": 242.0
+        },
+        "children": [],
+        "description": null,
+        "id": "slider-thumb-0",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar.gpui_base::slider::SliderThumb.slider-thumb-0"
+        },
+        "parent": "slider-bar",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      {
+        "actions": [],
+        "bounds": {
+          "height": 24.0,
+          "width": 256.0,
+          "x": 24.0,
+          "y": 238.0
+        },
+        "children": [
+          "slider-4294967298"
+        ],
+        "description": null,
+        "id": "volume-row",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row"
+        },
+        "parent": "kit-demo",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      }
+    ]
+  }
+}
