@@ -45,6 +45,13 @@ impl FrameObserver for BridgeObserver {
         state.set_window_geometry(rect_from_gpui(content_bounds), window.scale_factor());
     }
 
+    /// GPUI Fast asks whether the frame builds the accessibility tree: only while something needs
+    /// it, so its retained rendering works in between.
+    #[cfg(feature = "gpui-fast")]
+    fn wants_accessibility(&self) -> bool {
+        self.state.upgrade().is_some_and(|state| state.frame_wants_semantics())
+    }
+
     fn accessibility_frame(&self, frame: &Arc<AccessibilityFrame>) {
         if let Some(state) = self.state.upgrade() {
             state.observe_semantics(frame);
@@ -1300,6 +1307,43 @@ mod tests {
         assert_eq!(report.summary.frames, 1);
         assert_eq!(outcome(&report, left), Some(UNCHANGED_CACHED));
         assert_eq!(outcome(&report, right), Some(UNCHANGED_CACHED));
+    }
+
+    /// An IPC bridge builds the accessibility tree only on demand: without one, GPUI Fast draws
+    /// an unchanged view from the last frame, and a demand draws a frame with the tree again.
+    #[cfg(feature = "gpui-fast")]
+    #[gpui::test]
+    fn without_a_demand_views_are_reused_and_a_demand_builds_the_tree(cx: &mut TestAppContext) {
+        let hold = std::time::Duration::from_secs(3);
+        let automation = Automation::isolated();
+        automation.state.build_semantics_on_demand();
+        let automation_for_window = automation.clone();
+        let (root, visual) = cx.add_window_view(move |window, cx| {
+            automation_for_window.attach(window);
+            CachedRegions {
+                left: cx.new(|_| HoverPanel { target: "left-target", label: "Left" }),
+                right: cx.new(|_| HoverPanel { target: "right-target", label: "Right" }),
+            }
+        });
+        visual.run_until_parked();
+        let built = automation.state.semantic_frame_count();
+
+        automation.mark_frames();
+        visual.update(|window, _| window.request_frame());
+        visual.run_until_parked();
+        let report = automation.frame_report(None, 16);
+        assert_eq!(report.summary.frames, 1);
+        // the root is drawn from the last frame in one piece: the views inside it are not visited
+        assert_eq!(outcome(&report, root.entity_id()), Some((ViewOutcome::Reused, None)));
+        assert_eq!(report.summary.views_rendered, 0, "nothing rendered without a demand");
+        assert_eq!(automation.state.semantic_frame_count(), built, "no tree without a demand");
+
+        assert!(!automation.state.demand_semantics(hold), "the last frame carried no tree");
+        visual.update(|window, _| window.refresh());
+        visual.run_until_parked();
+        assert!(automation.state.semantic_frame_count() > built, "a demand draws the tree");
+        assert!(automation.snapshot().nodes.contains_key("left-target"));
+        assert!(automation.state.demand_semantics(hold), "the tree is current after that frame");
     }
 
     /// A view whose two nested element ids spell, when joined, an element id

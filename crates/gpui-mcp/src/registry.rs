@@ -152,6 +152,17 @@ pub(crate) struct SharedState {
     logs: Mutex<VecDeque<LogEntry>>,
     completed_frame: watch::Sender<FrameStats>,
     window_geometry: RwLock<Option<WindowGeometry>>,
+    /// Whether the accessibility tree is built only while something needs it (an IPC bridge)
+    /// rather than on every frame (in-process automation, which reads it at any time).
+    semantics_on_demand: AtomicBool,
+    /// Until when a request holds the accessibility tree on.
+    semantics_until: Mutex<Option<Instant>>,
+    /// Whether the frame being drawn builds the accessibility tree, decided when it starts.
+    frame_wants_semantics: AtomicBool,
+    /// Whether the frame being drawn handed over an accessibility frame.
+    frame_had_semantics: AtomicBool,
+    /// Whether the last completed frame did: then the tree is current.
+    semantics_current: AtomicBool,
 }
 
 impl std::fmt::Debug for SemanticIntake {
@@ -187,7 +198,65 @@ impl SharedState {
             logs: Mutex::new(VecDeque::with_capacity(512)),
             completed_frame,
             window_geometry: RwLock::new(None),
+            semantics_on_demand: AtomicBool::new(false),
+            semantics_until: Mutex::new(None),
+            frame_wants_semantics: AtomicBool::new(true),
+            frame_had_semantics: AtomicBool::new(false),
+            semantics_current: AtomicBool::new(false),
         })
+    }
+
+    /// Build the accessibility tree only while a request holds it on or annotations need it.
+    /// GPUI Fast draws nothing from the last frame while the tree is built, so building it on
+    /// every frame would turn its retained rendering and scroll layers off for good.
+    pub(crate) fn build_semantics_on_demand(&self) {
+        self.semantics_on_demand.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether the frame being drawn builds the accessibility tree (asked by GPUI after the frame
+    /// started, so one frame is decided once).
+    #[cfg(feature = "gpui-fast")]
+    pub(crate) fn frame_wants_semantics(&self) -> bool {
+        self.frame_wants_semantics.load(Ordering::Relaxed)
+    }
+
+    fn semantics_wanted(&self, now: Instant) -> bool {
+        !self.semantics_on_demand.load(Ordering::Relaxed)
+            || self.has_annotations()
+            || self
+                .semantics_until
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some_and(|until| until > now)
+    }
+
+    /// Hold the accessibility tree on for `hold` from now. Whether the last completed frame
+    /// already carried it, so the tree is current without drawing another frame.
+    pub(crate) fn demand_semantics(&self, hold: Duration) -> bool {
+        let until = Instant::now() + hold;
+        let mut held =
+            self.semantics_until.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *held = Some(held.map_or(until, |previous| previous.max(until)));
+        self.semantics_current.load(Ordering::Relaxed)
+    }
+
+    /// The number of accessibility frames handed over so far.
+    pub(crate) fn semantic_frame_count(&self) -> u64 {
+        *self.semantic_frames.borrow()
+    }
+
+    /// Wait until an accessibility frame newer than `after` was handed over.
+    pub(crate) async fn wait_for_semantic_frame(
+        &self,
+        after: u64,
+        wait: Duration,
+    ) -> Result<(), BridgeError> {
+        let mut receiver = self.semantic_frames.subscribe();
+        timeout(wait, receiver.wait_for(|count| *count > after))
+            .await
+            .map_err(|_| BridgeError::new(ErrorCode::Timeout, "semantic frame wait timed out"))?
+            .map(|_| ())
+            .map_err(|_| BridgeError::new(ErrorCode::Internal, "semantic tree publisher stopped"))
     }
 
     pub(crate) fn begin_frame(&self) {
@@ -211,11 +280,18 @@ impl SharedState {
             });
         }
 
-        let mut intake = self.intake.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if intake.awaiting {
-            intake.incomplete = true;
+        let wants = self.semantics_wanted(now);
+        self.frame_wants_semantics.store(wants, Ordering::Relaxed);
+        self.frame_had_semantics.store(false, Ordering::Relaxed);
+        // a frame drawn without the tree leaves no gap in it: only a frame that should have
+        // carried one and did not makes the next tree incomplete
+        if wants {
+            let mut intake = self.intake.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if intake.awaiting {
+                intake.incomplete = true;
+            }
+            intake.awaiting = true;
         }
-        intake.awaiting = true;
     }
 
     /// Keep GPUI's finished accessibility frame for conversion when it is read.
@@ -238,6 +314,7 @@ impl SharedState {
         };
         // Release the lock before an unread frame is freed.
         drop(replaced);
+        self.frame_had_semantics.store(true, Ordering::Relaxed);
         self.semantic_frames.send_modify(|count| *count += 1);
     }
 
@@ -266,6 +343,8 @@ impl SharedState {
         bridge: Duration,
         views: impl IntoIterator<Item = ViewRecord>,
     ) {
+        self.semantics_current
+            .store(self.frame_had_semantics.load(Ordering::Relaxed), Ordering::Relaxed);
         let mut views_rendered = 0_u32;
         let mut views_reused = 0_u32;
         let mut itemized = Vec::new();

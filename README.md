@@ -332,9 +332,13 @@ patches are kept working.
 - Use one backend per app. Every `gpui-mcp` dependency in a GPUI Kit or
   `gpui-ce` app needs `default-features = false`.
 - GPUI Fast draws nothing again from the last frame while it builds the
-  accessibility tree, which an attached bridge turns on. While the bridge
-  observes, every view renders, and frame reports name the cause of a cached
-  view's render `caching_disabled`.
+  accessibility tree. The bridge builds it only on demand: a request that reads
+  the tree (the tree, input, focus, `perform_action`, annotations) holds it on
+  for three seconds after the request, or for a tree wait's length, and the
+  first such request after a pause waits for one frame drawn with it. In
+  between, GPUI Fast's retained rendering and scroll layers work and frame
+  reports show what they reuse; while the tree is built, every view renders and
+  frame reports name the cause of a cached view's render `caching_disabled`.
 - Only the `gpui-fast` tree carries accessibility action dispatch, so
   `perform_action`'s semantic actions are refused on Zed, `gpui-pre` and
   `gpui-ce`. Zed apps that turn off default features must add

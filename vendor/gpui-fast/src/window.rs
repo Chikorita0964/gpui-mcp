@@ -2523,7 +2523,7 @@ impl Window {
         self.frame_observers.push(Arc::downgrade(&observer));
         if self.invalidator.is_prepainting() {
             self.next_frame.observed.enable();
-            if !self.a11y.is_active() {
+            if !self.a11y.is_active() && observer.wants_accessibility() {
                 self.a11y.sync_active_flag(true);
                 self.a11y.begin_frame();
             }
@@ -3867,7 +3867,10 @@ impl Window {
             .observed
             .add_observation(observation_started.elapsed());
 
-        self.a11y.sync_active_flag(!frame_observers.is_empty());
+        let observers_want_a11y = frame_observers
+            .iter()
+            .any(|observer| observer.wants_accessibility());
+        self.a11y.sync_active_flag(observers_want_a11y);
         let platform_a11y_active_at_start = self.a11y.platform_is_active();
         if self.a11y.is_active() {
             self.a11y.begin_frame();

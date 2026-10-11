@@ -43,6 +43,9 @@ const MAX_CONNECTIONS: usize = 8;
 const COMMAND_CAPACITY: usize = 64;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_mins(30);
+/// How long a request holds the accessibility tree on after it: an agent's next call usually
+/// follows within it, and the tree is not built again for each.
+const SEMANTICS_HOLD: Duration = Duration::from_secs(3);
 
 /// Configuration for one GPUI window bridge.
 #[derive(Clone, Debug)]
@@ -349,6 +352,7 @@ impl BridgeHandle {
         let token = encode_hex(&token_bytes);
         let instance_id = random_instance_id();
         let state = SharedState::new();
+        state.build_semantics_on_demand();
         let automation = Automation::new(Arc::clone(&state));
         automation.attach(window);
         let pid = ProcessId::new(std::process::id()).ok_or(StartError::InvalidProcessId)?;
@@ -1079,6 +1083,11 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
     if let Err(error) = validate_operation(&request.operation) {
         return WireResponse::failure(request.request_id, error);
     }
+    if let Some(hold) = semantics_hold(&request.operation)
+        && let Err(error) = ensure_semantics(&context, hold).await
+    {
+        return WireResponse::failure(request.request_id, error);
+    }
 
     let result = match request.operation {
         Operation::Ping => Ok(BridgeResult::Pong {
@@ -1200,6 +1209,60 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         Ok(result) => WireResponse::success(request.request_id, result),
         Err(error) => WireResponse::failure(request.request_id, error),
     }
+}
+
+/// How long `operation` holds the accessibility tree on, or `None` when it does not read the tree
+/// (frame reports, the window, messages, logs and documents). A wait for the tree holds it for the
+/// wait too.
+fn semantics_hold(operation: &Operation) -> Option<Duration> {
+    match operation {
+        Operation::WaitForTree { timeout_ms, .. } => {
+            Some(SEMANTICS_HOLD + Duration::from_millis(*timeout_ms))
+        }
+        Operation::GetTree
+        | Operation::Input { .. }
+        | Operation::PointerInput { .. }
+        | Operation::Focus { .. }
+        | Operation::PerformAction { .. }
+        | Operation::UpsertAnnotations { .. } => Some(SEMANTICS_HOLD),
+        Operation::Ping
+        | Operation::WaitForFrame { .. }
+        | Operation::Refresh
+        | Operation::RequestFrame
+        | Operation::GetPendingFrame
+        | Operation::MarkFrames
+        | Operation::GetFrameReport { .. }
+        | Operation::GetWindowGeometry
+        | Operation::SetHighlights { .. }
+        | Operation::ClearHighlights
+        | Operation::RemoveAnnotations { .. }
+        | Operation::ClearAnnotations { .. }
+        | Operation::ListAnnotations
+        | Operation::SendMessage { .. }
+        | Operation::ReadMessages { .. }
+        | Operation::GetFrameStats
+        | Operation::GetPointerLocation
+        | Operation::GetLogs { .. }
+        | Operation::ClearLogs
+        | Operation::GetLiveDocument
+        | Operation::PreviewLiveDocument { .. }
+        | Operation::ListContextResources
+        | Operation::ReadContextResource { .. }
+        | Operation::ListApplicationCommands
+        | Operation::ExecuteApplicationCommand { .. } => None,
+    }
+}
+
+/// Hold the accessibility tree on for `hold`. An IPC bridge builds it only on demand, so when
+/// the last completed frame did not carry it, one frame is drawn with it before the request reads
+/// the tree.
+async fn ensure_semantics(context: &ConnectionContext, hold: Duration) -> Result<(), BridgeError> {
+    let seen = context.state.semantic_frame_count();
+    if context.state.demand_semantics(hold) {
+        return Ok(());
+    }
+    dispatch_to_ui(Operation::Refresh, &context.command_tx, context.operation_timeout).await?;
+    context.state.wait_for_semantic_frame(seen, context.operation_timeout).await
 }
 
 async fn request_ui_refresh(

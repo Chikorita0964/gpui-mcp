@@ -279,6 +279,15 @@ pub trait FrameObserver: Send + Sync + 'static {
     /// Called immediately before GPUI begins constructing a frame.
     fn frame_started(&self, _window: &Window) {}
 
+    /// Whether the frame being started needs the accessibility tree, asked
+    /// after [`Self::frame_started`]. Building it turns retained rendering and
+    /// scroll layers off for the frame, so an observer that needs it only now
+    /// and then answers `false` in between and keeps the frame reports and
+    /// overlays it gets either way. The default is `true`.
+    fn wants_accessibility(&self) -> bool {
+        true
+    }
+
     /// Called after prepaint has completed with the canonical accessibility tree.
     fn accessibility_updated(&self, _frame: &AccessibilityFrame) {}
 

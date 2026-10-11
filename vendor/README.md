@@ -77,9 +77,11 @@ touch changes and shows tooltips from a different spot in `div.rs`.
 
 The `gpui-fast` automation patch follows GPUI Fast where it moved upstream
 code: views draw through its retained rendering, which draws nothing again from
-last frame while the accessibility tree that a frame observer turns on is built,
-so an observed frame renders every view and reports a cached view's cause as
-`CachingDisabled`; and its input-change snapshot is taken before the pointer
+last frame while the accessibility tree is built, so a frame that builds it
+renders every view and reports a cached view's cause as `CachingDisabled`. A
+frame observer says whether a frame needs the tree
+(`FrameObserver::wants_accessibility`, `true` by default), and the bridge asks
+for it only on demand; and its input-change snapshot is taken before the pointer
 moves, so a view that read the pointer is rendered again when it moves.
 
 `gpui-pre.json`, `gpui-fast.json` and `gpui-ce.json` list each version with its
