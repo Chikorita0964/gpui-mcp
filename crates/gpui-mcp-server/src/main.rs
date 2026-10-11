@@ -51,6 +51,11 @@ async fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .init();
+    // A panic goes to the log with the rest: where it happened, and the backtrace when
+    // RUST_BACKTRACE asks for one.
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!(backtrace = %std::backtrace::Backtrace::capture(), "{info}");
+    }));
 
     let args = Args::parse();
     let registry = BridgeRegistry::new(args.endpoint, args.app_id, args.endpoint_dir);

@@ -33,6 +33,7 @@ bytes = "1.11.1"
 clap = { version = "4.6.1", features = ["derive"] }
 cow-utils = "0.1.3"
 directories = "6.0.0"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 # GPUI Fast (longbridge/gpui-fast), the one GPUI this workspace builds on, under
 # GPUI's own crate names. The version has a patch series in
 # vendor/patches/gpui-fast/; `cargo xtask vendor` fails if it and
@@ -75,6 +76,8 @@ widestring = "1.2.1"
 # oxc's lint tables (oxc-project/oxc Cargo.toml), on top of this workspace's
 # own stricter rules.
 [workspace.lints.rust]
+# `cranelift`: set by test builds on the Cranelift backend, which catches no unwind.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(cranelift)"] }
 unsafe_code = "deny"
 missing_docs = "warn"
 absolute_paths_not_starting_with_crate = "warn"

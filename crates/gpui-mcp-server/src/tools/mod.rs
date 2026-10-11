@@ -1,12 +1,15 @@
+use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io::Cursor;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
 use cow_utils::CowUtils as _;
+use futures_util::FutureExt as _;
 use gpui_mcp_protocol::{
     BridgeResult, Capability, ContextResourceDescriptor, FrameReport, FrameStats, InputCommand,
     LiveDocumentSource, MouseButton, NodeAction, NodeState, Operation, Point, PointerCommand,
@@ -541,12 +544,7 @@ impl GpuiMcp {
 
     async fn select_target(&self, target_id: &str) -> Result<AppInfo, String> {
         let _transition = self.target_transition.lock().await;
-        if self
-            .recording_task
-            .lock()
-            .map_err(|_| "recording state lock is poisoned".to_owned())?
-            .is_some()
-        {
+        if self.recording_task.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_some() {
             return Err(
                 "cannot switch GPUI targets while recording or encoding video; stop the recording first"
                     .to_owned(),
@@ -972,7 +970,7 @@ impl ServerHandler for GpuiMcp {
                 .is_some_and(|capabilities| capabilities.supports_tasks());
         if !as_task {
             let call = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-            return self.tool_router.call(call).await;
+            return guarded(self.tool_router.call(call)).await;
         }
         let server = self.clone();
         let options = TaskOptions::new()
@@ -984,7 +982,7 @@ impl ServerHandler for GpuiMcp {
                     rmcp::handler::server::tool::ToolCallContext::new(&server, request, context);
                 tokio::select! {
                     () = task.cancelled() => Err(TaskExit::Cancelled),
-                    response = server.tool_router.call(call) => match response {
+                    response = guarded(server.tool_router.call(call)) => match response {
                         Ok(CallToolResponse::Complete(result)) => Ok(result),
                         Ok(_) => Err(TaskExit::Error(ErrorData::internal_error(
                             "the tool did not complete",
@@ -1072,7 +1070,7 @@ impl ServerHandler for GpuiMcp {
         let previous = self
             .resource_watchers
             .lock()
-            .map_err(|_| ErrorData::internal_error("subscription state is poisoned", None))?
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(request.uri.clone(), cancellation.clone());
         if let Some(previous) = previous {
             previous.cancel();
@@ -1101,13 +1099,35 @@ impl ServerHandler for GpuiMcp {
         let watcher = self
             .resource_watchers
             .lock()
-            .map_err(|_| ErrorData::internal_error("subscription state is poisoned", None))?
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&request.uri);
         if let Some(watcher) = watcher {
             watcher.cancel();
         }
         Ok(())
     }
+}
+
+/// Run a tool call, a panic in it answered as an internal error: rmcp runs each request in a task
+/// of its own, and a task that panics sends no response, so the client would wait for one until
+/// its own timeout.
+async fn guarded(
+    call: impl Future<Output = Result<CallToolResponse, ErrorData>>,
+) -> Result<CallToolResponse, ErrorData> {
+    AssertUnwindSafe(call).catch_unwind().await.unwrap_or_else(|payload| {
+        let message = panic_message(&*payload);
+        tracing::error!(%message, "a tool call panicked");
+        Err(ErrorData::internal_error(format!("the tool call panicked: {message}"), None))
+    })
+}
+
+/// The message a panic was raised with.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".to_owned())
 }
 
 fn messages_resource() -> Resource {
@@ -1592,9 +1612,10 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        FindArgs, MAX_SETTLE_FRAMES, Role, StartVideoRecordingArgs, TreeArgs, UiTree,
-        WaitStateArgs, default_result_limit_for_test, find_nodes, find_reply, select_tree,
-        settle_pending_frames, settle_requested_frames, state_matches, tree_diff, tree_result,
+        CallToolResponse, FindArgs, MAX_SETTLE_FRAMES, Role, StartVideoRecordingArgs, TreeArgs,
+        UiTree, WaitStateArgs, default_result_limit_for_test, find_nodes, find_reply, guarded,
+        select_tree, settle_pending_frames, settle_requested_frames, state_matches, tree_diff,
+        tree_result,
     };
 
     fn stats(frame_count: u64) -> BridgeResult {
@@ -1643,6 +1664,24 @@ mod tests {
         fn operations(&self) -> Vec<Operation> {
             self.operations.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
         }
+    }
+
+    /// A tool call that panics is still answered, with the panic's message, and the next call runs.
+    #[tokio::test]
+    #[cfg_attr(cranelift, ignore = "the Cranelift backend catches no unwind")]
+    #[expect(clippy::panic, reason = "the tool call panics on purpose")]
+    async fn a_panicking_tool_call_is_answered_as_an_internal_error() {
+        let panicked =
+            guarded(async { std::panic::panic_any::<&str>("the tool broke") }).await.err();
+        assert!(
+            panicked.is_some_and(|error| error.message.contains("the tool broke")),
+            "the panic comes back as an error carrying its message"
+        );
+        let next = guarded(async {
+            Ok(CallToolResponse::Complete(rmcp::model::CallToolResult::success(Vec::new())))
+        })
+        .await;
+        assert!(next.is_ok(), "the guard leaves later calls alone");
     }
 
     #[tokio::test]

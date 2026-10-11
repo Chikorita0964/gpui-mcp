@@ -1,6 +1,8 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -8,6 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
+use futures_util::FutureExt as _;
 use gpui::{App, Window};
 use gpui_mcp_protocol::{
     Annotation, AnnotationSource, AppId, ApplicationCommandDescriptor, ApplicationCommandResult,
@@ -662,6 +665,8 @@ fn spawn_ui_pump(
         .spawn(cx, async move |cx| {
             while let Ok(command) = receiver.recv().await {
                 let result = cx
+                    // Not caught: a panic inside a GPUI update skips its bookkeeping (effects
+                    // stop flushing, a leased entity is lost), so the application could not go on.
                     .update(|window, cx| {
                         handle_ui_operation(
                             command.operation,
@@ -762,6 +767,15 @@ fn spawn_message_listener(
         })
         .detach();
 }
+/// The message a panic was raised with.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".to_owned())
+}
+
 fn handle_ui_operation(
     operation: Operation,
     state: &SharedState,
@@ -1003,7 +1017,22 @@ async fn handle_connection(
             return Ok(());
         };
         first_request = false;
-        let response = process_request(request, context.clone()).await;
+        let request_id = request.request_id;
+        // A panic in the bridge is answered as an error, so the server is not left waiting
+        let response = AssertUnwindSafe(process_request(request, context.clone()))
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|payload| {
+                let message = panic_message(&*payload);
+                tracing::error!(%message, "the bridge panicked handling a request");
+                WireResponse::failure(
+                    request_id,
+                    BridgeError::new(
+                        ErrorCode::Internal,
+                        format!("the bridge panicked: {message}"),
+                    ),
+                )
+            });
         let close_after_response = response.error.as_ref().is_some_and(|error| {
             matches!(error.code, ErrorCode::Unauthorized | ErrorCode::ProtocolMismatch)
         });

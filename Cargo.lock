@@ -3098,6 +3098,7 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "cow-utils",
+ "futures-util",
  "gpui-fast",
  "gpui-mcp-protocol",
  "interprocess",
@@ -3177,6 +3178,7 @@ dependencies = [
  "bytes",
  "clap",
  "cow-utils",
+ "futures-util",
  "gpui-mcp-capture",
  "gpui-mcp-protocol",
  "image",

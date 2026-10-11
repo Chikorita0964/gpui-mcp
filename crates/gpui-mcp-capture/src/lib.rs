@@ -388,6 +388,7 @@ fn capture_frame(
 #[cfg(target_os = "windows")]
 mod platform_stream {
     use std::ffi::c_void;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::Duration;
 
@@ -423,17 +424,22 @@ mod platform_stream {
             frame: &mut Frame,
             control: InternalCaptureControl,
         ) -> Result<(), Self::Error> {
-            let width = frame.width();
-            let height = frame.height();
-            let result =
+            // Windows calls this from a WinRT event handler, through an `extern "system"`
+            // function: a panic leaving it would abort the process, so it ends here, as a failed
+            // frame and a stopped capture.
+            let scratch = &mut self.scratch;
+            let read = catch_unwind(AssertUnwindSafe(|| {
+                let width = frame.width();
+                let height = frame.height();
                 frame.buffer().map_err(|_| CaptureFailure::CaptureUnavailable).and_then(|buffer| {
-                    RgbaImage::from_raw(
-                        width,
-                        height,
-                        buffer.as_nopadding_buffer(&mut self.scratch).to_vec(),
-                    )
-                    .ok_or(CaptureFailure::CaptureUnavailable)
-                });
+                    RgbaImage::from_raw(width, height, buffer.as_nopadding_buffer(scratch).to_vec())
+                        .ok_or(CaptureFailure::CaptureUnavailable)
+                })
+            }));
+            let Ok(result) = read else {
+                let _ = self.frames.try_send(Err(CaptureFailure::CaptureUnavailable));
+                return Err("reading a captured frame panicked".to_owned());
+            };
             match self.frames.try_send(result) {
                 Ok(()) | Err(TrySendError::Full(_)) => Ok(()),
                 Err(TrySendError::Disconnected(_)) => {

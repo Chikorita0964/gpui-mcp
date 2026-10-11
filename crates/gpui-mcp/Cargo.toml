@@ -23,6 +23,7 @@ test-support = ["gpui/test-support"]
 [dependencies]
 async-channel.workspace = true
 cow-utils.workspace = true
+futures-util.workspace = true
 gpui.workspace = true
 gpui-mcp-protocol = { path = "../gpui-mcp-protocol" }
 interprocess.workspace = true

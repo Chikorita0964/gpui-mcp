@@ -38,7 +38,7 @@ pub async fn capture(client: &BridgeClient, area: ScreenshotTarget) -> Result<Sc
     .map_err(|_| "native screenshot capture exceeded the 15 second deadline".to_owned())?
     .map_err(|error| {
         tracing::warn!(%error, "native screenshot worker failed");
-        "native screenshot worker failed".to_owned()
+        format!("native screenshot worker failed: {error}")
     })?
     .map_err(|error| {
         if let gpui_mcp_capture::CaptureFailure::TargetNotFound {
