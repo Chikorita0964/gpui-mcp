@@ -21,6 +21,9 @@ rust-version = "1.99.0"
 license = "Apache-2.0"
 repository = "https://github.com/themixednuts/gpui-mcp"
 homepage = "https://github.com/themixednuts/gpui-mcp"
+readme = "README.md"
+keywords = ["gpui", "mcp", "automation", "accessibility", "testing"]
+categories = ["gui", "development-tools::testing", "accessibility"]
 
 [workspace.dependencies]
 anyhow = "1.0.100"
@@ -130,20 +133,167 @@ doc_markdown = "allow"
 similar_names = "allow"
 fn_params_excessive_bools = "allow"
 too_many_arguments = "allow"
+# nursery, with the lints oxc allows
+nursery = { level = "warn", priority = -1 }
+missing_const_for_fn = "allow"
+option_if_let_else = "allow"
+or_fun_call = "allow"
+cognitive_complexity = "allow"
+non_send_fields_in_send_ty = "allow"
+use_self = "allow"
+significant_drop_tightening = "allow"
+branches_sharing_code = "allow"
+fallible_impl_from = "allow"
+useless_let_if_seq = "allow"
+impl_trait_in_params = "allow"
+# The opposite of rustc's `unreachable_pub` above: an item in a private module stays `pub(crate)`.
+redundant_pub_crate = "allow"
+# `mul_add` is a slow libm call unless the build targets FMA.
+suboptimal_flops = "allow"
+# GPUI's futures run on its foreground executor and are never sent.
+future_not_send = "allow"
+# cargo
+cargo = { level = "warn", priority = -1 }
+multiple_crate_versions = "allow"
+# `test-support` is GPUI's own name for it, which apps already enable.
+redundant_feature_names = "allow"
+
+[profile.dev]
+# No debug info, as oxc builds: a failing assertion still names its file and line. Sixteen codegen
+# units, as Zed has them.
+debug = false
+codegen-units = 16
+
+# What is built for build time the same, so a crate both sides use is built once (Zed).
+[profile.dev.build-override]
+debug = false
+codegen-units = 16
+
+[profile.dev.package]
+# Every proc macro and what it uses: they run inside the compiler on every build.
+arg_enum_proc_macro = { opt-level = 3 }
+async-recursion = { opt-level = 3 }
+async-trait = { opt-level = 3 }
+borsh-derive = { opt-level = 3 }
+bytemuck_derive = { opt-level = 3 }
+clap_derive = { opt-level = 3 }
+const-random-macro = { opt-level = 3 }
+convert_case = { opt-level = 3 }
+cssparser-macros = { opt-level = 3 }
+darling = { opt-level = 3 }
+darling_core = { opt-level = 3 }
+darling_macro = { opt-level = 3 }
+derive_more-impl = { opt-level = 3 }
+displaydoc = { opt-level = 3 }
+doctest-file = { opt-level = 3 }
+document-features = { opt-level = 3 }
+enum-iterator-derive = { opt-level = 3 }
+enumflags2_derive = { opt-level = 3 }
+enumn = { opt-level = 3 }
+equator-macro = { opt-level = 3 }
+foreign-types-macros = { opt-level = 3 }
+futures-macro = { opt-level = 3 }
+getrandom = { opt-level = 3 }
+glob = { opt-level = 3 }
+gpui-component-macros = { opt-level = 3 }
+gpui-fast-macros = { opt-level = 3 }
+gpui-pre-derive-refineable = { opt-level = 3 }
+gpui-pre-macros = { opt-level = 3 }
+gpui-pre-perf = { opt-level = 3 }
+gpui-pre-util-macros = { opt-level = 3 }
+gpui-pre-ztracing-macro = { opt-level = 3 }
+heck = { opt-level = 3 }
+include_dir_macros = { opt-level = 3 }
+interpolate_name = { opt-level = 3 }
+jni-macros = { opt-level = 3 }
+jni-sys-macros = { opt-level = 3 }
+lightningcss-derive = { opt-level = 3 }
+linktime-proc-macro = { opt-level = 3 }
+litrs = { opt-level = 3 }
+mime_guess = { opt-level = 3 }
+multiversion_no_op = { opt-level = 3 }
+noop_proc_macro = { opt-level = 3 }
+num-derive = { opt-level = 3 }
+once_cell = { opt-level = 3 }
+oxc-miette-derive = { opt-level = 3 }
+oxc_ast_macros = { opt-level = 3 }
+paste = { opt-level = 3 }
+pastey = { opt-level = 3 }
+phf = { opt-level = 3 }
+phf_generator = { opt-level = 3 }
+phf_macros = { opt-level = 3 }
+phf_shared = { opt-level = 3 }
+pin-project-internal = { opt-level = 3 }
+proc-macro-crate = { opt-level = 3 }
+proc-macro2 = { opt-level = 3 }
+profiling-procmacros = { opt-level = 3 }
+proptest-macro = { opt-level = 3 }
+quick-xml = { opt-level = 3 }
+quote = { opt-level = 3 }
+ref-cast-impl = { opt-level = 3 }
+rmcp-macros = { opt-level = 3 }
+rust-embed-impl = { opt-level = 3 }
+rust-embed-utils = { opt-level = 3 }
+rust-i18n-macro = { opt-level = 3 }
+rust-i18n-support = { opt-level = 3 }
+rustc_version = { opt-level = 3 }
+rustversion = { opt-level = 3 }
+schemars_derive = { opt-level = 3 }
+seq-macro = { opt-level = 3 }
+serde = { opt-level = 3 }
+serde_derive = { opt-level = 3 }
+serde_derive_internals = { opt-level = 3 }
+serde_repr = { opt-level = 3 }
+shellexpand = { opt-level = 3 }
+simd_cesu8 = { opt-level = 3 }
+simd_helpers = { opt-level = 3 }
+static-self-derive = { opt-level = 3 }
+strum_macros = { opt-level = 3 }
+syn = { opt-level = 3 }
+synstructure = { opt-level = 3 }
+thiserror-impl = { opt-level = 3 }
+tiny-keccak = { opt-level = 3 }
+tokio-macros = { opt-level = 3 }
+tracing-attributes = { opt-level = 3 }
+unicode-xid = { opt-level = 3 }
+walkdir = { opt-level = 3 }
+wasm-bindgen-macro = { opt-level = 3 }
+wasm-bindgen-macro-support = { opt-level = 3 }
+wayland-scanner = { opt-level = 3 }
+windows-implement = { opt-level = 3 }
+windows-interface = { opt-level = 3 }
+yoke-derive = { opt-level = 3 }
+zbus-lockstep = { opt-level = 3 }
+zbus-lockstep-macros = { opt-level = 3 }
+zbus_macros = { opt-level = 3 }
+zbus_names = { opt-level = 3 }
+zbus_xml = { opt-level = 3 }
+zerocopy-derive = { opt-level = 3 }
+zerofrom-derive = { opt-level = 3 }
+zeroize_derive = { opt-level = 3 }
+zerovec-derive = { opt-level = 3 }
+zvariant = { opt-level = 3 }
+zvariant_derive = { opt-level = 3 }
+zvariant_utils = { opt-level = 3 }
+# Hot at run time in tests (as Zed has them).
+taffy = { opt-level = 3 }
+resvg = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }
+ttf-parser = { opt-level = 3 }
+serde_json = { opt-level = 3 }
+image = { opt-level = 2 }
+# Snapshot comparison and its diff, optimized as insta recommends (and oxc does).
+insta = { opt-level = 3 }
+similar = { opt-level = 3 }
+# Single-file packages in one codegen unit (Zed).
+gpui-mcp-capture = { codegen-units = 1 }
+runtime-showcase = { codegen-units = 1 }
 
 [profile.release]
-lto = "thin"
+# The best code, as oxc and Zed build their releases.
+lto = "fat"
+codegen-units = 1
 strip = "symbols"
-
-[profile.dev.package.image]
-opt-level = 2
-
-# Snapshot comparison and its diff, optimized as insta recommends (and oxc does).
-[profile.dev.package.insta]
-opt-level = 3
-
-[profile.dev.package.similar]
-opt-level = 3
 
 [patch.crates-io]
 gpui-fast = { path = "vendor/gpui-fast" }

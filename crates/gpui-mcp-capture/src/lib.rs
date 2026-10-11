@@ -536,6 +536,10 @@ mod platform_stream {
             Ok(Self { target })
         }
 
+        #[expect(
+            clippy::needless_pass_by_ref_mut,
+            reason = "the signature of the Windows stream, which reads its frame channel"
+        )]
         pub(super) fn next_frame(
             &mut self,
             _deadline: Duration,
@@ -665,19 +669,19 @@ fn capture_fresh_frame<T, E: Clone>(
         .min(MAX_MEASURED_ALLOWANCE);
     let Some(deadline) = started.checked_add(options.settle_deadline().saturating_add(allowance))
     else {
-        return Err(unstable_error.clone());
+        return Err(unstable_error);
     };
     for _ in 1..MIN_FRESHNESS_SAMPLES {
         let current_time = now();
         let Some(remaining) = deadline.checked_duration_since(current_time) else {
-            return Err(unstable_error.clone());
+            return Err(unstable_error);
         };
         if remaining.is_zero() {
-            return Err(unstable_error.clone());
+            return Err(unstable_error);
         }
         wait(COMPOSITOR_POLL_INTERVAL.min(remaining));
         if now() >= deadline {
-            return Err(unstable_error.clone());
+            return Err(unstable_error);
         }
         latest = capture()?;
     }

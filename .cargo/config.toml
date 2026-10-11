@@ -1,3 +1,7 @@
 [alias]
 # Maintenance tasks: `cargo xtask --help`.
 xtask = "run --quiet --locked --package xtask --"
+
+# v0 symbol names, as Zed builds: backtraces and profilers show generic arguments and closures.
+[target.'cfg(all())']
+rustflags = ["-C", "symbol-mangling-version=v0"]

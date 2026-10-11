@@ -29,7 +29,7 @@ impl AppView {
         clippy::print_stderr,
         reason = "the showcase reports a watcher or reload error on stderr and keeps running"
     )]
-    fn poll_project(&mut self) {
+    fn poll_project(&self) {
         let change = match self.watcher.poll() {
             Ok(change) => change,
             Err(error) => {

@@ -8,6 +8,8 @@ disallowed-methods = [
     { path = "str::to_uppercase", reason = "use `cow_utils::CowUtils::cow_to_uppercase` instead" },
     { path = "str::replace", reason = "use `cow_utils::CowUtils::cow_replace` instead" },
     { path = "str::replacen", reason = "use `cow_utils::CowUtils::cow_replacen` instead" },
+    # From Zed's clippy.toml.
+    { path = "serde_json::from_reader", reason = "parsing from a reader is much slower than reading it into a buffer first (serde-rs/json#160): use `serde_json::from_slice`" },
 ]
 
 disallowed-types = [

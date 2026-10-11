@@ -660,8 +660,7 @@ async fn visible_only_drops_the_nodes_reported_as_invisible() -> Result<(), Stri
             visible_ids(&whole)?,
             "visible_only must return exactly the nodes the whole tree reports as visible"
         );
-        let dropped: Vec<String> = all.difference(&kept).cloned().collect();
-        if dropped.is_empty() {
+        if all.difference(&kept).next().is_none() {
             println!(
                 "note: the fixture publishes no node with state.visible == false ({} nodes checked), so visible_only has nothing to drop on it; the filtering itself is pinned by the implementation's in-memory unit tests",
                 all.len()
@@ -720,7 +719,7 @@ async fn root_max_depth_and_visible_only_compose() -> Result<(), String> {
         let root_ids = ids(&by_root)?;
         let depth_ids = ids(&by_depth)?;
         let visible = ids(&by_visibility)?;
-        let mut expected = root_ids.clone();
+        let mut expected = root_ids;
         expected.retain(|id| depth_ids.contains(id) && visible.contains(id));
         assert_eq!(
             ids(&combined)?,

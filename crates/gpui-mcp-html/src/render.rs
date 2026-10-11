@@ -449,7 +449,7 @@ impl LiveHtml {
     ///
     /// Returns `false`, and starts nothing, before the document's first frame.
     pub fn start_view_transition<T: AsRef<str>>(
-        &mut self,
+        &self,
         types: impl IntoIterator<Item = T>,
         window: &mut Window,
         cx: &mut App,
@@ -479,12 +479,12 @@ impl LiveHtml {
 
     /// Finish the current view transition at once, like
     /// `ViewTransition.skipTransition()`.
-    pub fn skip_view_transition(&mut self) {
+    pub fn skip_view_transition(&self) {
         self.transitions.skip();
     }
 
     fn begin_view_transition(
-        &mut self,
+        &self,
         types: Vec<SharedString>,
         properties: Option<PropertySnapshot>,
     ) -> bool {
@@ -1161,7 +1161,7 @@ impl LiveHtml {
                     .unwrap_or_else(|| attribute(element, "open").is_some())
             });
             let mut children = Vec::with_capacity(element.children.len());
-            self.scopes.borrow_mut().push(scope.clone());
+            self.scopes.borrow_mut().push(scope);
             for (index, child) in element.children.iter().enumerate() {
                 if open == Some(false) && !is_summary_element(child) {
                     continue;
@@ -1364,7 +1364,7 @@ impl LiveHtml {
         runtime: ElementRuntime<'_>,
         focus_styles: bool,
         text_input: Option<&Entity<RuntimeTextInput>>,
-        cx: &mut App,
+        cx: &App,
     ) -> Option<FocusHandle> {
         let focusable = focus_styles
             || runtime

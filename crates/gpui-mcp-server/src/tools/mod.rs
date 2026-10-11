@@ -1098,12 +1098,12 @@ impl ServerHandler for GpuiMcp {
         request: UnsubscribeRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<(), ErrorData> {
-        if let Some(watcher) = self
+        let watcher = self
             .resource_watchers
             .lock()
             .map_err(|_| ErrorData::internal_error("subscription state is poisoned", None))?
-            .remove(&request.uri)
-        {
+            .remove(&request.uri);
+        if let Some(watcher) = watcher {
             watcher.cancel();
         }
         Ok(())

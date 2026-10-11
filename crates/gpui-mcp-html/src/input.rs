@@ -6,31 +6,41 @@ use gpui::{
     ElementInputHandler, EntityInputHandler, FocusHandle, Focusable, Global, GlobalElementId,
     InteractiveElement as _, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement as _, Pixels, Point, Render, ShapedLine,
-    SharedString, Size, Style, Styled as _, TextRun, UTF16Selection, Window, actions, div, fill,
-    point, px, relative, rgba,
+    SharedString, Size, Style, Styled as _, TextRun, UTF16Selection, Window, div, fill, point, px,
+    relative, rgba,
 };
 
 use crate::render::dispatch_input_change;
 use crate::{Binding, ElementId, HookRegistry};
 
-actions!(
-    runtime_text_input,
-    [
-        Backspace,
-        Delete,
-        Left,
-        Right,
-        SelectLeft,
-        SelectRight,
-        SelectAll,
-        Home,
-        End,
-        Enter,
-        Paste,
-        Cut,
-        Copy,
-    ]
-);
+/// The keyboard actions of a native input.
+mod keys {
+    #![expect(
+        clippy::derive_partial_eq_without_eq,
+        reason = "GPUI's `actions!` derives the actions' traits"
+    )]
+    use gpui::actions;
+
+    actions!(
+        runtime_text_input,
+        [
+            Backspace,
+            Delete,
+            Left,
+            Right,
+            SelectLeft,
+            SelectRight,
+            SelectAll,
+            Home,
+            End,
+            Enter,
+            Paste,
+            Cut,
+            Copy,
+        ]
+    );
+}
+use keys::*;
 
 struct InputInitialized;
 impl Global for InputInitialized {}
@@ -107,8 +117,8 @@ struct StoredLine {
 impl RuntimeTextInput {
     pub(crate) fn new(
         options: RuntimeTextInputOptions,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
+        _window: &Window,
+        cx: &Context<Self>,
     ) -> Self {
         let value = normalize_value(&options.value, options.multiline);
         let caret = value.len();

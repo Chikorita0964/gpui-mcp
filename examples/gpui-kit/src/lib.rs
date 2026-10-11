@@ -25,7 +25,9 @@ const VOLUME_START: f32 = 5.0;
 const VOLUME_STEP: f32 = 1.0;
 
 /// One region drawn as its own cached view, the way a workbench draws each of
-/// its panels. Hovering its control notifies this view alone, so a frame report
+/// its panels.
+///
+/// Hovering its control notifies this view alone, so a frame report
 /// taken across the hover should show this region rendering and its sibling
 /// replaying from cache. Anything that renders both, such as a window refresh,
 /// is visible in the report as the cause of the sibling's render.
@@ -212,7 +214,7 @@ impl Demo {
     }
 
     /// Post a chat message for the connected agent, as an in-app chat box would.
-    fn ask_agent(&mut self, cx: &mut Context<Self>) {
+    fn ask_agent(&self, cx: &mut Context<Self>) {
         let message = NewMessage::text(format!("Hello from the demo; the count is {}", self.count));
         if let Some(bridge) = &self.bridge
             && let Err(error) = bridge.post_message(message)
@@ -234,7 +236,7 @@ impl Demo {
 
     /// A chat box in miniature: a send button, the agent's latest reply, and a
     /// mirror of the annotations the agent has placed.
-    fn chat_row(&self, cx: &mut Context<Self>) -> Div {
+    fn chat_row(&self, cx: &Context<Self>) -> Div {
         let (count, changed_by) = self.annotations;
         let reply = self.reply.clone().unwrap_or_else(|| "No reply yet".to_owned());
         let annotations = format!(
@@ -274,7 +276,7 @@ impl Demo {
     /// assert a falsehood rather than admit it does not know. The toggle exists
     /// so the attribute can be measured flipping on one node rather than read
     /// once, which is the only way to tell a carried value from a constant.
-    fn lock_row(&self, cx: &mut Context<Self>) -> Div {
+    fn lock_row(&self, cx: &Context<Self>) -> Div {
         let locked = self.locked;
         div()
             .flex()

@@ -123,13 +123,7 @@ impl FrameObserver for BridgeObserver {
 impl BridgeObserver {
     /// Draw a frame when the next annotation expires, so it disappears on time
     /// even when nothing else redraws the window.
-    fn schedule_expiry(
-        &self,
-        state: &SharedState,
-        deadline: Instant,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
+    fn schedule_expiry(&self, state: &SharedState, deadline: Instant, window: &Window, cx: &App) {
         if !state.claim_expiry_timer(deadline) {
             return;
         }
@@ -681,11 +675,7 @@ mod tests {
             let point = save.center();
             assert_eq!(
                 dispatch_pointer(
-                    &PointerCommand::MouseDown {
-                        point: Point { x: point.x, y: point.y },
-                        button: MouseButton::Left,
-                        click_count: 1,
-                    },
+                    &PointerCommand::MouseDown { point, button: MouseButton::Left, click_count: 1 },
                     window,
                     cx,
                 ),
@@ -693,11 +683,7 @@ mod tests {
             );
             assert_eq!(
                 dispatch_pointer(
-                    &PointerCommand::MouseUp {
-                        point: Point { x: point.x, y: point.y },
-                        button: MouseButton::Left,
-                        click_count: 1,
-                    },
+                    &PointerCommand::MouseUp { point, button: MouseButton::Left, click_count: 1 },
                     window,
                     cx,
                 ),

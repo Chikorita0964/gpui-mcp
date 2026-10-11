@@ -146,7 +146,7 @@ mod kit {
             self.inner.begin_frame(now);
         }
 
-        pub(crate) fn end_frame(&self, window: &mut Window) {
+        pub(crate) fn end_frame(&self, window: &Window) {
             self.inner.end_frame(window);
         }
 

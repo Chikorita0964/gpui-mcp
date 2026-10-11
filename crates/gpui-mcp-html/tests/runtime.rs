@@ -242,7 +242,7 @@ fn dispatch_test_input(
             "semantic node does not support the requested input",
         ));
     }
-    if let TestInput::Focus = action {
+    if matches!(action, TestInput::Focus) {
         return window
             .focus_observed_element(node_id, cx)
             .then_some(HookOutcome::Handled)

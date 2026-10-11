@@ -42,7 +42,8 @@ impl ConnectionPool {
     }
 
     async fn take(&self, endpoint: &LocalEndpoint) -> Result<LocalSocketStream, String> {
-        if let Some(stream) = self.idle.lock().await.pop() {
+        let idle = self.idle.lock().await.pop();
+        if let Some(stream) = idle {
             return Ok(stream);
         }
         connect(endpoint).await

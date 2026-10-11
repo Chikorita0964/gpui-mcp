@@ -43,7 +43,7 @@ impl MessageSender {
 }
 
 /// A message to append to the log.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewMessage {
     /// Message text.
     pub text: String,
@@ -122,7 +122,7 @@ impl NewMessage {
 }
 
 /// One message in the log.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Message {
     /// Monotonic id, starting at 1. Ids are never reused within a bridge lifetime.
     pub id: u64,
@@ -141,7 +141,7 @@ pub struct Message {
 }
 
 /// A page of messages read from the log.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MessagePage {
     /// Messages after the requested id, oldest first.
     pub messages: Vec<Message>,

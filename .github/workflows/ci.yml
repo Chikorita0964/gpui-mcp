@@ -16,6 +16,11 @@ concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  CARGO_TERM_COLOR: always
+  # A CI build is built once: incremental state only costs time and cache space (Zed's CI).
+  CARGO_INCREMENTAL: "0"
+
 jobs:
   check:
     name: ${{ matrix.os }}
@@ -30,6 +35,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # Windows builds on a ReFS Dev Drive, much faster than the system drive, as oxc's and uv's CI do.
+      - name: Set up a Dev Drive
+        if: runner.os == 'Windows'
+        uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+        with:
+          drive-size: 12GB
+          drive-format: ReFS
+          env-mapping: |
+            CARGO_HOME,{{ DEV_DRIVE }}/.cargo
+            RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
+            CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
+
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
         run: |
@@ -41,13 +58,20 @@ jobs:
             libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinput-dev \
             libxcb-composite0-dev libpipewire-0.3-dev libdbus-1-dev libegl1-mesa-dev \
-            mesa-vulkan-drivers openbox xvfb
+            mesa-vulkan-drivers openbox xvfb x11-utils
 
       - name: Install pinned Rust toolchain
         shell: bash
         run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt && rustup default 1.99.0
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: ". -> ${{ env.CARGO_TARGET_DIR || 'target' }}"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
+        with:
+          tool: cargo-nextest
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -69,8 +93,10 @@ jobs:
       - name: Build integration test fixture
         run: cargo build -p gpui-mcp-kit-demo --locked
 
+      # nextest as Zed's CI runs tests; on Linux each windowed test gets a display of its own
+      # (.config/nextest.toml). No crate has doc tests.
       - name: Test workspace
-        run: cargo test --workspace --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
+        run: cargo nextest run --workspace --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
       - name: Test Chromium/GPUI visual parity
         if: runner.os != 'Linux'
@@ -84,6 +110,10 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked -- -D warnings
+
+      # Builds and tests must not change the checkout: generated files are committed (oxc's CI).
+      - name: Check that the checkout is unchanged
+        run: git diff --exit-code
 
       - name: Upload visual parity failure artifacts
         if: failure()
@@ -119,6 +149,7 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           key: xtask
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: cargo xtask vendor --crate gpui-fast --check
 
@@ -162,6 +193,7 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           key: ${{ matrix.crate }}-${{ matrix.version }}-${{ matrix.without }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Apply the patch series
         env:
@@ -226,6 +258,8 @@ jobs:
         run: rustup toolchain install 1.99.0 --profile minimal && rustup default 1.99.0
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install gpui-mcp from this Git commit
         env:

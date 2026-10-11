@@ -385,7 +385,7 @@ pub enum NodeAction {
 
 /// Accessibility action the bridge performs on a node the way assistive
 /// technology requests it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum SemanticAction {
     /// Activate the node.
@@ -406,7 +406,7 @@ pub enum SemanticAction {
 }
 
 /// Optional editable text metadata supplied by the application.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TextInfo {
     /// Current text. Applications may omit secret values.
     pub text: String,
@@ -441,7 +441,7 @@ pub struct ValueInfo {
 }
 
 /// Dynamic state of a semantic node.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NodeState {
     /// Whether the application considers the node visible.
     pub visible: bool,
@@ -618,7 +618,7 @@ pub enum PointerCommand {
 }
 
 /// Keyboard input dispatched on the GPUI foreground executor.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InputCommand {
     /// Dispatch one GPUI keystroke string.
@@ -673,7 +673,7 @@ pub struct Highlight {
 }
 
 /// One retained diagnostic log entry.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LogEntry {
     /// Milliseconds since the Unix epoch.
     pub timestamp_ms: u64,
@@ -850,7 +850,7 @@ pub struct FrameSummary {
 }
 
 /// What one view did across the frames of a [`FrameReport`].
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ViewActivity {
     /// GPUI entity that backs the view.
     pub entity_id: u64,
@@ -916,7 +916,7 @@ impl WindowGeometry {
 }
 
 /// A PNG screenshot returned without touching the filesystem.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Screenshot {
     /// MIME type, currently always `image/png`.
     pub mime_type: String,
@@ -959,7 +959,7 @@ pub enum Capability {
 }
 
 /// Discoverable application command exposed as a generic MCP mutation tool.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ApplicationCommandDescriptor {
     /// Stable lowercase command name.
     pub name: String,
@@ -974,7 +974,7 @@ pub struct ApplicationCommandDescriptor {
 }
 
 /// Validated result returned by one application command.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ApplicationCommandResult {
     /// Command name that executed.
     pub name: String,
@@ -1061,7 +1061,7 @@ pub struct LiveDocumentPreview {
 }
 
 /// Bridge capability set advertised in the endpoint descriptor.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Capabilities {
     /// Available features.
     pub available: BTreeSet<Capability>,
@@ -1082,7 +1082,7 @@ impl Capabilities {
 }
 
 /// Private endpoint descriptor written by the GPUI process.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointDescriptor {
     /// Wire protocol version.
     pub protocol_version: u16,

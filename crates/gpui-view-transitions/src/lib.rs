@@ -202,7 +202,7 @@ impl<Old: 'static, Key: Clone + 'static> ViewTransitions<Old, Key> {
 
     /// Finish a frame: forget names no longer drawn, end a transition that
     /// has finished, and keep frames coming while one runs.
-    pub fn end_frame(&self, window: &mut Window) {
+    pub fn end_frame(&self, window: &Window) {
         let mut state = self.state.borrow_mut();
         state.slots.retain(|_, slot| slot.seen > 0);
         let Some(active) = &state.active else {

@@ -161,7 +161,7 @@ pub enum ContextResourceResponse {
 }
 
 /// App-side request delivered to an opt-in structured command handler on the GPUI thread.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApplicationCommandRequest {
     /// List discoverable command metadata.
     List,
@@ -175,7 +175,7 @@ pub enum ApplicationCommandRequest {
 }
 
 /// Typed result returned by an application command handler.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApplicationCommandResponse {
     /// Response to [`ApplicationCommandRequest::List`].
     List(Vec<ApplicationCommandDescriptor>),
@@ -1841,6 +1841,8 @@ mod tests {
             Some(ErrorCode::NotFound),
             "a node the frame does not carry is reported as not found"
         );
+        // the observation, and with it the frame's semantics, lives as long as this handle
+        drop(automation);
     }
 
     #[tokio::test]
