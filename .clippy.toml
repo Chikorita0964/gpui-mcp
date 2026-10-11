@@ -1,0 +1,16 @@
+# After oxc's .clippy.toml (oxc-project/oxc).
+avoid-breaking-exported-api = false
+
+disallowed-methods = [
+    { path = "str::to_ascii_lowercase", reason = "use `cow_utils::CowUtils::cow_to_ascii_lowercase` instead" },
+    { path = "str::to_ascii_uppercase", reason = "use `cow_utils::CowUtils::cow_to_ascii_uppercase` instead" },
+    { path = "str::to_lowercase", reason = "use `cow_utils::CowUtils::cow_to_lowercase` instead" },
+    { path = "str::to_uppercase", reason = "use `cow_utils::CowUtils::cow_to_uppercase` instead" },
+    { path = "str::replace", reason = "use `cow_utils::CowUtils::cow_replace` instead" },
+    { path = "str::replacen", reason = "use `cow_utils::CowUtils::cow_replacen` instead" },
+]
+
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "use `rustc_hash::FxHashMap` instead" },
+    { path = "std::collections::HashSet", reason = "use `rustc_hash::FxHashSet` instead" },
+]

@@ -17,7 +17,7 @@ use htmlswap::{RenderMotionPlan, StyleDeclaration};
 use crate::cascade::Computed;
 
 /// What one element animates this frame.
-#[cfg_attr(not(feature = "gpui-pre"), allow(dead_code))]
+#[cfg_attr(not(feature = "gpui-pre"), expect(dead_code))]
 pub(crate) struct Inputs<'a> {
     /// The element's runtime id, which keys its motion state.
     pub(crate) key: &'a str,
@@ -44,14 +44,8 @@ pub(crate) struct Output {
 
 /// Whether an element's styles involve motion at all.
 pub(crate) fn has_motion(computed: &Computed) -> bool {
-    computed
-        .transitions
-        .iter()
-        .any(htmlswap::motion::Transition::is_active)
-        || computed
-            .animations
-            .iter()
-            .any(|animation| animation.name.is_some())
+    computed.transitions.iter().any(htmlswap::motion::Transition::is_active)
+        || computed.animations.iter().any(|animation| animation.name.is_some())
 }
 
 #[cfg(feature = "gpui-pre")]
@@ -135,8 +129,6 @@ mod kit {
             SharedString::from(suffix.to_owned()),
         )
     }
-
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn animate(inputs: &Inputs<'_>, window: &mut Window, cx: &mut App) -> Output {
         let mut output = Output::default();
         let computed = inputs.computed;
@@ -188,10 +180,7 @@ mod kit {
             let frames = frames(source, animation.easing, inputs.compute_keyframe);
             let timing = timing(animation);
             for property in AnimatableProperty::ALL {
-                if frames
-                    .iter()
-                    .all(|(_, style, _)| property.get(style).is_none())
-                {
+                if frames.iter().all(|(_, style, _)| property.get(style).is_none()) {
                     continue;
                 }
                 let underlying = property
@@ -261,7 +250,7 @@ mod kit {
                 Iterations::Infinite => IterationCount::Infinite,
                 // GPUI Kit plays whole iterations; a fractional count
                 // finishes its last iteration.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 Iterations::Count(count) => IterationCount::Finite(count.max(0.0).ceil() as u64),
             })
             .direction(match animation.direction {
@@ -289,10 +278,7 @@ mod kit {
             .collect::<Vec<_>>();
         if list.first().is_none_or(|frame| frame.offset > 0.0) {
             let ease = frames.first().map_or(Easing::Linear, |frame| frame.2);
-            list.insert(
-                0,
-                Keyframe::new(0.0, value(underlying?)?).ease(easing(ease)),
-            );
+            list.insert(0, Keyframe::new(0.0, value(underlying?)?).ease(easing(ease)));
         }
         if list.last().is_none_or(|frame| frame.offset < 1.0) {
             list.push(Keyframe::new(1.0, value(underlying?)?));

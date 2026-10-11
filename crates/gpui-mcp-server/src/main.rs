@@ -56,9 +56,9 @@ async fn main() -> Result<()> {
     let registry = BridgeRegistry::new(args.endpoint, args.app_id, args.endpoint_dir);
     let artifact_dir = match args.artifact_dir {
         Some(directory) => directory,
-        None => default_runtime_root()?
-            .join("artifacts")
-            .join(format!("server-{}", std::process::id())),
+        None => {
+            default_runtime_root()?.join("artifacts").join(format!("server-{}", std::process::id()))
+        }
     };
     let artifacts = ArtifactStore::open(artifact_dir).map_err(anyhow::Error::msg)?;
     tracing::info!(
@@ -70,10 +70,7 @@ async fn main() -> Result<()> {
         .serve(stdio())
         .await
         .context("could not start MCP stdio transport")?;
-    service
-        .waiting()
-        .await
-        .context("MCP stdio service stopped unexpectedly")?;
+    service.waiting().await.context("MCP stdio service stopped unexpectedly")?;
     Ok(())
 }
 

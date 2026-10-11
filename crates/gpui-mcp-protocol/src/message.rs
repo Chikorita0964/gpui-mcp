@@ -62,12 +62,7 @@ impl NewMessage {
     /// A plain chat message.
     #[must_use]
     pub fn text(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            kind: None,
-            reply_to: None,
-            data: None,
-        }
+        Self { text: text.into(), kind: None, reply_to: None, data: None }
     }
 
     /// Set the kind.
@@ -172,17 +167,11 @@ mod tests {
     fn validation_enforces_bounds() {
         assert_eq!(NewMessage::text("hi").validate(), Ok(()));
         assert!(NewMessage::text(" ").validate().is_err());
-        assert!(
-            NewMessage::text("x".repeat(MAX_MESSAGE_TEXT_BYTES + 1))
-                .validate()
-                .is_err()
-        );
+        assert!(NewMessage::text("x".repeat(MAX_MESSAGE_TEXT_BYTES + 1)).validate().is_err());
         assert!(NewMessage::text("hi").with_kind("Chat").validate().is_err());
         assert!(NewMessage::text("hi").reply_to(0).validate().is_err());
         assert_eq!(
-            NewMessage::text("")
-                .with_data(serde_json::json!({ "selection": ["a"] }))
-                .validate(),
+            NewMessage::text("").with_data(serde_json::json!({ "selection": ["a"] })).validate(),
             Ok(())
         );
     }

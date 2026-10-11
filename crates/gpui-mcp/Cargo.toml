@@ -3,9 +3,7 @@ name = "gpui-mcp"
 description = "A hardened, cross-platform MCP automation bridge for GPUI applications"
 version.workspace = true
 edition.workspace = true
-# Apps link this crate, so it builds on an older Rust than the rest of the
-# workspace. The `msrv` CI job keeps it that way.
-rust-version = "1.95"
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
@@ -29,6 +27,7 @@ test-support = ["gpui?/test-support", "gpui_pre?/test-support", "gpui_fast?/test
 
 [dependencies]
 async-channel.workspace = true
+cow-utils.workspace = true
 gpui = { workspace = true, optional = true }
 gpui_pre = { workspace = true, optional = true }
 gpui_ce = { workspace = true, optional = true }
@@ -37,6 +36,7 @@ gpui-mcp-protocol = { path = "../gpui-mcp-protocol" }
 interprocess.workspace = true
 rand.workspace = true
 raw-window-handle.workspace = true
+rustc-hash.workspace = true
 serde_json.workspace = true
 subtle.workspace = true
 thiserror.workspace = true

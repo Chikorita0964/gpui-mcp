@@ -91,9 +91,7 @@ impl GpuiMcp {
         if args.limit == 0 || usize::from(args.limit) > MAX_MESSAGE_PAGE {
             return Err("limit must be between 1 and 128".to_owned());
         }
-        let page = self
-            .message_page(args.since, args.from.sender(), args.limit, 0, true)
-            .await?;
+        let page = self.message_page(args.since, args.from.sender(), args.limit, 0, true).await?;
         Ok(page_output(&page, false))
     }
 
@@ -128,11 +126,7 @@ impl GpuiMcp {
         Parameters(args): Parameters<SendMessageArgs>,
     ) -> Result<Json<Value>, String> {
         let client = self.client().await?;
-        if !client
-            .descriptor()
-            .capabilities
-            .supports(Capability::Messages)
-        {
+        if !client.descriptor().capabilities.supports(Capability::Messages) {
             return Err(
                 "the selected application does not read messages (it has not registered BridgeHandle::on_message)"
                     .to_owned(),
@@ -164,15 +158,7 @@ impl GpuiMcp {
         mark_read: bool,
     ) -> Result<MessagePage, String> {
         read_page(
-            &self
-                .call(Operation::ReadMessages {
-                    after,
-                    from,
-                    limit,
-                    wait_ms,
-                    mark_read,
-                })
-                .await?,
+            &self.call(Operation::ReadMessages { after, from, limit, wait_ms, mark_read }).await?,
         )
     }
 
@@ -242,11 +228,7 @@ pub(crate) async fn watch_app_messages<F, Fut>(
     loop {
         let poll = async {
             let client = registry.client().await?;
-            let wait_ms = if after.is_some() {
-                SUBSCRIPTION_WAIT_MS
-            } else {
-                0
-            };
+            let wait_ms = if after.is_some() { SUBSCRIPTION_WAIT_MS } else { 0 };
             let page = read_page(
                 &client
                     .call(Operation::ReadMessages {

@@ -1,7 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{AnyElement, App, Window};
+use rustc_hash::FxHashMap;
 
 pub(crate) type ComponentFactory =
     Rc<dyn Fn(&ComponentNode, Vec<AnyElement>, &mut Window, &mut App) -> AnyElement>;
@@ -16,11 +17,7 @@ pub struct ComponentNode {
 
 impl ComponentNode {
     pub(crate) fn new(id: String, tag: String, attributes: BTreeMap<String, String>) -> Self {
-        Self {
-            id,
-            tag,
-            attributes,
-        }
+        Self { id, tag, attributes }
     }
 
     /// Stable standard-HTML ID, or a deterministic generated preview ID.
@@ -51,7 +48,7 @@ impl ComponentNode {
 /// Application-owned custom-element factories for live previews and embedded UIs.
 #[derive(Clone, Default)]
 pub struct ComponentRegistry {
-    factories: HashMap<String, ComponentFactory>,
+    factories: FxHashMap<String, ComponentFactory>,
 }
 
 impl ComponentRegistry {
@@ -89,9 +86,7 @@ impl ComponentRegistry {
 
 fn is_custom_element_name(tag: &str) -> bool {
     let mut characters = tag.chars();
-    characters
-        .next()
-        .is_some_and(|character| character.is_ascii_lowercase())
+    characters.next().is_some_and(|character| character.is_ascii_lowercase())
         && tag.contains('-')
         && !matches!(
             tag,

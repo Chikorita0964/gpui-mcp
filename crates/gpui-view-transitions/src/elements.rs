@@ -20,14 +20,8 @@ pub(crate) type Measured = Rc<Cell<Option<Bounds<Pixels>>>>;
 fn lerp_bounds(from: Bounds<Pixels>, to: Bounds<Pixels>, t: f32) -> Bounds<Pixels> {
     let lerp = |a: Pixels, b: Pixels| a + (b - a) * t;
     Bounds::new(
-        point(
-            lerp(from.origin.x, to.origin.x),
-            lerp(from.origin.y, to.origin.y),
-        ),
-        size(
-            lerp(from.size.width, to.size.width),
-            lerp(from.size.height, to.size.height),
-        ),
+        point(lerp(from.origin.x, to.origin.x), lerp(from.origin.y, to.origin.y)),
+        size(lerp(from.size.width, to.size.width), lerp(from.size.height, to.size.height)),
     )
 }
 
@@ -54,13 +48,7 @@ pub(crate) struct OldRoot {
 
 impl Stage {
     pub(crate) fn new(content: AnyElement, measured: Measured, shift: Shift) -> Self {
-        Self {
-            content,
-            old_root: None,
-            offset: Translate::default(),
-            measured,
-            shift,
-        }
+        Self { content, old_root: None, offset: Translate::default(), measured, shift }
     }
 
     pub(crate) fn transition(mut self, offset: Translate, old_root: OldRoot) -> Self {
@@ -110,8 +98,7 @@ impl Element for Stage {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let outer = self.shift.get();
-        self.measured
-            .set(Some(Bounds::new(bounds.origin - outer, bounds.size)));
+        self.measured.set(Some(Bounds::new(bounds.origin - outer, bounds.size)));
         let offset = resolve(self.offset, bounds.size);
         self.shift.set(outer + offset);
         window.with_element_offset(offset, |window| self.content.prepaint(window, cx));
@@ -173,12 +160,7 @@ impl Morph {
         } else {
             child
         };
-        Self {
-            child,
-            measured,
-            shift,
-            motion,
-        }
+        Self { child, measured, shift, motion }
     }
 }
 
@@ -230,9 +212,9 @@ impl Element for Morph {
         };
         // A group is positioned on its own, not by its ancestors' transition
         // offsets, so those are undone here.
-        let travel = motion.from.map_or_else(Point::default, |from| {
-            (from - layout.origin) * (1.0 - motion.progress)
-        });
+        let travel = motion
+            .from
+            .map_or_else(Point::default, |from| (from - layout.origin) * (1.0 - motion.progress));
         let target = travel + resolve(motion.translate, bounds.size);
         self.shift.set(target);
         window.with_element_offset(target - outer, |window| self.child.prepaint(window, cx));
@@ -272,15 +254,9 @@ impl OldImage {
         progress: f32,
         translate: Translate,
     ) -> AnyElement {
-        deferred(Self {
-            child,
-            from,
-            to,
-            progress,
-            translate,
-        })
-        .with_priority(OLD_LAYER)
-        .into_any_element()
+        deferred(Self { child, from, to, progress, translate })
+            .with_priority(OLD_LAYER)
+            .into_any_element()
     }
 }
 
@@ -313,10 +289,7 @@ impl Element for OldImage {
     ) -> (LayoutId, Self::RequestLayoutState) {
         // Out of flow: the image is laid out on its own when drawn, once the
         // new box has been measured.
-        let style = Style {
-            position: gpui::Position::Absolute,
-            ..Style::default()
-        };
+        let style = Style { position: gpui::Position::Absolute, ..Style::default() };
         (window.request_layout(style, [], cx), ())
     }
 
@@ -329,11 +302,7 @@ impl Element for OldImage {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let to = self
-            .to
-            .as_ref()
-            .and_then(|measured| measured.get())
-            .unwrap_or(self.from);
+        let to = self.to.as_ref().and_then(|measured| measured.get()).unwrap_or(self.from);
         let rect = lerp_bounds(self.from, to, self.progress);
         let origin = rect.origin + resolve(self.translate, rect.size);
         let space = size(

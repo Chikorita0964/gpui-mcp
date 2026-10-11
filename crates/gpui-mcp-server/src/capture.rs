@@ -76,10 +76,7 @@ async fn window_geometry(client: &BridgeClient) -> Result<WindowGeometry, String
 fn capture_geometry(geometry: WindowGeometry) -> CaptureGeometry {
     CaptureGeometry {
         content_bounds: geometry.content_bounds,
-        viewport_size: (
-            geometry.content_bounds.width,
-            geometry.content_bounds.height,
-        ),
+        viewport_size: (geometry.content_bounds.width, geometry.content_bounds.height),
         scale_factor: geometry.scale_factor,
     }
 }
@@ -93,12 +90,7 @@ mod tests {
     #[test]
     fn maps_gpui_client_geometry_without_title_or_coordinate_fallbacks() {
         let geometry = WindowGeometry {
-            content_bounds: Rect {
-                x: 40.0,
-                y: 70.0,
-                width: 900.0,
-                height: 640.0,
-            },
+            content_bounds: Rect { x: 40.0, y: 70.0, width: 900.0, height: 640.0 },
             scale_factor: 1.5,
         };
 

@@ -62,20 +62,9 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout).lines(),
-            next_id: 1,
-        })
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
     }
 
     async fn send(&mut self, message: &JsonValue) -> Result<(), String> {
@@ -119,12 +108,8 @@ impl Server {
     }
 
     async fn call(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        let result = self
-            .request(
-                "tools/call",
-                json!({ "name": tool, "arguments": arguments }),
-            )
-            .await?;
+        let result =
+            self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await?;
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             let content = result.get("content").cloned().unwrap_or(JsonValue::Null);
             return Err(format!("{tool} reported an error: {content}"));
@@ -142,9 +127,7 @@ impl Server {
             .get("content")
             .and_then(JsonValue::as_array)
             .and_then(|content| {
-                content
-                    .iter()
-                    .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+                content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
             })
             .ok_or_else(|| format!("{tool} returned no JSON payload"))?;
         serde_json::from_str(text)
@@ -205,17 +188,13 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory = server
-        .parent()
-        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory =
+        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "the demo fixture is not built at {}",
-            path.display()
-        ))
+        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 
@@ -243,6 +222,10 @@ impl support::FixtureClient for Server {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::print_stderr,
+    reason = "a test without a desktop session says why it passed without opening a window"
+)]
 async fn a_disabled_control_reads_as_disabled_and_follows_the_control_when_it_is_enabled()
 -> Result<(), String> {
     if !has_a_desktop_session() {
@@ -295,9 +278,7 @@ async fn measure(server: &mut Server) -> Result<(), String> {
     // the node, the tree and the reader are all the same across the toggle, and
     // only the application's own state changed.
     for expected in [true, false] {
-        server
-            .call("click_element", json!({ "id": TOGGLE }))
-            .await?;
+        server.call("click_element", json!({ "id": TOGGLE })).await?;
         server
             .call(
                 "wait_for_state",

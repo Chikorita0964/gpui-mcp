@@ -20,13 +20,9 @@ pub(crate) fn executable() -> Result<PathBuf, String> {
 
 fn build() -> Result<PathBuf, String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let wrapper = std::env::var_os("RUSTC_WRAPPER")
-        .filter(|wrapper| !wrapper.is_empty())
-        .and_then(|wrapper| {
-            Path::new(&wrapper)
-                .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-        });
+    let wrapper = std::env::var_os("RUSTC_WRAPPER").filter(|wrapper| !wrapper.is_empty()).and_then(
+        |wrapper| Path::new(&wrapper).file_stem().map(|stem| stem.to_string_lossy().into_owned()),
+    );
     let target = root.join(match wrapper {
         Some(wrapper) => format!("target/kit-fast-{wrapper}"),
         None => "target/kit-fast".to_owned(),
@@ -35,31 +31,19 @@ fn build() -> Result<PathBuf, String> {
         .arg("build")
         .arg("--manifest-path")
         .arg(root.join("examples/gpui-kit/Cargo.toml"))
-        .args([
-            "--no-default-features",
-            "--features",
-            "gpui-fast",
-            "--locked",
-            "--quiet",
-        ])
+        .args(["--no-default-features", "--features", "gpui-fast", "--locked", "--quiet"])
         .arg("--target-dir")
         .arg(&target)
         .status()
         .map_err(|error| format!("could not run cargo to build the fixture: {error}"))?;
     if !status.success() {
-        return Err(format!(
-            "building the GPUI Kit fixture on GPUI Fast failed: {status}"
-        ));
+        return Err(format!("building the GPUI Kit fixture on GPUI Fast failed: {status}"));
     }
-    let path = target
-        .join("debug")
-        .join(format!("gpui-mcp-kit-demo{}", std::env::consts::EXE_SUFFIX));
+    let path =
+        target.join("debug").join(format!("gpui-mcp-kit-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "the GPUI Kit fixture is not at {} after its build",
-            path.display()
-        ))
+        Err(format!("the GPUI Kit fixture is not at {} after its build", path.display()))
     }
 }

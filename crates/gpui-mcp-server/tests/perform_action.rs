@@ -41,6 +41,7 @@
 mod kit_fixture;
 mod support;
 
+use cow_utils::CowUtils as _;
 use serde_json::{Value as JsonValue, json};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -103,20 +104,9 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout).lines(),
-            next_id: 1,
-        })
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
     }
 
     /// The MCP handshake, then wait until the fixture is discoverable.
@@ -179,11 +169,7 @@ impl Server {
 
     /// A `tools/call` reply exactly as it arrived, `isError` included.
     async fn call_raw(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        self.request(
-            "tools/call",
-            json!({ "name": tool, "arguments": arguments }),
-        )
-        .await
+        self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await
     }
 
     /// The structured payload of a tool that answers with JSON.
@@ -364,9 +350,7 @@ fn payload(tool: &str, result: &JsonValue) -> Result<JsonValue, String> {
         .get("content")
         .and_then(JsonValue::as_array)
         .and_then(|content| {
-            content
-                .iter()
-                .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+            content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
         })
         .ok_or_else(|| format!("{tool} returned no JSON payload: {result}"))?;
     serde_json::from_str(text).map_err(|error| format!("{tool} returned unreadable JSON: {error}"))
@@ -386,11 +370,7 @@ fn reply_text(result: &JsonValue) -> String {
                 .collect()
         })
         .unwrap_or_default();
-    if text.is_empty() {
-        result.to_string()
-    } else {
-        text.join("\n")
-    }
+    if text.is_empty() { result.to_string() } else { text.join("\n") }
 }
 
 /// The nodes map of a tree reply.
@@ -415,13 +395,7 @@ fn actions_of(tree: &JsonValue, id: &str) -> Result<Vec<String>, String> {
     node(tree, id)?
         .get("actions")
         .and_then(JsonValue::as_array)
-        .map(|actions| {
-            actions
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
+        .map(|actions| actions.iter().filter_map(JsonValue::as_str).map(str::to_owned).collect())
         .ok_or_else(|| format!("the node {id} carries no actions list"))
 }
 
@@ -474,7 +448,7 @@ fn slider_id(tree: &JsonValue) -> Result<String, String> {
 /// this action`), so the test states the contract rather than one layer's
 /// wording.
 fn says_it_does_not_handle(error: &str) -> bool {
-    let error = error.to_ascii_lowercase();
+    let error = error.cow_to_ascii_lowercase();
     error.contains("does not support") || error.contains("does not handle")
 }
 
@@ -482,7 +456,7 @@ fn says_it_does_not_handle(error: &str) -> bool {
 /// human-readable (`was not found`) or the protocol's code spelling
 /// (`NotFound` / `not_found`).
 fn says_not_found(error: &str) -> bool {
-    let error = error.to_ascii_lowercase();
+    let error = error.cow_to_ascii_lowercase();
     error.contains("not found") || error.contains("not_found")
 }
 
@@ -527,9 +501,8 @@ async fn a_click_changes_the_counter_exactly_once_per_call() -> Result<(), Strin
                 json!({ "ok": true, "action": "action_performed" }),
                 "a handled action is acknowledged with the tool's own success payload"
             );
-            let expected: Vec<String> = (1..=steps)
-                .map(|count| format!("counter changed to {count}"))
-                .collect();
+            let expected: Vec<String> =
+                (1..=steps).map(|count| format!("counter changed to {count}")).collect();
             assert_eq!(
                 server.wait_for_lines(COUNTER_LOG_PREFIX, steps).await?,
                 expected,
@@ -589,10 +562,7 @@ async fn an_action_the_node_does_not_handle_is_refused() -> Result<(), String> {
                 json!({ "id": COUNTER, "action": { "action": "increment" } }),
             )
             .await?;
-        assert!(
-            bare.contains(COUNTER),
-            "the refusal must name the node it refused: {bare}"
-        );
+        assert!(bare.contains(COUNTER), "the refusal must name the node it refused: {bare}");
         assert!(
             says_it_does_not_handle(&bare),
             "the refusal must say the node does not handle the action: {bare}"
@@ -600,10 +570,7 @@ async fn an_action_the_node_does_not_handle_is_refused() -> Result<(), String> {
 
         // A refused action must leave the application alone.
         let lines = server.log_lines(COUNTER_LOG_PREFIX).await?;
-        assert!(
-            lines.is_empty(),
-            "a refused action must not change the counter: {lines:?}"
-        );
+        assert!(lines.is_empty(), "a refused action must not change the counter: {lines:?}");
         Ok(())
     })
     .await
@@ -631,10 +598,7 @@ async fn an_unknown_node_id_is_not_found() -> Result<(), String> {
             refusal.contains(UNKNOWN_ID),
             "the refusal must name the requested id {UNKNOWN_ID}: {refusal}"
         );
-        assert!(
-            says_not_found(&refusal),
-            "the refusal must say the node was not found: {refusal}"
-        );
+        assert!(says_not_found(&refusal), "the refusal must say the node was not found: {refusal}");
         Ok(())
     })
     .await
@@ -663,10 +627,7 @@ async fn a_slider_is_stepped_through_its_own_accessibility_actions() -> Result<(
             "the slider must be visible and laid out inside the fixture window"
         );
         let lines = server.log_lines(VOLUME_LOG_PREFIX).await?;
-        assert!(
-            lines.is_empty(),
-            "the fixture must start with an untouched slider: {lines:?}"
-        );
+        assert!(lines.is_empty(), "the fixture must start with an untouched slider: {lines:?}");
 
         // One call, one step, in each direction.
         for action in ["increment", "increment", "decrement"] {
@@ -684,19 +645,14 @@ async fn a_slider_is_stepped_through_its_own_accessibility_actions() -> Result<(
         }
         assert_eq!(
             server.wait_for_lines(VOLUME_LOG_PREFIX, 3).await?,
-            [
-                "volume changed to 6",
-                "volume changed to 7",
-                "volume changed to 6"
-            ],
+            ["volume changed to 6", "volume changed to 7", "volume changed to 6"],
             "two increments and a decrement must step the volume once per call"
         );
 
         // set_value on a step-only slider steps it with the same actions, from
         // the value the tree publishes: 6 down to 3 is three decrements.
-        let acknowledgement = server
-            .call_json("set_value", json!({ "id": volume, "value": "3" }))
-            .await?;
+        let acknowledgement =
+            server.call_json("set_value", json!({ "id": volume, "value": "3" })).await?;
         assert_eq!(
             acknowledgement,
             json!({ "ok": true, "action": "value_set" }),
@@ -705,11 +661,7 @@ async fn a_slider_is_stepped_through_its_own_accessibility_actions() -> Result<(
         let lines = server.wait_for_lines(VOLUME_LOG_PREFIX, 6).await?;
         assert_eq!(
             lines[3..],
-            [
-                "volume changed to 5",
-                "volume changed to 4",
-                "volume changed to 3"
-            ],
+            ["volume changed to 5", "volume changed to 4", "volume changed to 3"],
             "set_value must step the slider down one decrement at a time"
         );
         Ok(())
