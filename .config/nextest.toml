@@ -1,0 +1,13 @@
+# The server's windowed tests each run on a display of their own (own-display.sh): a window another
+# test opens on a shared display takes focus, and the refresh that follows lands in the frames a
+# test measures (default_replies_unchanged, compact_results) or hides the window native capture
+# looks for (region_capture).
+experimental = ["wrapper-scripts"]
+
+[scripts.wrapper.own-display]
+command = { command-line = ".config/own-display.sh", relative-to = "workspace-root" }
+
+[[profile.default.scripts]]
+platform = 'cfg(target_os = "linux")'
+filter = 'package(gpui-mcp-server) and kind(test)'
+run-wrapper = "own-display"

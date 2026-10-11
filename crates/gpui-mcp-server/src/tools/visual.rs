@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_mcp_capture::{CaptureFailure, CaptureTarget, LiveFrameStream};
@@ -44,9 +45,7 @@ const POINTER_CURSOR: [&[u8]; 24] = [
 impl GpuiMcp {
     #[tool(description = "Capture the full GPUI application window as an in-memory PNG")]
     async fn screenshot(&self) -> Result<CallToolResult, String> {
-        self.capture(ScreenshotTarget::Window)
-            .await
-            .map(image_result)
+        self.capture(ScreenshotTarget::Window).await.map(image_result)
     }
 
     #[tool(description = "Capture a window-relative logical rectangle as an in-memory PNG")]
@@ -55,12 +54,7 @@ impl GpuiMcp {
         Parameters(args): Parameters<RegionArgs>,
     ) -> Result<CallToolResult, String> {
         self.capture(ScreenshotTarget::Region {
-            rect: Rect {
-                x: args.x,
-                y: args.y,
-                width: args.width,
-                height: args.height,
-            },
+            rect: Rect { x: args.x, y: args.y, width: args.width, height: args.height },
         })
         .await
         .map(image_result)
@@ -73,9 +67,7 @@ impl GpuiMcp {
     ) -> Result<CallToolResult, String> {
         let tree = self.tree().await?;
         let rect = require_bounds(get_node(&tree, &args.id)?)?;
-        self.capture(ScreenshotTarget::Region { rect })
-            .await
-            .map(image_result)
+        self.capture(ScreenshotTarget::Region { rect }).await.map(image_result)
     }
 
     #[tool(description = "Capture and save a full-window PNG under a bounded in-memory name")]
@@ -132,37 +124,26 @@ impl GpuiMcp {
         let target = self.client().await?;
         let descriptor = target.descriptor();
         if !descriptor.capabilities.supports(Capability::Screenshot) {
-            return Err(
-                "the application platform does not expose native window capture".to_owned(),
-            );
+            return Err("the application platform does not expose native window capture".to_owned());
         }
         let window = descriptor.native_window_id.ok_or_else(|| {
             "the application did not publish a native window identifier".to_owned()
         })?;
         let capture_target = CaptureTarget::new(descriptor.pid, window);
-        if self
-            .recording_task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_some()
-        {
+        if self.recording_task.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_some() {
             return Err("a video recording is already active".to_owned());
         }
 
         let pointer = self.current_pointer_location().await?;
-        *self
-            .pointer
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = pointer;
+        *self.pointer.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = pointer;
         let root = largest_root_bounds(&self.tree().await?);
         let include_pointer = args.include_pointer;
-        let pointer_state = self.pointer.clone();
+        let pointer_state = Arc::clone(&self.pointer);
         let (stream, first) = tokio::task::spawn_blocking(move || {
             let mut stream = LiveFrameStream::open(capture_target, args.frames_per_second)
                 .map_err(|error| error.to_string())?;
-            let frame = stream
-                .next_frame(Duration::from_secs(5))
-                .map_err(|error| error.to_string())?;
+            let frame =
+                stream.next_frame(Duration::from_secs(5)).map_err(|error| error.to_string())?;
             Ok::<_, String>((stream, frame))
         })
         .await
@@ -189,7 +170,7 @@ impl GpuiMcp {
 
         let session_id = self
             .recording_session
-            .fetch_update(
+            .try_update(
                 std::sync::atomic::Ordering::Relaxed,
                 std::sync::atomic::Ordering::Relaxed,
                 |current| current.checked_add(1),
@@ -212,14 +193,8 @@ impl GpuiMcp {
             }
             .run()
         });
-        *self
-            .recording_task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(super::RecordingTask {
-            cancellation,
-            join,
-            session_id,
-        });
+        *self.recording_task.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(super::RecordingTask { cancellation, join, session_id });
 
         Ok(object_output(serde_json::json!({
             "ok": true,
@@ -295,7 +270,7 @@ struct VideoCaptureTask {
     stream: LiveFrameStream,
     latest_frame: image::RgbaImage,
     worker_cancellation: super::CancellationToken,
-    pointer: std::sync::Arc<std::sync::Mutex<Point>>,
+    pointer: Arc<std::sync::Mutex<Point>>,
     root: Option<Rect>,
     include_pointer: bool,
     frames_per_second: u8,
@@ -343,9 +318,7 @@ impl VideoCaptureTask {
             }
             let mut output_frame = latest_frame.clone();
             if include_pointer && let Some(root) = root {
-                let point = *pointer
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let point = *pointer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 draw_pointer(&mut output_frame, point, root);
             }
             let sample_at = Instant::now();
@@ -420,14 +393,12 @@ fn draw_pointer_marker(image: &mut image::RgbaImage, x: i32, y: i32) -> bool {
     true
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation)]
 fn rounded_i32(value: f64) -> i32 {
     if value.is_nan() {
         return 0;
     }
-    value
-        .round()
-        .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+    value.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
 }
 
 pub(super) fn router() -> ToolRouter<GpuiMcp> {

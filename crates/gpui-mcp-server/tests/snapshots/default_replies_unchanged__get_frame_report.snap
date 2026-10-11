@@ -1,0 +1,138 @@
+---
+source: crates/gpui-mcp-server/tests/default_replies_unchanged.rs
+expression: "snapshot_text(tool, canonical)?"
+---
+{
+  "content": [
+    {
+      "text": "{\"after_frame_count\":0,\"frames\":[{\"app_draw_ms\":0,\"bridge_ms\":0,\"draw_ms\":0,\"frame_count\":0,\"interval_ms\":0,\"prepaint_ms\":0,\"rendered_views\":[{\"cause\":\"uncached\",\"entity_id\":4294967297,\"outcome\":\"rendered\",\"type_name\":\"gpui_mcp_demo::Demo\"},{\"cause\":\"notified\",\"entity_id\":4294967298,\"outcome\":\"rendered\",\"type_name\":\"gpui_mcp_demo::ProbeRegion\"}],\"root_paint_ms\":0,\"views_rendered\":0,\"views_reused\":0}],\"last_frame_views\":[{\"cause\":\"uncached\",\"entity_id\":4294967297,\"outcome\":\"rendered\",\"type_name\":\"gpui_mcp_demo::Demo\"},{\"cause\":\"notified\",\"entity_id\":4294967298,\"outcome\":\"rendered\",\"type_name\":\"gpui_mcp_demo::ProbeRegion\"},{\"entity_id\":4294967299,\"outcome\":\"reused\",\"type_name\":\"gpui_mcp_demo::ProbeRegion\"}],\"latest_frame_count\":0,\"summary\":{\"app_draw_ms\":{\"count\":1,\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0},\"bridge_ms\":{\"count\":1,\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0},\"draw_ms\":{\"count\":1,\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0},\"frames\":1,\"interval_ms\":{\"count\":1,\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0},\"prepaint_ms\":{\"count\":1,\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0},\"root_paint_ms\":{\"count\":1,\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0},\"views_rendered\":0,\"views_reused\":0},\"truncated\":false,\"views\":[{\"causes\":{\"uncached\":1},\"entity_id\":4294967297,\"rendered\":0,\"reused\":0,\"type_name\":\"gpui_mcp_demo::Demo\"},{\"causes\":{\"notified\":1},\"entity_id\":4294967298,\"rendered\":0,\"reused\":0,\"type_name\":\"gpui_mcp_demo::ProbeRegion\"},{\"causes\":{},\"entity_id\":4294967299,\"rendered\":0,\"reused\":0,\"type_name\":\"gpui_mcp_demo::ProbeRegion\"}]}",
+      "type": "text"
+    }
+  ],
+  "isError": false,
+  "structuredContent": {
+    "after_frame_count": 0,
+    "frames": [
+      {
+        "app_draw_ms": 0,
+        "bridge_ms": 0,
+        "draw_ms": 0,
+        "frame_count": 0,
+        "interval_ms": 0,
+        "prepaint_ms": 0,
+        "rendered_views": [
+          {
+            "cause": "uncached",
+            "entity_id": 4294967297,
+            "outcome": "rendered",
+            "type_name": "gpui_mcp_demo::Demo"
+          },
+          {
+            "cause": "notified",
+            "entity_id": 4294967298,
+            "outcome": "rendered",
+            "type_name": "gpui_mcp_demo::ProbeRegion"
+          }
+        ],
+        "root_paint_ms": 0,
+        "views_rendered": 0,
+        "views_reused": 0
+      }
+    ],
+    "last_frame_views": [
+      {
+        "cause": "uncached",
+        "entity_id": 4294967297,
+        "outcome": "rendered",
+        "type_name": "gpui_mcp_demo::Demo"
+      },
+      {
+        "cause": "notified",
+        "entity_id": 4294967298,
+        "outcome": "rendered",
+        "type_name": "gpui_mcp_demo::ProbeRegion"
+      },
+      {
+        "entity_id": 4294967299,
+        "outcome": "reused",
+        "type_name": "gpui_mcp_demo::ProbeRegion"
+      }
+    ],
+    "latest_frame_count": 0,
+    "summary": {
+      "app_draw_ms": {
+        "count": 1,
+        "max": 0,
+        "mean": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "bridge_ms": {
+        "count": 1,
+        "max": 0,
+        "mean": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "draw_ms": {
+        "count": 1,
+        "max": 0,
+        "mean": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "frames": 1,
+      "interval_ms": {
+        "count": 1,
+        "max": 0,
+        "mean": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "prepaint_ms": {
+        "count": 1,
+        "max": 0,
+        "mean": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "root_paint_ms": {
+        "count": 1,
+        "max": 0,
+        "mean": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "views_rendered": 0,
+      "views_reused": 0
+    },
+    "truncated": false,
+    "views": [
+      {
+        "causes": {
+          "uncached": 1
+        },
+        "entity_id": 4294967297,
+        "rendered": 0,
+        "reused": 0,
+        "type_name": "gpui_mcp_demo::Demo"
+      },
+      {
+        "causes": {
+          "notified": 1
+        },
+        "entity_id": 4294967298,
+        "rendered": 0,
+        "reused": 0,
+        "type_name": "gpui_mcp_demo::ProbeRegion"
+      },
+      {
+        "causes": {},
+        "entity_id": 4294967299,
+        "rendered": 0,
+        "reused": 0,
+        "type_name": "gpui_mcp_demo::ProbeRegion"
+      }
+    ]
+  }
+}

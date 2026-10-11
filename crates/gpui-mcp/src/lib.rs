@@ -9,17 +9,29 @@
 #[cfg(any(
     all(feature = "zed", feature = "gpui-pre"),
     all(feature = "zed", feature = "gpui-ce"),
+    all(feature = "zed", feature = "gpui-fast"),
     all(feature = "gpui-pre", feature = "gpui-ce"),
+    all(feature = "gpui-pre", feature = "gpui-fast"),
+    all(feature = "gpui-ce", feature = "gpui-fast"),
 ))]
 compile_error!(
     "select one GPUI backend: use default-features = false with features = [\"gpui-pre\"] \
-     for gpui-kit, or features = [\"gpui-ce\"] for gpui-ce"
+     or [\"gpui-fast\"] for gpui-kit, or features = [\"gpui-ce\"] for gpui-ce"
 );
-#[cfg(not(any(feature = "zed", feature = "gpui-pre", feature = "gpui-ce")))]
-compile_error!("select a GPUI backend: enable `zed` (the default), `gpui-pre` or `gpui-ce`");
+#[cfg(not(any(
+    feature = "zed",
+    feature = "gpui-pre",
+    feature = "gpui-ce",
+    feature = "gpui-fast"
+)))]
+compile_error!(
+    "select a GPUI backend: enable `zed` (the default), `gpui-pre`, `gpui-fast` or `gpui-ce`"
+);
 
 #[cfg(feature = "gpui-ce")]
 extern crate gpui_ce as gpui;
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-pre")]
 extern crate gpui_pre as gpui;
 
@@ -188,10 +200,7 @@ impl Automation {
     ) -> Result<Annotation, BridgeError> {
         let mut applied = self.set_annotations(vec![spec], None, window)?;
         applied.pop().ok_or_else(|| {
-            BridgeError::new(
-                gpui_mcp_protocol::ErrorCode::Internal,
-                "annotation was not applied",
-            )
+            BridgeError::new(gpui_mcp_protocol::ErrorCode::Internal, "annotation was not applied")
         })
     }
 
@@ -208,9 +217,7 @@ impl Automation {
         replace_group: Option<&str>,
         window: &mut gpui::Window,
     ) -> Result<Vec<Annotation>, BridgeError> {
-        let applied = self
-            .state
-            .upsert_annotations(specs, replace_group, AnnotationSource::App)?;
+        let applied = self.state.upsert_annotations(specs, replace_group, AnnotationSource::App)?;
         window.request_frame();
         Ok(applied)
     }
@@ -277,8 +284,7 @@ impl Automation {
         from: Option<MessageSender>,
         limit: usize,
     ) -> MessagePage {
-        self.state
-            .read_messages(after, from, limit, Some(MessageSender::App))
+        self.state.read_messages(after, from, limit, Some(MessageSender::App))
     }
 
     /// Most recent log entries in chronological order, filtered to `min_level`

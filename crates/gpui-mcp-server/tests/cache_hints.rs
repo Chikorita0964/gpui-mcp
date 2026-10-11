@@ -40,14 +40,8 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "the server has no stdout".to_owned())?;
+        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
         Ok(Self {
             child,
             stdin,
@@ -175,15 +169,11 @@ async fn legacy_protocol_results_omit_cache_hints() -> Result<(), String> {
         )
         .await?;
     assert_eq!(
-        initialize
-            .get("protocolVersion")
-            .and_then(JsonValue::as_str),
+        initialize.get("protocolVersion").and_then(JsonValue::as_str),
         Some(LEGACY_VERSION),
         "the server must negotiate {LEGACY_VERSION}, got {initialize}"
     );
-    server
-        .notify("notifications/initialized", json!({}))
-        .await?;
+    server.notify("notifications/initialized", json!({})).await?;
 
     let tools = server.request("tools/list", json!({})).await?;
     assert!(

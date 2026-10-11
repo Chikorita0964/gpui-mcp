@@ -27,7 +27,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Current wire protocol version.
-pub const PROTOCOL_VERSION: u16 = 14;
+///
+/// 15 adds the semantic accessibility actions to upstream's 14, so a peer that offers 14 is
+/// refused with [`ErrorCode::ProtocolMismatch`] instead of being sent frames it cannot read.
+pub const PROTOCOL_VERSION: u16 = 15;
 /// Maximum accepted request frame, including its four-byte length prefix.
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 /// Maximum accepted response frame. Screenshots are base64 encoded inside it.
@@ -192,24 +195,9 @@ macro_rules! nonzero_id {
     };
 }
 
-nonzero_id!(
-    ProcessId,
-    u32,
-    NonZeroU32,
-    "operating-system process identifier"
-);
-nonzero_id!(
-    InstanceId,
-    u64,
-    NonZeroU64,
-    "bridge-lifetime instance identifier"
-);
-nonzero_id!(
-    NativeWindowId,
-    u32,
-    NonZeroU32,
-    "operating-system window identifier"
-);
+nonzero_id!(ProcessId, u32, NonZeroU32, "operating-system process identifier");
+nonzero_id!(InstanceId, u64, NonZeroU64, "bridge-lifetime instance identifier");
+nonzero_id!(NativeWindowId, u32, NonZeroU32, "operating-system window identifier");
 nonzero_id!(RequestId, u64, NonZeroU64, "wire request identifier");
 
 /// Resolve the private cross-process runtime root used by every workspace binary.
@@ -224,10 +212,7 @@ nonzero_id!(RequestId, u64, NonZeroU64, "wire request identifier");
 pub fn runtime_root() -> Result<PathBuf, RuntimePathError> {
     let base = BaseDirs::new().ok_or(RuntimePathError::Unavailable)?;
     #[cfg(target_os = "linux")]
-    let root = base
-        .runtime_dir()
-        .ok_or(RuntimePathError::Unavailable)?
-        .to_path_buf();
+    let root = base.runtime_dir().ok_or(RuntimePathError::Unavailable)?.to_path_buf();
     #[cfg(not(target_os = "linux"))]
     let root = base.data_local_dir().to_path_buf();
     Ok(root.join("gpui-mcp"))
@@ -286,10 +271,7 @@ impl Rect {
     /// Returns the center of this rectangle.
     #[must_use]
     pub fn center(self) -> Point {
-        Point {
-            x: self.x + self.width / 2.0,
-            y: self.y + self.height / 2.0,
-        }
+        Point { x: self.x + self.width / 2.0, y: self.y + self.height / 2.0 }
     }
 
     /// Returns whether this rectangle contains the supplied point.
@@ -395,6 +377,32 @@ pub enum NodeAction {
     SetValue,
     /// Scroll at the node's center.
     Scroll,
+    /// Step a numeric value up or down by one step.
+    Step,
+    /// Expand or collapse the node.
+    Expand,
+}
+
+/// Accessibility action the bridge performs on a node the way assistive
+/// technology requests it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum SemanticAction {
+    /// Activate the node.
+    Click,
+    /// Increase a numeric value by one step.
+    Increment,
+    /// Decrease a numeric value by one step.
+    Decrement,
+    /// Expand the node.
+    Expand,
+    /// Collapse the node.
+    Collapse,
+    /// Replace the node's value.
+    SetValue {
+        /// New value.
+        value: String,
+    },
 }
 
 /// Optional editable text metadata supplied by the application.
@@ -1017,10 +1025,7 @@ impl LiveDocumentSource {
     /// Combined UTF-8 source byte length.
     #[must_use]
     pub fn byte_len(&self) -> usize {
-        self.html
-            .len()
-            .saturating_add(self.css.len())
-            .saturating_add(self.bindings_ron.len())
+        self.html.len().saturating_add(self.css.len()).saturating_add(self.bindings_ron.len())
     }
 }
 
@@ -1066,9 +1071,7 @@ impl Capabilities {
     /// Create a capability set from an iterator.
     #[must_use]
     pub fn new(capabilities: impl IntoIterator<Item = Capability>) -> Self {
-        Self {
-            available: capabilities.into_iter().collect(),
-        }
+        Self { available: capabilities.into_iter().collect() }
     }
 
     /// Return whether one feature is available.
@@ -1159,6 +1162,14 @@ pub enum Operation {
     Focus {
         /// Stable semantic node identifier.
         node_id: String,
+    },
+    /// Perform an accessibility action on one element from the current
+    /// semantic frame, the way assistive technology requests it.
+    PerformAction {
+        /// Stable semantic node identifier.
+        node_id: String,
+        /// Action to perform.
+        action: SemanticAction,
     },
     /// Wait without polling until a newer semantic tree is published.
     WaitForTree {
@@ -1373,10 +1384,7 @@ impl BridgeError {
     /// Construct a new sanitized error.
     #[must_use]
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-        }
+        Self { code, message: message.into() }
     }
 }
 
@@ -1397,23 +1405,13 @@ impl WireResponse {
     /// Construct a successful response.
     #[must_use]
     pub fn success(request_id: RequestId, result: BridgeResult) -> Self {
-        Self {
-            protocol_version: PROTOCOL_VERSION,
-            request_id,
-            result: Some(result),
-            error: None,
-        }
+        Self { protocol_version: PROTOCOL_VERSION, request_id, result: Some(result), error: None }
     }
 
     /// Construct an error response.
     #[must_use]
     pub fn failure(request_id: RequestId, error: BridgeError) -> Self {
-        Self {
-            protocol_version: PROTOCOL_VERSION,
-            request_id,
-            result: None,
-            error: Some(error),
-        }
+        Self { protocol_version: PROTOCOL_VERSION, request_id, result: None, error: Some(error) }
     }
 }
 
@@ -1421,38 +1419,15 @@ impl WireResponse {
 mod tests {
     use super::{
         AppId, Capabilities, EndpointDescriptor, InstanceId, LocalEndpoint, NativeWindowId,
-        PROTOCOL_VERSION, Point, ProcessId, Rect, RequestId, WireResponse,
+        NodeAction, Operation, PROTOCOL_VERSION, Point, ProcessId, Rect, RequestId, SemanticAction,
+        WireResponse,
     };
 
     #[test]
     fn rectangle_validation_rejects_non_finite_and_negative_values() {
-        assert!(
-            Rect {
-                x: 0.0,
-                y: 1.0,
-                width: 2.0,
-                height: 3.0,
-            }
-            .is_valid()
-        );
-        assert!(
-            !Rect {
-                x: f32::NAN,
-                y: 0.0,
-                width: 1.0,
-                height: 1.0,
-            }
-            .is_valid()
-        );
-        assert!(
-            !Rect {
-                x: 0.0,
-                y: 0.0,
-                width: -1.0,
-                height: 1.0,
-            }
-            .is_valid()
-        );
+        assert!(Rect { x: 0.0, y: 1.0, width: 2.0, height: 3.0 }.is_valid());
+        assert!(!Rect { x: f32::NAN, y: 0.0, width: 1.0, height: 1.0 }.is_valid());
+        assert!(!Rect { x: 0.0, y: 0.0, width: -1.0, height: 1.0 }.is_valid());
     }
 
     #[test]
@@ -1469,10 +1444,7 @@ mod tests {
             state.read_only = Some(expected);
             let json = serde_json::to_value(&state)?;
             assert_eq!(json["read_only"], expected);
-            assert_eq!(
-                serde_json::from_value::<super::NodeState>(json)?.read_only,
-                Some(expected)
-            );
+            assert_eq!(serde_json::from_value::<super::NodeState>(json)?.read_only, Some(expected));
         }
         Ok(())
     }
@@ -1492,13 +1464,7 @@ mod tests {
     #[test]
     fn point_validation_rejects_infinity() {
         assert!(Point { x: 1.0, y: 2.0 }.is_valid());
-        assert!(
-            !Point {
-                x: f32::INFINITY,
-                y: 2.0,
-            }
-            .is_valid()
-        );
+        assert!(!Point { x: f32::INFINITY, y: 2.0 }.is_valid());
     }
 
     #[test]
@@ -1509,9 +1475,7 @@ mod tests {
             app_name: "App".to_owned(),
             instance_id: InstanceId::new(1).ok_or("instance ID must be nonzero")?,
             pid: ProcessId::new(2).ok_or("process ID must be nonzero")?,
-            endpoint: LocalEndpoint::Namespaced {
-                name: "test".to_owned(),
-            },
+            endpoint: LocalEndpoint::Namespaced { name: "test".to_owned() },
             token: "secret".to_owned(),
             native_window_id: NativeWindowId::new(3),
             capabilities: Capabilities::default(),
@@ -1537,5 +1501,69 @@ mod tests {
             "capabilities": { "available": [] }
         });
         assert!(serde_json::from_value::<EndpointDescriptor>(value).is_err());
+    }
+
+    #[test]
+    fn semantic_action_round_trips_every_variant() -> Result<(), Box<dyn std::error::Error>> {
+        for action in [
+            SemanticAction::Click,
+            SemanticAction::Increment,
+            SemanticAction::Decrement,
+            SemanticAction::Expand,
+            SemanticAction::Collapse,
+        ] {
+            let value = serde_json::to_value(&action)?;
+            assert_eq!(serde_json::from_value::<SemanticAction>(value)?, action);
+        }
+        let set_value = SemanticAction::SetValue { value: "42".to_owned() };
+        let value = serde_json::to_value(&set_value)?;
+        assert_eq!(serde_json::from_value::<SemanticAction>(value)?, set_value);
+        Ok(())
+    }
+
+    #[test]
+    fn semantic_action_wire_shape_is_tagged_and_snake_case()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            serde_json::to_value(SemanticAction::Increment)?,
+            serde_json::json!({ "action": "increment" })
+        );
+        assert_eq!(
+            serde_json::to_value(SemanticAction::SetValue { value: "42".to_owned() })?,
+            serde_json::json!({ "action": "set_value", "value": "42" })
+        );
+        assert!(serde_json::from_value::<SemanticAction>(serde_json::json!({})).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn perform_action_operation_carries_its_node_and_action()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let operation = Operation::PerformAction {
+            node_id: "slider".to_owned(),
+            action: SemanticAction::Increment,
+        };
+        let value = serde_json::to_value(&operation)?;
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "kind": "perform_action",
+                "node_id": "slider",
+                "action": { "action": "increment" },
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<Operation>(value)?,
+            operation,
+            "the operation round trips"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn node_action_wire_names_are_snake_case() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(serde_json::to_value(NodeAction::Step)?, serde_json::json!("step"));
+        assert_eq!(serde_json::to_value(NodeAction::Expand)?, serde_json::json!("expand"));
+        Ok(())
     }
 }

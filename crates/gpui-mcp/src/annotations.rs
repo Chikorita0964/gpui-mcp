@@ -64,10 +64,7 @@ impl AnnotationStore {
             }
         }
         if replace_group.is_some_and(|group| !gpui_mcp_protocol::is_valid_annotation_name(group)) {
-            return Err(BridgeError::new(
-                ErrorCode::InvalidRequest,
-                "annotation group is invalid",
-            ));
+            return Err(BridgeError::new(ErrorCode::InvalidRequest, "annotation group is invalid"));
         }
         let survivors = self
             .entries
@@ -86,8 +83,7 @@ impl AnnotationStore {
         }
 
         if let Some(group) = replace_group {
-            self.entries
-                .retain(|entry| entry.annotation.group.as_deref() != Some(group));
+            self.entries.retain(|entry| entry.annotation.group.as_deref() != Some(group));
         }
         let mut applied = Vec::with_capacity(specs.len());
         for spec in specs {
@@ -108,17 +104,10 @@ impl AnnotationStore {
                 resolved: None,
             };
             applied.push(annotation.clone());
-            let entry = Entry {
-                annotation,
-                ttl: spec.ttl_ms.map(Duration::from_millis),
-                expires_at: None,
-            };
+            let entry =
+                Entry { annotation, ttl: spec.ttl_ms.map(Duration::from_millis), expires_at: None };
             // Replacing keeps the annotation's place in the draw order.
-            match self
-                .entries
-                .iter_mut()
-                .find(|existing| existing.annotation.id == id)
-            {
+            match self.entries.iter_mut().find(|existing| existing.annotation.id == id) {
                 Some(existing) => *existing = entry,
                 None => self.entries.push(entry),
             }
@@ -139,10 +128,8 @@ impl AnnotationStore {
     /// Remove annotations by id and return how many were removed.
     pub(crate) fn remove(&mut self, ids: &[impl AsRef<str>]) -> usize {
         let before = self.entries.len();
-        self.entries.retain(|entry| {
-            !ids.iter()
-                .any(|id| id.as_ref() == entry.annotation.id.as_str())
-        });
+        self.entries
+            .retain(|entry| !ids.iter().any(|id| id.as_ref() == entry.annotation.id.as_str()));
         before - self.entries.len()
     }
 
@@ -150,19 +137,16 @@ impl AnnotationStore {
     pub(crate) fn clear(&mut self, group: Option<&str>) -> usize {
         let before = self.entries.len();
         match group {
-            Some(group) => self
-                .entries
-                .retain(|entry| entry.annotation.group.as_deref() != Some(group)),
+            Some(group) => {
+                self.entries.retain(|entry| entry.annotation.group.as_deref() != Some(group));
+            }
             None => self.entries.clear(),
         }
         before - self.entries.len()
     }
 
     pub(crate) fn list(&self) -> Vec<Annotation> {
-        self.entries
-            .iter()
-            .map(|entry| entry.annotation.clone())
-            .collect()
+        self.entries.iter().map(|entry| entry.annotation.clone()).collect()
     }
 
     /// Start the lifetime of annotations seen for the first time, then drop
@@ -176,17 +160,13 @@ impl AnnotationStore {
             }
         }
         let before = self.entries.len();
-        self.entries
-            .retain(|entry| entry.expires_at.is_none_or(|deadline| deadline > now));
+        self.entries.retain(|entry| entry.expires_at.is_none_or(|deadline| deadline > now));
         before != self.entries.len()
     }
 
     /// The soonest moment an annotation expires.
     pub(crate) fn next_expiry(&self) -> Option<Instant> {
-        self.entries
-            .iter()
-            .filter_map(|entry| entry.expires_at)
-            .min()
+        self.entries.iter().filter_map(|entry| entry.expires_at).min()
     }
 
     pub(crate) fn paint_items(&self) -> Vec<PaintItem> {
@@ -231,12 +211,7 @@ mod tests {
     ) -> Result<Vec<String>, ErrorCode> {
         store
             .upsert(specs, group, AnnotationSource::Agent, 1)
-            .map(|applied| {
-                applied
-                    .into_iter()
-                    .map(|annotation| annotation.id)
-                    .collect()
-            })
+            .map(|applied| applied.into_iter().map(|annotation| annotation.id).collect())
             .map_err(|error| error.code)
     }
 
@@ -253,11 +228,7 @@ mod tests {
         )?;
         upsert(
             &mut store,
-            vec![
-                AnnotationSpec::node("c")
-                    .with_id("first")
-                    .with_label("moved"),
-            ],
+            vec![AnnotationSpec::node("c").with_id("first").with_label("moved")],
             None,
         )?;
         let list = store.list();
@@ -271,11 +242,7 @@ mod tests {
     #[test]
     fn generated_ids_never_collide_with_chosen_ones() -> Result<(), ErrorCode> {
         let mut store = AnnotationStore::default();
-        upsert(
-            &mut store,
-            vec![AnnotationSpec::node("a").with_id("annotation-1")],
-            None,
-        )?;
+        upsert(&mut store, vec![AnnotationSpec::node("a").with_id("annotation-1")], None)?;
         let ids = upsert(&mut store, vec![AnnotationSpec::node("b")], None)?;
         assert_eq!(ids, ["annotation-2"]);
         Ok(())
@@ -292,21 +259,13 @@ mod tests {
             ],
             None,
         )?;
-        upsert(
-            &mut store,
-            vec![AnnotationSpec::node("c").with_group("review")],
-            Some("review"),
-        )?;
+        upsert(&mut store, vec![AnnotationSpec::node("c").with_group("review")], Some("review"))?;
         let targets: Vec<_> = store.list().into_iter().map(|a| a.id).collect();
         assert_eq!(targets, ["keep", "annotation-2"]);
 
         // An invalid spec leaves everything untouched, including the group.
         assert_eq!(
-            upsert(
-                &mut store,
-                vec![AnnotationSpec::node("d").with_color("red")],
-                Some("review"),
-            ),
+            upsert(&mut store, vec![AnnotationSpec::node("d").with_color("red")], Some("review"),),
             Err(ErrorCode::InvalidRequest)
         );
         assert_eq!(store.list().len(), 2);
@@ -316,20 +275,12 @@ mod tests {
     #[test]
     fn capacity_is_bounded() -> Result<(), ErrorCode> {
         let mut store = AnnotationStore::default();
-        let specs = (0..MAX_ANNOTATIONS)
-            .map(|index| AnnotationSpec::node(format!("n{index}")))
-            .collect();
+        let specs =
+            (0..MAX_ANNOTATIONS).map(|index| AnnotationSpec::node(format!("n{index}"))).collect();
         upsert(&mut store, specs, None)?;
-        assert_eq!(
-            upsert(&mut store, vec![AnnotationSpec::node("x")], None),
-            Err(ErrorCode::Busy)
-        );
+        assert_eq!(upsert(&mut store, vec![AnnotationSpec::node("x")], None), Err(ErrorCode::Busy));
         // Replacing an existing id needs no extra room.
-        upsert(
-            &mut store,
-            vec![AnnotationSpec::node("x").with_id("annotation-1")],
-            None,
-        )?;
+        upsert(&mut store, vec![AnnotationSpec::node("x").with_id("annotation-1")], None)?;
         assert_eq!(
             upsert(
                 &mut store,
@@ -352,9 +303,7 @@ mod tests {
             .upsert(
                 vec![
                     AnnotationSpec::node("a").with_id("short").with_ttl_ms(100),
-                    AnnotationSpec::node("b")
-                        .with_id("long")
-                        .with_ttl_ms(10_000),
+                    AnnotationSpec::node("b").with_id("long").with_ttl_ms(10_000),
                     AnnotationSpec::node("c").with_id("forever"),
                 ],
                 None,
@@ -363,16 +312,9 @@ mod tests {
             )
             .map_err(|error| error.code)?;
         assert_eq!(store.list()[0].expires_ms, Some(1_100));
-        assert_eq!(
-            store.next_expiry(),
-            None,
-            "lifetimes start when first drawn"
-        );
+        assert_eq!(store.next_expiry(), None, "lifetimes start when first drawn");
         assert!(!store.prune_expired(start));
-        assert_eq!(
-            store.next_expiry(),
-            Some(start + Duration::from_millis(100))
-        );
+        assert_eq!(store.next_expiry(), Some(start + Duration::from_millis(100)));
         assert!(!store.prune_expired(start + Duration::from_millis(99)));
         assert!(store.prune_expired(start + Duration::from_millis(100)));
         let ids: Vec<_> = store.list().into_iter().map(|a| a.id).collect();
@@ -392,16 +334,8 @@ mod tests {
             ],
             None,
         )?;
-        let rect = Rect {
-            x: 1.0,
-            y: 2.0,
-            width: 3.0,
-            height: 4.0,
-        };
-        store.set_resolved(&BTreeMap::from([
-            ("a".to_owned(), Some(rect)),
-            ("c".to_owned(), None),
-        ]));
+        let rect = Rect { x: 1.0, y: 2.0, width: 3.0, height: 4.0 };
+        store.set_resolved(&BTreeMap::from([("a".to_owned(), Some(rect)), ("c".to_owned(), None)]));
         assert_eq!(store.list()[0].resolved, Some(rect));
         assert_eq!(store.remove(&["a", "missing"]), 1);
         assert_eq!(store.clear(Some("g")), 1);

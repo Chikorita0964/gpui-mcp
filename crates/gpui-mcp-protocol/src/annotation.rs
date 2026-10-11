@@ -90,9 +90,7 @@ impl AnnotationSpec {
     /// Annotate a semantic node with the default color and an outline.
     #[must_use]
     pub fn node(node_id: impl Into<String>) -> Self {
-        Self::new(AnnotationTarget::Node {
-            node_id: node_id.into(),
-        })
+        Self::new(AnnotationTarget::Node { node_id: node_id.into() })
     }
 
     /// Annotate a fixed window-relative rectangle.
@@ -161,18 +159,10 @@ impl AnnotationSpec {
     ///
     /// Returns a static explanation of the first violated bound.
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self
-            .id
-            .as_deref()
-            .is_some_and(|id| !is_valid_annotation_name(id))
-        {
+        if self.id.as_deref().is_some_and(|id| !is_valid_annotation_name(id)) {
             return Err("annotation id is invalid");
         }
-        if self
-            .group
-            .as_deref()
-            .is_some_and(|group| !is_valid_annotation_name(group))
-        {
+        if self.group.as_deref().is_some_and(|group| !is_valid_annotation_name(group)) {
             return Err("annotation group is invalid");
         }
         match &self.target {
@@ -198,10 +188,7 @@ impl AnnotationSpec {
         }) {
             return Err("annotation label must be at most 128 bytes without control characters");
         }
-        if self
-            .ttl_ms
-            .is_some_and(|ttl| ttl == 0 || ttl > MAX_ANNOTATION_TTL_MS)
-        {
+        if self.ttl_ms.is_some_and(|ttl| ttl == 0 || ttl > MAX_ANNOTATION_TTL_MS) {
             return Err("annotation ttl_ms must be between 1 and 3600000");
         }
         Ok(())
@@ -274,35 +261,17 @@ mod tests {
 
     #[test]
     fn validation_rejects_each_bound() {
-        assert!(
-            AnnotationSpec::node("a")
-                .with_color("#fff")
-                .validate()
-                .is_err()
-        );
-        assert!(
-            AnnotationSpec::node("a")
-                .with_label("x".repeat(129))
-                .validate()
-                .is_err()
-        );
+        assert!(AnnotationSpec::node("a").with_color("#fff").validate().is_err());
+        assert!(AnnotationSpec::node("a").with_label("x".repeat(129)).validate().is_err());
         assert!(AnnotationSpec::node("a").with_ttl_ms(0).validate().is_err());
         assert!(AnnotationSpec::node("").validate().is_err());
         assert!(AnnotationSpec::node("a").with_id("").validate().is_err());
         assert!(
-            AnnotationSpec::rect(Rect {
-                x: 0.0,
-                y: 0.0,
-                width: -1.0,
-                height: 1.0,
-            })
-            .validate()
-            .is_err()
+            AnnotationSpec::rect(Rect { x: 0.0, y: 0.0, width: -1.0, height: 1.0 })
+                .validate()
+                .is_err()
         );
-        assert!(matches!(
-            AnnotationSpec::node("a").target,
-            AnnotationTarget::Node { .. }
-        ));
+        assert!(matches!(AnnotationSpec::node("a").target, AnnotationTarget::Node { .. }));
     }
 
     #[test]

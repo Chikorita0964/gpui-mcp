@@ -92,24 +92,52 @@ div()
 For HTML-authored interfaces that agents can also edit live, see the
 [visual builder guide](docs/visual-builder.md) and the
 [showcase](examples/runtime-showcase). The HTML renderer animates with
-standard CSS: `transition`, `@keyframes`, `@starting-style` and view
-transitions (see [Motion](docs/visual-builder.md#motion)).
+standard CSS: `transition`, `@keyframes`, `@starting-style` and view transitions (see [Motion](docs/visual-builder.md#motion)).
 
 ## What agents can do
 
-| Area | Tools |
-| --- | --- |
-| Discover | `list_apps`, `select_app`, `get_ui_tree`, `find_elements`, `get_element` |
-| Act | `click_element`, `type_text`, `set_text`, `set_value`, `keyboard`, `hover_element`, `drag_element`, `scroll`, `pointer_*` |
-| Verify | `wait_for_element`, `wait_for_state`, `get_element_state`, `save_ui_snapshot`, `diff_current_ui` |
-| Pixels | `screenshot`, `screenshot_element`, `compare_screenshots`, `start_video_recording` |
-| Annotate | `annotate_elements`, `remove_annotations`, `list_annotations`, `highlight_elements`, `clear_highlights` |
-| Talk to the app | `read_messages`, `wait_for_messages`, `send_message`, the `gpui://messages` resource |
-| Performance | `mark_frames`, `get_frame_report`, `record_performance` |
-| Live edit | `get_live_document`, `preview_live_document` |
+| Area            | Tools                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discover        | `list_apps`, `select_app`, `get_ui_tree`, `find_elements`, `get_element`                                                                    |
+| Act             | `click_element`, `type_text`, `set_text`, `set_value`, `keyboard`, `hover_element`, `drag_element`, `scroll`, `perform_action`, `pointer_*` |
+| Verify          | `wait_for_element`, `wait_for_state`, `get_element_state`, `save_ui_snapshot`, `diff_current_ui`                                            |
+| Pixels          | `screenshot`, `screenshot_element`, `compare_screenshots`, `start_video_recording`                                                          |
+| Annotate        | `annotate_elements`, `remove_annotations`, `list_annotations`, `highlight_elements`, `clear_highlights`                                     |
+| Talk to the app | `read_messages`, `wait_for_messages`, `send_message`, the `gpui://messages` resource                                                        |
+| Performance     | `mark_frames`, `get_frame_report`, `record_performance`                                                                                     |
+| Live edit       | `get_live_document`, `preview_live_document`                                                                                                |
+
+Several of the larger tools take an opt-in argument for a smaller reply.
+`find_elements`, `get_ui_tree`, and `load_ui_snapshot` accept `ids_only`, which
+drops the full nodes: `find_elements` returns the count and the ids, while
+`get_ui_tree` and `load_ui_snapshot` return the generation, the node count, the
+roots, and the ids. `get_frame_report`, `record_performance`,
+`get_live_document`, and `preview_live_document` accept `summary_only`, which
+returns the summary instead of the full detail. Defaults are unchanged; the
+compact form appears only when the caller asks for it. A client that runs code
+(OMP's eval cell, any MCP host that executes code) can call several tools in
+one turn and should prefer the compact form for the big replies, so the
+combined result stays under the client's display cap. Each tool's description
+gives the exact shape of its compact reply.
 
 Prefer the element tools over coordinates. All coordinates are logical pixels
 relative to the window.
+
+`get_ui_tree` returns the latest rendered tree. It can return only one node's
+subtree (`root`), limit how many levels below the starting nodes are included
+(`max_depth`; `0` returns the starting nodes only), or omit nodes whose state
+is not visible (`visible_only`). The cut applies to `nodes` only: a returned
+node still lists every child id, and a node's `parent` and the reply's `roots`
+are returned as they are, so the reply can name an id that `nodes` does not
+contain.
+
+`perform_action` runs an accessibility action on an element the way assistive
+technology does, without coordinates or keystrokes: `click`, `increment`,
+`decrement`, `expand`, `collapse`, and `set_value`. Use increment/decrement for
+sliders and spinners, expand/collapse for disclosure widgets, and set_value to
+replace a value; an element that does not register the action is reported
+rather than silently ignored. Only apps on the `gpui-fast` backend support it;
+the other backends refuse it.
 
 Clients that support the MCP tasks extension (SEP-2663) get the tools that can
 block for seconds (`wait_for_messages`, `wait_for_element`, `wait_for_state`,
@@ -190,25 +218,27 @@ For a chat loop, tell the agent something like: "Call `wait_for_messages` with
 the latest id you have seen, act on each message from the app, and answer it
 with `send_message`, then wait again."
 
-## GPUI Kit, `gpui-pre` and `gpui-ce`
+## GPUI Kit, `gpui-pre`, `gpui-fast` and `gpui-ce`
 
-Besides Zed's own GPUI, the bridge works with two GPUI releases on crates.io:
+Besides Zed's own GPUI, the bridge works with three GPUI releases on crates.io:
 
-| GPUI crate | Used by | Supported versions | Bridge feature |
-| --- | --- | --- | --- |
-| `gpui-pre` | GPUI Kit, `gpui-component` | 0.3.5, 0.3.6, 0.3.7 | `gpui-pre` |
-| `gpui-ce` | The community fork and apps built on it | 0.2.2 | `gpui-ce` |
+| GPUI crate  | Used by                                 | Supported versions | Bridge feature |
+| ----------- | --------------------------------------- | ------------------ | -------------- |
+| `gpui-pre`  | GPUI Kit, `gpui-component`              | 0.3.8              | `gpui-pre`     |
+| `gpui-fast` | GPUI Kit with its `gpui-fast` feature   | 0.1.6              | `gpui-fast`    |
+| `gpui-ce`   | The community fork and apps built on it | 0.2.2              | `gpui-ce`      |
 
 Each needs a small set of GPUI patches, which this repository provides. The
 recipes below pull in a patched copy from here.
 
-### GPUI Kit 0.7.0 (`gpui-pre` 0.3.7)
+### GPUI Kit (`gpui-pre` 0.3.8)
 
-Add this to your workspace's `Cargo.toml`:
+GPUI Kit comes from its GitHub main, whose GPUI Fast support is not in a
+release yet. Add this to your workspace's `Cargo.toml`:
 
 ```toml
 [dependencies]
-gpui-kit = "=0.7.0"
+gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "ed27c6293b585acc40c10be7138534243bee5841" }
 gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-pre"] }
 
 [patch.crates-io]
@@ -221,6 +251,27 @@ directly. To see it working, run the [Kit demo](examples/gpui-kit):
 
 ```console
 cargo run --manifest-path examples/gpui-kit/Cargo.toml
+```
+
+### GPUI Kit on GPUI Fast (`gpui-fast` 0.1.6)
+
+GPUI Kit's `gpui-fast` feature draws Kit and its components with
+[GPUI Fast](https://github.com/longbridge/gpui-fast); select the bridge's
+`gpui-fast` backend with it:
+
+```toml
+[dependencies]
+gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "ed27c6293b585acc40c10be7138534243bee5841", features = ["gpui-fast"] }
+gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-fast"] }
+
+[patch.crates-io]
+gpui-fast = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+```
+
+The Kit demo runs on it too:
+
+```console
+cargo run --manifest-path examples/gpui-kit/Cargo.toml --no-default-features --features gpui-fast
 ```
 
 ### `gpui-ce` 0.2.2
@@ -240,17 +291,16 @@ gpui-ce = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
 `gpui-ce` is imported as `gpui`, so install the bridge as usual when you open
 a window.
 
-### Another version, or your own GPUI patches
+### Your own GPUI patches
 
-The `[patch]` recipes above always give you the version this repository
-vendors. If your app is on an older supported version, or you carry GPUI
-patches of your own, keep your own patched copy instead:
+The `[patch]` recipes above give you the version this repository vendors. If
+you carry GPUI patches of your own, keep your own patched copy instead:
 
 1. From a checkout of this repository, write a patched copy into your app.
    Pass `--crate gpui-ce` for `gpui-ce`.
 
    ```console
-   cargo xtask vendor --crate gpui-pre --version 0.3.5 --output /path/to/your-app/vendor/gpui-pre
+   cargo xtask vendor --crate gpui-pre --output /path/to/your-app/vendor/gpui-pre
    ```
 
 2. Apply your own patches to that copy, if you have any.
@@ -262,7 +312,7 @@ patches of your own, keep your own patched copy instead:
    ```
 
 The patches are in [`vendor/patches/`](vendor/patches), one folder per crate
-and version. Each version has three:
+and version. Each has three:
 
 - `automation.patch` has everything the bridge needs.
 - `font-fallback.patch` is an unrelated font fix. Add `--without font-fallback`
@@ -274,23 +324,29 @@ and version. Each version has three:
   The bridge doesn't need it, but `gpui-mcp-html` does. Add
   `--without grid` to skip it.
 
-CI builds and tests the bridge against every supported version, so these
+CI builds and tests the bridge against each supported version, so these
 patches are kept working.
 
 ### Things to know
 
 - Use one backend per app. Every `gpui-mcp` dependency in a GPUI Kit or
-  `gpui-ce` app needs `default-features = false`. Zed apps that turn off default
-  features must add `features = ["zed"]`.
+  `gpui-ce` app needs `default-features = false`.
+- GPUI Fast draws nothing again from the last frame while it builds the
+  accessibility tree, which an attached bridge turns on. While the bridge
+  observes, every view renders, and frame reports name the cause of a cached
+  view's render `caching_disabled`.
+- Only the `gpui-fast` tree carries accessibility action dispatch, so
+  `perform_action`'s semantic actions are refused on Zed, `gpui-pre` and
+  `gpui-ce`. Zed apps that turn off default features must add
+  `features = ["zed"]`.
 - Kit components that publish accessibility info work with all the tools.
   Custom-drawn components only show what they annotate.
-- In Kit 0.7.0, disabled controls report `enabled: true` and read-only inputs
+- In GPUI Kit, disabled controls report `enabled: true` and read-only inputs
   don't report `read_only`. Kit doesn't publish these states yet.
 - `gpui-mcp-html` works with GPUI Kit too: add it with
   `default-features = false, features = ["gpui-pre", "json", "ron"]`. Its CSS
-  transitions and animations run on GPUI Kit's `gpui_base::motion`, which it
-  resolves to the Kit release matching your gpui-pre (0.6.4+ for 0.3.5 and
-  0.3.6, 0.7 for 0.3.7). Its
+  transitions and animations run on GPUI Kit's `gpui_base::motion` (GPUI Kit's
+  GitHub main). Its
   `grid-template-*` support needs the `grid.patch` described below, which the
   `[patch]` recipe already includes.
 

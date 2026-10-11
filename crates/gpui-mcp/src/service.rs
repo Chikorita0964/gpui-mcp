@@ -19,13 +19,14 @@ use gpui_mcp_protocol::{
     MAX_CONTEXT_RESOURCES, MAX_FRAME_SAMPLES, MAX_ID_BYTES, MAX_LABEL_BYTES,
     MAX_LIVE_DOCUMENT_DIAGNOSTICS, MAX_LIVE_DOCUMENT_SOURCE_BYTES, MAX_MESSAGE_PAGE,
     MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, MAX_WAIT_MS, Message, MessageSender, NativeWindowId,
-    NewMessage, Operation, PROTOCOL_VERSION, PendingFrame, ProcessId, WireRequest, WireResponse,
+    NewMessage, Operation, PROTOCOL_VERSION, PendingFrame, ProcessId, SemanticAction, WireRequest,
+    WireResponse,
 };
 use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName as _, ToNsName as _,
     tokio::{Listener as LocalSocketListener, Stream as LocalSocketStream, prelude::*},
 };
-use rand::RngCore as _;
+use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -189,10 +190,7 @@ struct Host<Request, Response> {
 
 impl<Request, Response> Host<Request, Response> {
     fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            handler: RefCell::new(None),
-        }
+        Self { name, handler: RefCell::new(None) }
     }
 
     fn register(&self, handler: Handler<Request, Response>) -> Result<(), HostError> {
@@ -250,10 +248,7 @@ struct ListenerSlot<T> {
 
 impl<T> ListenerSlot<T> {
     fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            listener: RefCell::new(None),
-        }
+        Self { name, listener: RefCell::new(None) }
     }
 
     fn register(&self, listener: Listener<T>) -> Result<(), HostError> {
@@ -342,7 +337,6 @@ impl BridgeHandle {
     ///
     /// Returns [`StartError`] when configuration validation, the private endpoint
     /// directory, native local listener, descriptor serialization, or runtime setup fails.
-    #[allow(clippy::too_many_lines)]
     pub fn install(
         window: &mut Window,
         cx: &App,
@@ -355,7 +349,7 @@ impl BridgeHandle {
         let token = encode_hex(&token_bytes);
         let instance_id = random_instance_id();
         let state = SharedState::new();
-        let automation = Automation::new(state.clone());
+        let automation = Automation::new(Arc::clone(&state));
         automation.attach(window);
         let pid = ProcessId::new(std::process::id()).ok_or(StartError::InvalidProcessId)?;
         let native_window_id = crate::native_window_id(window);
@@ -406,10 +400,10 @@ impl BridgeHandle {
             window,
             cx,
             command_rx,
-            state.clone(),
-            document_host.clone(),
-            resource_host.clone(),
-            command_host.clone(),
+            Arc::clone(&state),
+            Rc::clone(&document_host),
+            Rc::clone(&resource_host),
+            Rc::clone(&command_host),
         );
         spawn_annotation_listener(window, cx, &state, &annotation_listener);
         spawn_message_listener(window, cx, &state, &message_listener);
@@ -419,9 +413,8 @@ impl BridgeHandle {
         let listener_state = state;
         let listener_token = token.clone();
         let operation_timeout = config.operation_timeout;
-        let network_thread = thread::Builder::new()
-            .name("gpui-mcp-listener".to_owned())
-            .spawn(move || {
+        let network_thread =
+            thread::Builder::new().name("gpui-mcp-listener".to_owned()).spawn(move || {
                 runtime.block_on(run_listener(
                     listener,
                     command_tx,
@@ -550,8 +543,7 @@ impl BridgeHandle {
         capability: Capability,
         host: &Host<Request, Response>,
     ) -> Result<(), HostError> {
-        self.publish_capability(capability, host.name)
-            .inspect_err(|_| host.clear())
+        self.publish_capability(capability, host.name).inspect_err(|_| host.clear())
     }
 
     fn publish_capability(
@@ -753,10 +745,7 @@ fn spawn_message_listener(
                     );
                     for message in &page.messages {
                         delivered = message.id;
-                        if cx
-                            .update(|window, cx| handler(message, window, cx))
-                            .is_err()
-                        {
+                        if cx.update(|window, cx| handler(message, window, cx)).is_err() {
                             return;
                         }
                         state.mark_messages_read(MessageSender::App, message.id);
@@ -769,8 +758,6 @@ fn spawn_message_listener(
         })
         .detach();
 }
-
-#[allow(clippy::too_many_lines)]
 fn handle_ui_operation(
     operation: Operation,
     state: &SharedState,
@@ -802,6 +789,9 @@ fn handle_ui_operation(
             }
             Ok(BridgeResult::Ack)
         }
+        Operation::PerformAction { node_id, action } => {
+            dispatch_semantic_action(&node_id, action, window, cx)
+        }
         Operation::Refresh => {
             let completed = state.frame_stats();
             window.refresh();
@@ -818,9 +808,9 @@ fn handle_ui_operation(
         })),
         // Marked between draws, so no frame straddles the mark.
         Operation::MarkFrames => Ok(BridgeResult::FrameStats(state.mark_frames())),
-        Operation::GetPointerLocation => Ok(BridgeResult::PointerLocation(
-            input::pointer_location(window),
-        )),
+        Operation::GetPointerLocation => {
+            Ok(BridgeResult::PointerLocation(input::pointer_location(window)))
+        }
         // Highlights are painted by the observer's overlay pass, which runs after the scene on
         // every frame whether or not views replay from cache, so a frame is all they need.
         Operation::ClearHighlights => {
@@ -834,15 +824,9 @@ fn handle_ui_operation(
             };
             validate_live_document_result(document).map(BridgeResult::LiveDocument)
         }
-        Operation::PreviewLiveDocument {
-            expected_revision,
-            source,
-        } => {
+        Operation::PreviewLiveDocument { expected_revision, source } => {
             let response = document_host.handle(
-                LiveDocumentRequest::Preview {
-                    expected_revision,
-                    source,
-                },
+                LiveDocumentRequest::Preview { expected_revision, source },
                 window,
                 cx,
             )?;
@@ -887,10 +871,7 @@ fn handle_ui_operation(
         }
         Operation::ExecuteApplicationCommand { name, arguments } => {
             let response = command_host.handle(
-                ApplicationCommandRequest::Execute {
-                    name: name.clone(),
-                    arguments,
-                },
+                ApplicationCommandRequest::Execute { name: name.clone(), arguments },
                 window,
                 cx,
             )?;
@@ -905,14 +886,55 @@ fn handle_ui_operation(
             window.refresh();
             Ok(BridgeResult::ApplicationCommand(result))
         }
-        _ => Err(BridgeError::new(
-            ErrorCode::Internal,
-            "operation was routed to the wrong executor",
-        )),
+        _ => {
+            Err(BridgeError::new(ErrorCode::Internal, "operation was routed to the wrong executor"))
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Dispatch one semantic accessibility action through the node's AccessKit handle.
+///
+/// Only the gpui-fast series carries the accessibility actions patch, so only that backend compiles
+/// this. GPUI handles click, focus, and blur itself, so a node without a
+/// listener for them is still actionable; anything else must register one.
+#[cfg(feature = "gpui-fast")]
+fn dispatch_semantic_action(
+    node_id: &str,
+    action: SemanticAction,
+    window: &mut Window,
+    cx: &mut App,
+) -> Result<BridgeResult, BridgeError> {
+    let target = window
+        .a11y_node_id(node_id)
+        .ok_or_else(|| BridgeError::new(ErrorCode::NotFound, "semantic node was not found"))?;
+    let (action, data) = input::accesskit_action(action);
+    if !window.a11y_action_is_handled(target, action)
+        && !matches!(action, gpui::accesskit::Action::Click)
+    {
+        return Err(BridgeError::new(
+            ErrorCode::Unsupported,
+            "the semantic node does not handle this action",
+        ));
+    }
+    window.perform_a11y_action(target, action, data, cx);
+    window.refresh();
+    Ok(BridgeResult::Ack)
+}
+
+/// Every backend but gpui-fast lacks the accessibility actions patch, so it refuses the operation
+/// instead of failing to compile.
+#[cfg(not(feature = "gpui-fast"))]
+fn dispatch_semantic_action(
+    _node_id: &str,
+    _action: SemanticAction,
+    _window: &mut Window,
+    _cx: &mut App,
+) -> Result<BridgeResult, BridgeError> {
+    Err(BridgeError::new(
+        ErrorCode::Unsupported,
+        "this backend does not support semantic accessibility actions",
+    ))
+}
 async fn run_listener(
     listener: LocalSocketListener,
     command_tx: Sender<UiCommand>,
@@ -942,13 +964,13 @@ async fn run_listener(
                     tracing::warn!(%error, "rejected a local IPC peer");
                     continue;
                 }
-                let Ok(permit) = permits.clone().try_acquire_owned() else {
+                let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
                     tracing::warn!(max_connections = MAX_CONNECTIONS, "bridge connection limit reached");
                     continue;
                 };
                 let context = ConnectionContext {
                     command_tx: command_tx.clone(),
-                    state: state.clone(),
+                    state: Arc::clone(&state),
                     token: token.clone(),
                     pid,
                     app_id: app_id.clone(),
@@ -988,21 +1010,14 @@ async fn handle_connection(
 ) -> Result<(), io::Error> {
     let mut first_request = true;
     loop {
-        let read_timeout = if first_request {
-            IO_TIMEOUT
-        } else {
-            CONNECTION_IDLE_TIMEOUT
-        };
+        let read_timeout = if first_request { IO_TIMEOUT } else { CONNECTION_IDLE_TIMEOUT };
         let Some(request) = read_request(&mut stream, read_timeout).await? else {
             return Ok(());
         };
         first_request = false;
         let response = process_request(request, context.clone()).await;
         let close_after_response = response.error.as_ref().is_some_and(|error| {
-            matches!(
-                error.code,
-                ErrorCode::Unauthorized | ErrorCode::ProtocolMismatch
-            )
+            matches!(error.code, ErrorCode::Unauthorized | ErrorCode::ProtocolMismatch)
         });
         write_response(&mut stream, &response).await?;
         if close_after_response {
@@ -1033,10 +1048,7 @@ async fn read_request(
     }
     let length = u32::from_be_bytes(length_bytes) as usize;
     if length == 0 || length > MAX_REQUEST_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "request frame size is invalid",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "request frame size is invalid"));
     }
     let mut payload = vec![0_u8; length];
     timeout(IO_TIMEOUT, stream.read_exact(&mut payload))
@@ -1046,8 +1058,6 @@ async fn read_request(
         .map(Some)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "request JSON is invalid"))
 }
-
-#[allow(clippy::too_many_lines)]
 async fn process_request(request: WireRequest, context: ConnectionContext) -> WireResponse {
     if request.protocol_version != PROTOCOL_VERSION {
         return WireResponse::failure(
@@ -1077,32 +1087,24 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             protocol_version: PROTOCOL_VERSION,
         }),
         Operation::GetTree => Ok(BridgeResult::Tree(context.state.tree())),
-        Operation::WaitForTree {
-            after_generation,
-            timeout_ms,
-        } => context
+        Operation::WaitForTree { after_generation, timeout_ms } => context
             .state
             .wait_for_tree(after_generation, Duration::from_millis(timeout_ms))
             .await
             .map(BridgeResult::Tree),
-        Operation::WaitForFrame {
-            after_frame_count,
-            timeout_ms,
-        } => context
+        Operation::WaitForFrame { after_frame_count, timeout_ms } => context
             .state
             .wait_for_frame(after_frame_count, Duration::from_millis(timeout_ms))
             .await
             .map(BridgeResult::FrameStats),
-        Operation::GetWindowGeometry => context
-            .state
-            .window_geometry()
-            .map(BridgeResult::WindowGeometry)
-            .ok_or_else(|| {
+        Operation::GetWindowGeometry => {
+            context.state.window_geometry().map(BridgeResult::WindowGeometry).ok_or_else(|| {
                 BridgeError::new(
                     ErrorCode::NotFound,
                     "GPUI window geometry is not available before the first completed root frame",
                 )
-            }),
+            })
+        }
         Operation::SetHighlights { highlights } => {
             context.state.set_highlights(highlights);
             request_ui_refresh(&context.command_tx, context.operation_timeout).await
@@ -1111,31 +1113,23 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             context.state.set_highlights(Vec::new());
             request_ui_refresh(&context.command_tx, context.operation_timeout).await
         }
-        Operation::UpsertAnnotations {
-            annotations,
-            replace_group,
-        } => match context.state.upsert_annotations(
-            annotations,
-            replace_group.as_deref(),
-            AnnotationSource::Agent,
-        ) {
+        Operation::UpsertAnnotations { annotations, replace_group } => match context
+            .state
+            .upsert_annotations(annotations, replace_group.as_deref(), AnnotationSource::Agent)
+        {
             Ok(applied) => request_ui_refresh(&context.command_tx, context.operation_timeout)
                 .await
                 .map(|_| BridgeResult::Annotations(applied)),
             Err(error) => Err(error),
         },
         Operation::RemoveAnnotations { ids } => {
-            context
-                .state
-                .remove_annotations(&ids, AnnotationSource::Agent);
+            context.state.remove_annotations(&ids, AnnotationSource::Agent);
             request_ui_refresh(&context.command_tx, context.operation_timeout)
                 .await
                 .map(|_| BridgeResult::Annotations(context.state.annotations()))
         }
         Operation::ClearAnnotations { group } => {
-            context
-                .state
-                .clear_annotations(group.as_deref(), AnnotationSource::Agent);
+            context.state.clear_annotations(group.as_deref(), AnnotationSource::Agent);
             request_ui_refresh(&context.command_tx, context.operation_timeout)
                 .await
                 .map(|_| BridgeResult::Annotations(context.state.annotations()))
@@ -1143,10 +1137,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         Operation::ListAnnotations => Ok(BridgeResult::Annotations(context.state.annotations())),
         Operation::SendMessage { message } => {
             if context.state.accepts_agent_messages() {
-                context
-                    .state
-                    .post_message(MessageSender::Agent, message)
-                    .map(BridgeResult::Message)
+                context.state.post_message(MessageSender::Agent, message).map(BridgeResult::Message)
             } else {
                 Err(BridgeError::new(
                     ErrorCode::Unsupported,
@@ -1154,13 +1145,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
                 ))
             }
         }
-        Operation::ReadMessages {
-            after,
-            from,
-            limit,
-            wait_ms,
-            mark_read,
-        } => {
+        Operation::ReadMessages { after, from, limit, wait_ms, mark_read } => {
             let reader = mark_read.then_some(MessageSender::Agent);
             let limit = usize::from(limit);
             let page = if wait_ms == 0 {
@@ -1174,14 +1159,11 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             Ok(BridgeResult::Messages(page))
         }
         Operation::GetFrameStats => Ok(BridgeResult::FrameStats(context.state.frame_stats())),
-        Operation::GetFrameReport {
-            after_frame_count,
-            frame_limit,
-        } => Ok(BridgeResult::FrameReport(
-            context
-                .state
-                .frame_report(after_frame_count, usize::from(frame_limit)),
-        )),
+        Operation::GetFrameReport { after_frame_count, frame_limit } => {
+            Ok(BridgeResult::FrameReport(
+                context.state.frame_report(after_frame_count, usize::from(frame_limit)),
+            ))
+        }
         Operation::GetPointerLocation => {
             dispatch_to_ui(
                 Operation::GetPointerLocation,
@@ -1190,9 +1172,9 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
             )
             .await
         }
-        Operation::GetLogs { limit, min_level } => Ok(BridgeResult::Logs(
-            context.state.logs(limit, min_level.as_deref()),
-        )),
+        Operation::GetLogs { limit, min_level } => {
+            Ok(BridgeResult::Logs(context.state.logs(limit, min_level.as_deref())))
+        }
         Operation::ClearLogs => {
             context.state.clear_logs();
             Ok(BridgeResult::Ack)
@@ -1200,6 +1182,7 @@ async fn process_request(request: WireRequest, context: ConnectionContext) -> Wi
         operation @ (Operation::Input { .. }
         | Operation::PointerInput { .. }
         | Operation::Focus { .. }
+        | Operation::PerformAction { .. }
         | Operation::Refresh
         | Operation::RequestFrame
         | Operation::GetPendingFrame
@@ -1225,10 +1208,7 @@ async fn request_ui_refresh(
 ) -> Result<BridgeResult, BridgeError> {
     let (response_tx, response_rx) = oneshot::channel();
     command_tx
-        .try_send(UiCommand {
-            operation: Operation::ClearHighlights,
-            response: response_tx,
-        })
+        .try_send(UiCommand { operation: Operation::ClearHighlights, response: response_tx })
         .map_err(|_| BridgeError::new(ErrorCode::Busy, "UI command queue is full"))?;
     timeout(operation_timeout, response_rx)
         .await
@@ -1243,10 +1223,7 @@ async fn dispatch_to_ui(
 ) -> Result<BridgeResult, BridgeError> {
     let (response_tx, response_rx) = oneshot::channel();
     command_tx
-        .try_send(UiCommand {
-            operation,
-            response: response_tx,
-        })
+        .try_send(UiCommand { operation, response: response_tx })
         .map_err(|_| BridgeError::new(ErrorCode::Busy, "UI command queue is full"))?;
     timeout(operation_timeout, response_rx)
         .await
@@ -1254,17 +1231,24 @@ async fn dispatch_to_ui(
         .map_err(|_| BridgeError::new(ErrorCode::Internal, "UI command pump stopped"))?
 }
 
-#[allow(clippy::too_many_lines)]
+fn validate_node_id(node_id: &str) -> Result<(), BridgeError> {
+    if node_id.is_empty() || node_id.len() > MAX_ID_BYTES || node_id.chars().any(char::is_control) {
+        return Err(invalid("semantic node identifier is invalid"));
+    }
+    Ok(())
+}
 fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
     match operation {
         Operation::Input { command } => input::validate(command),
         Operation::PointerInput { command } => input::validate_pointer(command),
-        Operation::Focus { node_id } => {
-            if node_id.is_empty()
-                || node_id.len() > MAX_ID_BYTES
-                || node_id.chars().any(char::is_control)
-            {
-                return Err(invalid("semantic node identifier is invalid"));
+        Operation::Focus { node_id } => validate_node_id(node_id),
+        Operation::PerformAction { node_id, action } => {
+            validate_node_id(node_id)?;
+            // A value is the one action payload that carries caller-owned text, so it gets
+            // the bound every other path into app-visible text has: otherwise a control
+            // handler is handed a request-sized string to insert and lay out.
+            if let SemanticAction::SetValue { value } = action {
+                input::validate_text(value)?;
             }
             Ok(())
         }
@@ -1281,15 +1265,10 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
         Operation::GetFrameReport { frame_limit, .. }
             if *frame_limit == 0 || usize::from(*frame_limit) > MAX_FRAME_SAMPLES =>
         {
-            Err(invalid(
-                "frame report limit must be between 1 and 512 frames",
-            ))
+            Err(invalid("frame report limit must be between 1 and 512 frames"))
         }
         Operation::SetHighlights { highlights } => validate_highlights(highlights),
-        Operation::UpsertAnnotations {
-            annotations,
-            replace_group,
-        } => {
+        Operation::UpsertAnnotations { annotations, replace_group } => {
             if annotations.len() > MAX_ANNOTATIONS {
                 return Err(invalid("no more than 128 annotations are allowed"));
             }
@@ -1299,15 +1278,11 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
             {
                 return Err(invalid("annotation group is invalid"));
             }
-            annotations
-                .iter()
-                .try_for_each(|annotation| annotation.validate().map_err(invalid))
+            annotations.iter().try_for_each(|annotation| annotation.validate().map_err(invalid))
         }
         Operation::RemoveAnnotations { ids } => {
             if ids.len() > MAX_ANNOTATIONS
-                || ids
-                    .iter()
-                    .any(|id| !gpui_mcp_protocol::is_valid_annotation_name(id))
+                || ids.iter().any(|id| !gpui_mcp_protocol::is_valid_annotation_name(id))
             {
                 return Err(invalid("annotation ids are invalid"));
             }
@@ -1333,19 +1308,13 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
                 return Err(invalid("log limit cannot exceed 512"));
             }
             if let Some(level) = min_level
-                && !matches!(
-                    level.as_str(),
-                    "trace" | "debug" | "info" | "warn" | "error"
-                )
+                && !matches!(level.as_str(), "trace" | "debug" | "info" | "warn" | "error")
             {
                 return Err(invalid("minimum log level is invalid"));
             }
             Ok(())
         }
-        Operation::PreviewLiveDocument {
-            expected_revision,
-            source,
-        } => {
+        Operation::PreviewLiveDocument { expected_revision, source } => {
             if *expected_revision == 0 {
                 return Err(invalid("expected live document revision must be nonzero"));
             }
@@ -1354,12 +1323,10 @@ fn validate_operation(operation: &Operation) -> Result<(), BridgeError> {
         Operation::ReadContextResource { uri } => validate_context_resource_uri(uri),
         Operation::ExecuteApplicationCommand { name, arguments } => {
             validate_application_command_name(name)?;
-            if serde_json::to_vec(arguments).map_or(true, |value| {
-                value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES
-            }) {
-                return Err(invalid(
-                    "application command arguments are invalid or too large",
-                ));
+            if serde_json::to_vec(arguments)
+                .map_or(true, |value| value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES)
+            {
+                return Err(invalid("application command arguments are invalid or too large"));
             }
             Ok(())
         }
@@ -1406,9 +1373,7 @@ fn validate_context_resource_descriptor(
         || descriptor.mime_type.is_empty()
         || descriptor.mime_type.len() > 128
         || descriptor.mime_type.chars().any(char::is_control)
-        || descriptor
-            .size
-            .is_some_and(|size| size > MAX_CONTEXT_RESOURCE_BYTES as u64)
+        || descriptor.size.is_some_and(|size| size > MAX_CONTEXT_RESOURCE_BYTES as u64)
     {
         return Err(invalid_host_result("resource"));
     }
@@ -1434,10 +1399,7 @@ fn validate_context_resource_list(
 fn validate_context_resource(resource: ContextResource) -> Result<ContextResource, BridgeError> {
     validate_context_resource_descriptor(&resource.descriptor)?;
     if resource.text.len() > MAX_CONTEXT_RESOURCE_BYTES
-        || resource
-            .descriptor
-            .size
-            .is_some_and(|size| size != resource.text.len() as u64)
+        || resource.descriptor.size.is_some_and(|size| size != resource.text.len() as u64)
     {
         return Err(invalid_host_result("resource"));
     }
@@ -1474,9 +1436,9 @@ fn validate_application_command_result(
     result: ApplicationCommandResult,
 ) -> Result<ApplicationCommandResult, BridgeError> {
     validate_application_command_name(&result.name).map_err(|_| invalid_host_result("command"))?;
-    if serde_json::to_vec(&result.output).map_or(true, |value| {
-        value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES
-    }) {
+    if serde_json::to_vec(&result.output)
+        .map_or(true, |value| value.len() > MAX_APPLICATION_COMMAND_OUTPUT_BYTES)
+    {
         return Err(invalid_host_result("command"));
     }
     Ok(result)
@@ -1522,10 +1484,7 @@ fn validate_live_document_preview(
 }
 
 fn invalid_host_result(host: &str) -> BridgeError {
-    BridgeError::new(
-        ErrorCode::Internal,
-        format!("{host} host returned an invalid result"),
-    )
+    BridgeError::new(ErrorCode::Internal, format!("{host} host returned an invalid result"))
 }
 
 fn validate_highlights(highlights: &[Highlight]) -> Result<(), BridgeError> {
@@ -1540,11 +1499,7 @@ fn validate_highlights(highlights: &[Highlight]) -> Result<(), BridgeError> {
         if color.len() != 8 || !color.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(invalid("highlight color must use #RRGGBBAA"));
         }
-        if highlight
-            .label
-            .as_ref()
-            .is_some_and(|label| label.len() > 128)
-        {
+        if highlight.label.as_ref().is_some_and(|label| label.len() > 128) {
             return Err(invalid("highlight label exceeds 128 bytes"));
         }
     }
@@ -1590,9 +1545,7 @@ fn make_local_endpoint(
     #[cfg(windows)]
     {
         let _ = endpoint_dir;
-        LocalEndpoint::Namespaced {
-            name: format!("gpui-mcp-{app_id}-{pid}-{instance_id:016x}"),
-        }
+        LocalEndpoint::Namespaced { name: format!("gpui-mcp-{app_id}-{pid}-{instance_id:016x}") }
     }
 }
 
@@ -1623,18 +1576,12 @@ fn create_listener(endpoint: &LocalEndpoint) -> io::Result<LocalSocketListener> 
     };
 
     let listener = options.create_tokio()?;
-    #[cfg(all(
-        unix,
-        not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))
-    ))]
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))))]
     secure_socket_permissions(endpoint)?;
     Ok(listener)
 }
 
-#[cfg(all(
-    unix,
-    not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))
-))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))))]
 fn secure_socket_permissions(endpoint: &LocalEndpoint) -> io::Result<()> {
     if let LocalEndpoint::Filesystem { path } = endpoint {
         use std::os::unix::fs::PermissionsExt as _;
@@ -1758,11 +1705,176 @@ fn invalid(message: &'static str) -> BridgeError {
 
 #[cfg(test)]
 mod tests {
-    use gpui_mcp_protocol::{AppId, ContextResource, ContextResourceDescriptor};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use gpui::{
+        AccessibleAction, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+        Render, Role, StatefulInteractiveElement as _, Styled as _, TestAppContext, Window, div,
+        px,
+    };
+    use gpui_mcp_protocol::{
+        AppId, ContextResource, ContextResourceDescriptor, ErrorCode, MAX_TEXT_BYTES, Operation,
+        PROTOCOL_VERSION, ProcessId, RequestId, SemanticAction, WireRequest,
+    };
 
     use super::{
-        BridgeConfig, encode_hex, validate_context_resource, validate_context_resource_list,
+        BridgeConfig, ConnectionContext, SharedState, UiCommand, encode_hex, process_request,
+        validate_context_resource, validate_context_resource_list, validate_operation,
     };
+    use crate::Automation;
+
+    /// A control registering the AccessKit Increment action a slider registers, next to a node
+    /// registering nothing, for the bridge's `perform_action` path to reach.
+    struct ActionFixture {
+        steps: Rc<Cell<usize>>,
+    }
+
+    impl Render for ActionFixture {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let steps = Rc::clone(&self.steps);
+            div()
+                .id("root")
+                .role(Role::Application)
+                .size_full()
+                .child(div().id("volume").role(Role::Slider).w(px(200.)).h(px(24.)).on_a11y_action(
+                    AccessibleAction::Increment,
+                    move |_, _, _| {
+                        steps.set(steps.get() + 1);
+                    },
+                ))
+                .child(div().id("status").child("Ready"))
+        }
+    }
+
+    /// `perform_action` runs the node's own accessibility listener, and an action the node does not
+    /// handle or a node the frame does not carry comes back as an error instead of an ack.
+    #[gpui::test]
+    fn perform_action_reaches_the_nodes_listener_and_refuses_what_it_cannot_do(
+        cx: &mut TestAppContext,
+    ) {
+        let automation = Automation::isolated();
+        let steps = Rc::new(Cell::new(0));
+        let steps_by_view = Rc::clone(&steps);
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            ActionFixture { steps: steps_by_view }
+        });
+        visual.run_until_parked();
+
+        // Every backend but gpui-fast lacks the accessibility actions patch, so it refuses.
+        if cfg!(not(feature = "gpui-fast")) {
+            let refusal = visual.update(|window, cx| {
+                super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)
+                    .err()
+                    .map(|error| (error.code, error.message))
+            });
+            assert_eq!(
+                refusal,
+                Some((
+                    ErrorCode::Unsupported,
+                    "this backend does not support semantic accessibility actions".to_owned(),
+                ))
+            );
+            return;
+        }
+
+        let ack = visual.update(|window, cx| {
+            super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)
+        });
+        assert!(ack.is_ok(), "the node registered an Increment listener, so the action is handled");
+        visual.run_until_parked();
+        assert_eq!(steps.get(), 1, "the node's own listener ran");
+
+        let unhandled = visual.update(|window, cx| {
+            super::dispatch_semantic_action("status", SemanticAction::Increment, window, cx)
+                .err()
+                .map(|error| (error.code, error.message))
+        });
+        assert_eq!(
+            unhandled,
+            Some((
+                ErrorCode::Unsupported,
+                "the semantic node does not handle this action".to_owned(),
+            )),
+            "an action no listener handles is refused, not silently acked"
+        );
+
+        let missing = visual.update(|window, cx| {
+            super::dispatch_semantic_action("absent", SemanticAction::Increment, window, cx)
+                .err()
+                .map(|error| error.code)
+        });
+        assert_eq!(
+            missing,
+            Some(ErrorCode::NotFound),
+            "a node the frame does not carry is reported as not found"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_peer_speaking_an_older_protocol_version_is_refused() -> Result<(), String> {
+        let (command_tx, _commands) = async_channel::unbounded::<UiCommand>();
+        let context = ConnectionContext {
+            command_tx,
+            state: SharedState::new(),
+            token: "token".to_owned(),
+            pid: ProcessId::new(2).ok_or_else(|| "process ID must be nonzero".to_owned())?,
+            app_id: AppId::new("app").map_err(|error| error.to_string())?,
+            operation_timeout: std::time::Duration::from_secs(1),
+        };
+
+        let response = process_request(
+            WireRequest {
+                protocol_version: 14,
+                request_id: RequestId::new(1)
+                    .ok_or_else(|| "request ID must be nonzero".to_owned())?,
+                token: "token".to_owned(),
+                operation: Operation::Ping,
+            },
+            context,
+        )
+        .await;
+
+        let error = response
+            .error
+            .ok_or_else(|| "a peer offering version 14 must be refused".to_owned())?;
+        assert_eq!(error.code, ErrorCode::ProtocolMismatch);
+        assert!(
+            error.message.contains(&PROTOCOL_VERSION.to_string()),
+            "the refusal names the required version, got: {}",
+            error.message
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_performed_action_bounds_its_value_like_injected_text() {
+        let perform = |value: String| {
+            validate_operation(&Operation::PerformAction {
+                node_id: "volume".to_owned(),
+                action: SemanticAction::SetValue { value },
+            })
+            .err()
+            .map(|error| error.code)
+        };
+        assert_eq!(
+            perform("x".repeat(MAX_TEXT_BYTES + 1)),
+            Some(ErrorCode::InvalidRequest),
+            "an unbounded value is the one action payload that can exhaust the app with text"
+        );
+        assert_eq!(perform("x".repeat(MAX_TEXT_BYTES)), None);
+        assert_eq!(perform(String::new()), None);
+        assert!(
+            validate_operation(&Operation::PerformAction {
+                node_id: "volume".to_owned(),
+                action: SemanticAction::Increment,
+            })
+            .is_ok(),
+            "an action with no payload needs no text bound"
+        );
+    }
 
     #[test]
     fn application_identifier_blocks_path_traversal() {

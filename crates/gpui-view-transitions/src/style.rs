@@ -25,10 +25,7 @@ pub struct Offset {
 
 impl Offset {
     /// No offset.
-    pub const ZERO: Self = Self {
-        px: 0.0,
-        fraction: 0.0,
-    };
+    pub const ZERO: Self = Self { px: 0.0, fraction: 0.0 };
 
     /// The length along an axis of `size` pixels.
     #[must_use]
@@ -39,10 +36,7 @@ impl Offset {
 
 impl Lerp for Offset {
     fn lerp(&self, target: &Self, t: f32) -> Self {
-        Self {
-            px: self.px.lerp(&target.px, t),
-            fraction: self.fraction.lerp(&target.fraction, t),
-        }
+        Self { px: self.px.lerp(&target.px, t), fraction: self.fraction.lerp(&target.fraction, t) }
     }
 }
 
@@ -57,10 +51,7 @@ pub struct Translate {
 
 impl Lerp for Translate {
     fn lerp(&self, target: &Self, t: f32) -> Self {
-        Self {
-            x: self.x.lerp(&target.x, t),
-            y: self.y.lerp(&target.y, t),
-        }
+        Self { x: self.x.lerp(&target.x, t), y: self.y.lerp(&target.y, t) }
     }
 }
 
@@ -76,15 +67,9 @@ pub struct Fill {
 
 impl Fill {
     /// `none`.
-    pub const NONE: Self = Self {
-        backwards: false,
-        forwards: false,
-    };
+    pub const NONE: Self = Self { backwards: false, forwards: false };
     /// `both`.
-    pub const BOTH: Self = Self {
-        backwards: true,
-        forwards: true,
-    };
+    pub const BOTH: Self = Self { backwards: true, forwards: true };
 }
 
 /// One animation of an old or new image: `@keyframes` for the properties
@@ -115,13 +100,7 @@ impl ImageAnimation {
     /// `timing` is normally linear.
     #[must_use]
     pub fn new(timing: Timing, fill: Fill) -> Self {
-        Self {
-            timing,
-            fill,
-            opacity: None,
-            translate: None,
-            fade: None,
-        }
+        Self { timing, fill, opacity: None, translate: None, fade: None }
     }
 
     /// Animate `opacity` through `keyframes`.
@@ -155,10 +134,8 @@ impl ImageAnimation {
             Fade::Out => (1.0, 0.0),
             Fade::In => (0.0, 1.0),
         };
-        let keyframes = Keyframes::try_new([
-            Keyframe::new(0.0, from).ease(easing),
-            Keyframe::new(1.0, to),
-        ]);
+        let keyframes =
+            Keyframes::try_new([Keyframe::new(0.0, from).ease(easing), Keyframe::new(1.0, to)]);
         let mut animation = Self::new(Timing::new(duration).delay(delay.into()), Fill::BOTH);
         animation.opacity = keyframes.ok();
         animation.fade = Some(fade);
@@ -195,11 +172,7 @@ pub struct ImageFrame {
 
 impl Default for ImageFrame {
     fn default() -> Self {
-        Self {
-            opacity: 1.0,
-            translate: Translate::default(),
-            running: false,
-        }
+        Self { opacity: 1.0, translate: Translate::default(), running: false }
     }
 }
 
@@ -238,11 +211,7 @@ impl NameStyle {
     #[must_use]
     pub fn user_agent(duration: Duration, delay: Duration, easing: Easing) -> Self {
         Self {
-            group: Some(
-                Timing::new(duration)
-                    .delay(delay.into())
-                    .ease(easing.clone()),
-            ),
+            group: Some(Timing::new(duration).delay(delay.into()).ease(easing.clone())),
             old: vec![ImageAnimation::fade_out(duration, delay, easing.clone())],
             new: vec![ImageAnimation::fade_in(duration, delay, easing)],
         }
@@ -252,16 +221,10 @@ impl NameStyle {
     #[must_use]
     pub fn group(&self, elapsed: Duration) -> GroupFrame {
         let Some(timing) = &self.group else {
-            return GroupFrame {
-                progress: 1.0,
-                running: false,
-            };
+            return GroupFrame { progress: 1.0, running: false };
         };
         let sample = timing.sample(elapsed);
-        GroupFrame {
-            progress: sample.directed_progress,
-            running: !sample.finished,
-        }
+        GroupFrame { progress: sample.directed_progress, running: !sample.finished }
     }
 
     /// The old image at `elapsed`.
@@ -339,10 +302,7 @@ mod tests {
             close(style.new_image(ms(0), true).opacity, 1.0),
             "the new side stays opaque under the old one"
         );
-        assert!(
-            close(style.new_image(ms(0), false).opacity, 0.0),
-            "a new name fades in"
-        );
+        assert!(close(style.new_image(ms(0), false).opacity, 0.0), "a new name fades in");
         let done = style.old(ms(400));
         assert!(!done.running && close(done.opacity, 0.0));
         assert!(!style.group(ms(400)).running);
@@ -354,13 +314,7 @@ mod tests {
             Keyframe::new(0.0, Translate::default()),
             Keyframe::new(
                 1.0,
-                Translate {
-                    x: Offset {
-                        px: 0.0,
-                        fraction: -1.0,
-                    },
-                    y: Offset::ZERO,
-                },
+                Translate { x: Offset { px: 0.0, fraction: -1.0 }, y: Offset::ZERO },
             ),
         ])
         .ok();
@@ -369,23 +323,12 @@ mod tests {
         };
         let timing = Timing::new(ms(100)).delay(ms(100).into());
         let mut style = NameStyle::user_agent(ms(200), Duration::ZERO, Easing::Linear);
-        style
-            .old
-            .push(ImageAnimation::new(timing, Fill::NONE).translate(slide));
+        style.old.push(ImageAnimation::new(timing, Fill::NONE).translate(slide));
 
-        assert!(
-            close(style.old(ms(50)).translate.x.fraction, 0.0),
-            "no backwards fill"
-        );
+        assert!(close(style.old(ms(50)).translate.x.fraction, 0.0), "no backwards fill");
         assert!(close(style.old(ms(150)).translate.x.fraction, -0.5));
-        assert!(
-            close(style.old(ms(150)).opacity, 0.25),
-            "the fade keeps running"
-        );
-        assert!(
-            close(style.old(ms(250)).translate.x.fraction, 0.0),
-            "no forwards fill"
-        );
+        assert!(close(style.old(ms(150)).opacity, 0.25), "the fade keeps running");
+        assert!(close(style.old(ms(250)).translate.x.fraction, 0.0), "no forwards fill");
         assert!(
             !close(style.new_image(ms(100), true).opacity, 1.0),
             "an authored side breaks the exact cross-fade"

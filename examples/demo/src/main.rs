@@ -1,13 +1,17 @@
 //! Small instrumented GPUI application used to exercise the MCP bridge.
 
 use gpui::{
-    App, Bounds, Context, Div, Entity, FocusHandle, IntoElement, Render, Role, Stateful,
-    StatefulInteractiveElement as _, StyleRefinement, WeakEntity, Window, WindowBounds,
+    AccessibleAction, App, Bounds, Context, Div, Entity, FocusHandle, IntoElement, Render, Role,
+    Stateful, StatefulInteractiveElement as _, StyleRefinement, WeakEntity, Window, WindowBounds,
     WindowOptions, div, prelude::*, px, rgb, size,
 };
 use gpui_mcp::{AnnotationSource, Automation, BridgeConfig, BridgeHandle, NewMessage};
 
 const TITLE: &str = "GPUI MCP Demo";
+
+/// The volume slider's range and its value at launch.
+const VOLUME_MAX: u8 = 10;
+const VOLUME_START: u8 = 5;
 
 /// `--endpoint-dir <absolute path>` keeps a driving test's discovery private to
 /// that test rather than sharing the developer's live endpoint directory.
@@ -24,6 +28,8 @@ fn endpoint_dir() -> Option<std::path::PathBuf> {
 struct Demo {
     count: usize,
     locked: bool,
+    /// A slider with no keyboard handling: only its accessibility actions move it.
+    volume: u8,
     search: FocusHandle,
     filter: FocusHandle,
     probes: [Entity<ProbeRegion>; 2],
@@ -90,11 +96,7 @@ fn field(
         .py_2()
         .rounded_md()
         .border_1()
-        .border_color(if focused {
-            rgb(0x16_77_ff)
-        } else {
-            rgb(0x39_42_53)
-        })
+        .border_color(if focused { rgb(0x16_77_ff) } else { rgb(0x39_42_53) })
         .bg(rgb(0x0b_0e_14))
         .hover(|style| style.bg(rgb(0x12_16_1e)))
         .child(label)
@@ -105,9 +107,48 @@ fn field(
 impl Demo {
     fn increment(&mut self, cx: &mut Context<Self>) {
         self.count = self.count.saturating_add(1);
-        self.automation
-            .log("info", &format!("counter changed to {}", self.count));
+        self.automation.log("info", &format!("counter changed to {}", self.count));
         cx.notify();
+    }
+
+    /// One step of the volume slider, up or down, kept within its range.
+    fn step_volume(&mut self, up: bool, cx: &mut Context<Self>) {
+        self.volume = if up {
+            self.volume.saturating_add(1).min(VOLUME_MAX)
+        } else {
+            self.volume.saturating_sub(1)
+        };
+        self.automation.log("info", &format!("volume changed to {}", self.volume));
+        cx.notify();
+    }
+
+    /// A slider the way GPUI Kit's is built: it registers the Increment and
+    /// Decrement accessibility actions and no key handler, so assistive
+    /// technology can move it while a keystroke cannot. `perform_action` refuses
+    /// it here: only the gpui-fast backend performs accessibility actions.
+    fn volume_row(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let step = |up: bool| {
+            let demo: WeakEntity<Self> = cx.entity().downgrade();
+            move |_: Option<&gpui::accesskit::ActionData>, _: &mut Window, cx: &mut App| {
+                let _ = demo.update(cx, |demo, cx| demo.step_volume(up, cx));
+            }
+        };
+        let filled = f32::from(self.volume) / f32::from(VOLUME_MAX);
+        div()
+            .id("volume")
+            .w(px(200.0))
+            .h(px(12.0))
+            .rounded_md()
+            .bg(rgb(0x39_42_53))
+            .child(div().h_full().w(px(200.0 * filled)).rounded_md().bg(rgb(0x16_77_ff)))
+            .role(Role::Slider)
+            .aria_label("Volume")
+            .aria_numeric_value(f64::from(self.volume))
+            .aria_min_numeric_value(0.0)
+            .aria_max_numeric_value(f64::from(VOLUME_MAX))
+            .aria_numeric_value_step(1.0)
+            .on_a11y_action(AccessibleAction::Increment, step(true))
+            .on_a11y_action(AccessibleAction::Decrement, step(false))
     }
 
     fn reset(&mut self, cx: &mut Context<Self>) {
@@ -129,10 +170,7 @@ impl Demo {
     /// mirror of the annotations the agent has placed.
     fn chat_row(&self, cx: &mut Context<Self>) -> Div {
         let (count, changed_by) = self.annotations;
-        let reply = self
-            .reply
-            .clone()
-            .unwrap_or_else(|| "No reply yet".to_owned());
+        let reply = self.reply.clone().unwrap_or_else(|| "No reply yet".to_owned());
         let annotations = format!(
             "Annotations: {count}{}",
             match changed_by {
@@ -157,13 +195,7 @@ impl Demo {
                     .child("Ask agent")
                     .on_click(cx.listener(|this, _, _, cx| this.ask_agent(cx))),
             )
-            .child(
-                div()
-                    .id("chat-reply")
-                    .child(reply.clone())
-                    .role(Role::Status)
-                    .aria_label(reply),
-            )
+            .child(div().id("chat-reply").child(reply.clone()).role(Role::Status).aria_label(reply))
             .child(
                 div()
                     .id("annotation-count")
@@ -206,16 +238,8 @@ impl Demo {
                     .px_4()
                     .py_2()
                     .rounded_md()
-                    .bg(if locked {
-                        rgb(0x22_28_33)
-                    } else {
-                        rgb(0x16_77_ff)
-                    })
-                    .text_color(if locked {
-                        rgb(0x6b_74_85)
-                    } else {
-                        rgb(0xe8_ee_f7)
-                    })
+                    .bg(if locked { rgb(0x22_28_33) } else { rgb(0x16_77_ff) })
+                    .text_color(if locked { rgb(0x6b_74_85) } else { rgb(0xe8_ee_f7) })
                     .child("Locked action")
                     .role(Role::Button)
                     .aria_label("Locked action")
@@ -255,18 +279,8 @@ impl Render for Demo {
             .p_8()
             .bg(rgb(0x10_14_1c))
             .text_color(rgb(0xe8_ee_f7))
-            .child(
-                div()
-                    .id("heading")
-                    .text_2xl()
-                    .child("GPUI MCP cross-platform demo"),
-            )
-            .child(
-                div()
-                    .id("count")
-                    .text_lg()
-                    .child(format!("Count: {counter}")),
-            )
+            .child(div().id("heading").text_2xl().child("GPUI MCP cross-platform demo"))
+            .child(div().id("count").text_lg().child(format!("Count: {counter}")))
             .child(
                 div()
                     .flex()
@@ -303,28 +317,23 @@ impl Render for Demo {
             )
             .child(self.lock_row(cx))
             .child(self.chat_row(cx))
-            .child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .children(self.probes.iter().map(|probe| {
-                        probe
-                            .clone()
-                            .cached(StyleRefinement::default().w(px(200.0)).h(px(40.0)))
-                    })),
-            )
+            .child(div().flex().gap_3().children(self.probes.iter().map(|probe| {
+                probe.clone().cached(StyleRefinement::default().w(px(200.0)).h(px(40.0)))
+            })))
+            .child(self.volume_row(cx))
             .role(Role::Application)
             .aria_label(TITLE)
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "the demo reports a startup failure on stderr before it exits"
+)]
 fn main() {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .init();
+    tracing_subscriber::fmt().with_writer(std::io::stderr).with_ansi(false).init();
     gpui_platform::application().run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(640.0), px(420.0)), cx);
+        let bounds = Bounds::centered(None, size(px(640.0), px(480.0)), cx);
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -384,6 +393,7 @@ fn main() {
                     Demo {
                         count: 0,
                         locked: true,
+                        volume: VOLUME_START,
                         search: cx.focus_handle(),
                         filter: cx.focus_handle(),
                         probes: [

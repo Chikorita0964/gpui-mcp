@@ -1,7 +1,8 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use gpui::{App, Window};
+use rustc_hash::FxHashMap;
 
 use crate::{Binding, BindingDocument, BindingMode, ElementId, HandlerId, StateBindingId, UiEvent};
 
@@ -55,11 +56,11 @@ impl StateValue {
 
     /// Interpret this value as a finite, non-negative pixel length, accepting
     /// a `Number` or a numeric `Text`. Returns `None` for empty, negative,
-    /// non-finite, or unparseable values.
+    /// non-finite, or unparsable values.
     // A `Number` is application-owned `f64` state narrowed to the `f32` pixel
     // lengths GPUI styling expects; any precision beyond `f32` is irrelevant
     // to layout, so truncation here is intentional.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     pub(crate) fn as_pixels(&self) -> Option<f32> {
         let value = match self {
             Self::Number(value) => *value as f32,
@@ -80,11 +81,7 @@ pub struct HookEvent {
 
 impl HookEvent {
     pub(crate) fn new(element_id: ElementId, event: UiEvent, value: Option<StateValue>) -> Self {
-        Self {
-            element_id,
-            event,
-            value,
-        }
+        Self { element_id, event, value }
     }
 
     /// Exact standard-HTML target ID.
@@ -115,8 +112,8 @@ struct StateHook {
 /// Explicit registry that resolves declarative symbols to typed Rust callbacks.
 #[derive(Clone, Default)]
 pub struct HookRegistry {
-    events: HashMap<HandlerId, EventHook>,
-    states: HashMap<StateBindingId, StateHook>,
+    events: FxHashMap<HandlerId, EventHook>,
+    states: FxHashMap<StateBindingId, StateHook>,
 }
 
 impl HookRegistry {
@@ -137,9 +134,7 @@ impl HookRegistry {
         hook: impl Fn(&HookEvent, &mut Window, &mut App) -> HookOutcome + 'static,
     ) -> Result<(), HookRegistryError> {
         if self.events.contains_key(&id) {
-            return Err(HookRegistryError::DuplicateEvent {
-                id: id.as_str().to_owned(),
-            });
+            return Err(HookRegistryError::DuplicateEvent { id: id.as_str().to_owned() });
         }
         self.events.insert(id, Rc::new(hook));
         Ok(())
@@ -179,9 +174,7 @@ impl HookRegistry {
         writer: Option<StateWriter>,
     ) -> Result<(), HookRegistryError> {
         if self.states.contains_key(&id) {
-            return Err(HookRegistryError::DuplicateState {
-                id: id.as_str().to_owned(),
-            });
+            return Err(HookRegistryError::DuplicateState { id: id.as_str().to_owned() });
         }
         self.states.insert(id, StateHook { reader, writer });
         Ok(())
@@ -238,9 +231,7 @@ impl HookRegistry {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<StateValue> {
-        self.states
-            .get(source)
-            .map(|state| (state.reader)(window, cx))
+        self.states.get(source).map(|state| (state.reader)(window, cx))
     }
 
     pub(crate) fn write(
@@ -250,19 +241,14 @@ impl HookRegistry {
         window: &mut Window,
         cx: &mut App,
     ) -> HookOutcome {
-        self.states
-            .get(source)
-            .and_then(|state| state.writer.as_ref())
-            .map_or_else(
-                || Self::missing_hook_outcome("state binding is read-only"),
-                |writer| writer(value, window, cx),
-            )
+        self.states.get(source).and_then(|state| state.writer.as_ref()).map_or_else(
+            || Self::missing_hook_outcome("state binding is read-only"),
+            |writer| writer(value, window, cx),
+        )
     }
 
     fn missing_hook_outcome(reason: &str) -> HookOutcome {
-        HookOutcome::Rejected {
-            reason: reason.to_owned(),
-        }
+        HookOutcome::Rejected { reason: reason.to_owned() }
     }
 }
 
@@ -334,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn as_pixels_rejects_negative_non_finite_and_unparseable_values() {
+    fn as_pixels_rejects_negative_non_finite_and_unparsable_values() {
         assert_eq!(StateValue::Number(-1.0).as_pixels(), None);
         assert_eq!(StateValue::Number(f64::NAN).as_pixels(), None);
         assert_eq!(StateValue::Number(f64::INFINITY).as_pixels(), None);

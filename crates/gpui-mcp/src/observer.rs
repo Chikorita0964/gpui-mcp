@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     sync::{Arc, Weak},
     time::Instant,
 };
@@ -14,6 +14,7 @@ use gpui_mcp_protocol::{
     AnnotationStyle, AnnotationTarget, NodeAction, NodeState, Rect, Role, TextInfo, UiNode,
     ValueInfo, ViewRenderCause,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::annotations::PaintItem;
 use crate::registry::{SharedState, ViewRecord, rect_from_gpui};
@@ -29,9 +30,7 @@ pub(crate) struct BridgeObserver {
 
 impl BridgeObserver {
     pub(crate) fn new(state: &Arc<SharedState>) -> Arc<Self> {
-        Arc::new(Self {
-            state: Arc::downgrade(state),
-        })
+        Arc::new(Self { state: Arc::downgrade(state) })
     }
 }
 
@@ -128,7 +127,7 @@ impl BridgeObserver {
         if !state.claim_expiry_timer(deadline) {
             return;
         }
-        let weak = self.state.clone();
+        let weak = Weak::clone(&self.state);
         window
             .spawn(cx, async move |cx| {
                 let executor = cx.background_executor().clone();
@@ -153,12 +152,8 @@ pub(crate) fn resolve_targets(
     frame: Option<&AccessibilityFrame>,
     viewport: Rect,
 ) -> BTreeMap<String, Option<Rect>> {
-    let index: Option<HashMap<&str, &FrameNode>> = frame
-        .filter(|_| {
-            items
-                .iter()
-                .any(|item| matches!(item.target, AnnotationTarget::Node { .. }))
-        })
+    let index: Option<FxHashMap<&str, &FrameNode>> = frame
+        .filter(|_| items.iter().any(|item| matches!(item.target, AnnotationTarget::Node { .. })))
         .map(|frame| frame.nodes().map(|(_, node)| (node.id(), node)).collect());
     items
         .iter()
@@ -169,24 +164,18 @@ pub(crate) fn resolve_targets(
                     .zip(index.as_ref())
                     .and_then(|(frame, index)| visible_node_rect(frame, index, node_id)),
             };
-            (
-                item.id.clone(),
-                rect.and_then(|rect| intersect(rect, viewport)),
-            )
+            (item.id.clone(), rect.and_then(|rect| intersect(rect, viewport)))
         })
         .collect()
 }
 
 fn visible_node_rect(
     frame: &AccessibilityFrame,
-    index: &HashMap<&str, &FrameNode>,
+    index: &FxHashMap<&str, &FrameNode>,
     node_id: &str,
 ) -> Option<Rect> {
-    let hidden = |node: &FrameNode| {
-        frame
-            .accessibility_node(node)
-            .is_some_and(accesskit::Node::is_hidden)
-    };
+    let hidden =
+        |node: &FrameNode| frame.accessibility_node(node).is_some_and(accesskit::Node::is_hidden);
     let node = *index.get(node_id)?;
     if hidden(node) {
         return None;
@@ -224,10 +213,7 @@ pub(crate) fn intersect(a: Rect, b: Rect) -> Option<Rect> {
 }
 
 fn bounds(rect: Rect) -> Bounds<Pixels> {
-    Bounds::new(
-        point(px(rect.x), px(rect.y)),
-        size(px(rect.width), px(rect.height)),
-    )
+    Bounds::new(point(px(rect.x), px(rect.y)), size(px(rect.width), px(rect.height)))
 }
 
 fn paint_annotation(
@@ -286,17 +272,8 @@ fn paint_label(
     );
     let width = f32::from(line.width) + LABEL_PADDING * 2.0;
     let x = rect.x.min(viewport.width - width).max(0.0);
-    let y = if rect.y >= LABEL_HEIGHT {
-        rect.y - LABEL_HEIGHT
-    } else {
-        rect.y
-    };
-    let chip = Rect {
-        x,
-        y,
-        width,
-        height: LABEL_HEIGHT,
-    };
+    let y = if rect.y >= LABEL_HEIGHT { rect.y - LABEL_HEIGHT } else { rect.y };
+    let chip = Rect { x, y, width, height: LABEL_HEIGHT };
     window.paint_quad(quad(
         bounds(chip),
         px(3.0),
@@ -315,12 +292,14 @@ fn paint_label(
     );
 }
 
+// zed, gpui-pre and gpui-fast convert through `From`, gpui-ce through its own function; `lib.rs`
+// refuses combinations of the backend features, so these two arms cover every build.
 #[cfg(feature = "gpui-ce")]
 fn hsla(color: u32) -> Hsla {
     gpui::rgb_to_hsla(rgba(color))
 }
 
-#[cfg(not(feature = "gpui-ce"))]
+#[cfg(any(feature = "zed", feature = "gpui-pre", feature = "gpui-fast"))]
 fn hsla(color: u32) -> Hsla {
     Hsla::from(rgba(color))
 }
@@ -336,11 +315,7 @@ pub(crate) const fn contrasting_text(color: u32) -> u32 {
     let green = (color >> 16) & 0xff;
     let blue = (color >> 8) & 0xff;
     // ITU-R BT.601 luma, scaled by 1000.
-    if red * 299 + green * 587 + blue * 114 > 150_000 {
-        0x0000_00ff
-    } else {
-        0xffff_ffff
-    }
+    if red * 299 + green * 587 + blue * 114 > 150_000 { 0x0000_00ff } else { 0xffff_ffff }
 }
 
 const fn render_cause(cause: gpui::ViewRenderCause) -> ViewRenderCause {
@@ -363,14 +338,12 @@ const fn render_cause(cause: gpui::ViewRenderCause) -> ViewRenderCause {
 pub(crate) fn semantic_nodes(frame: &AccessibilityFrame) -> Vec<UiNode> {
     let mut nodes = frame.nodes().map(|(_, node)| node).collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.path().cmp(right.path()));
-    let mut hidden = HashSet::<String>::new();
+    let mut hidden = FxHashSet::<String>::default();
     nodes
         .into_iter()
         .map(|node| {
             let inherited_hidden = node.parent().is_some_and(|parent| hidden.contains(parent));
-            let own_hidden = frame
-                .accessibility_node(node)
-                .is_some_and(accesskit::Node::is_hidden);
+            let own_hidden = frame.accessibility_node(node).is_some_and(accesskit::Node::is_hidden);
             let mut result = to_node(frame, node);
             if inherited_hidden {
                 result.state.visible = false;
@@ -412,10 +385,7 @@ fn to_node(frame: &AccessibilityFrame, rendered: &FrameNode) -> UiNode {
         value: if rendered.is_redacted() {
             String::new()
         } else {
-            numeric_value
-                .map(|value| value.to_string())
-                .or(text_value)
-                .unwrap_or_default()
+            numeric_value.map(|value| value.to_string()).or(text_value).unwrap_or_default()
         },
         min: accessible.and_then(accesskit::Node::min_numeric_value),
         max: accessible.and_then(accesskit::Node::max_numeric_value),
@@ -431,9 +401,7 @@ fn to_node(frame: &AccessibilityFrame, rendered: &FrameNode) -> UiNode {
             .and_then(accesskit::Node::label)
             .map(ToOwned::to_owned)
             .or_else(|| label_from_content(accessible_role, rendered.content_text())),
-        description: accessible
-            .and_then(accesskit::Node::description)
-            .map(ToOwned::to_owned),
+        description: accessible.and_then(accesskit::Node::description).map(ToOwned::to_owned),
         bounds: Some(rect_from_gpui(rendered.bounds())),
         state: NodeState {
             visible: !rendered.bounds().is_empty()
@@ -469,10 +437,16 @@ fn actions(accessible: Option<&accesskit::Node>, rendered: &FrameNode) -> Vec<No
             ) && supports(Action::SetValue)),
         NodeAction::SetText,
     );
+    let steps = supports(Action::Increment) || supports(Action::Decrement);
+    // Only a node that actually registers SetValue advertises value replacement. A
+    // stepping-only control (a slider) would otherwise tell tree consumers it accepts a
+    // new value, and the bridge would honestly refuse the call it invited.
+    push_action(&mut actions, supports(Action::SetValue), NodeAction::SetValue);
+    push_action(&mut actions, steps, NodeAction::Step);
     push_action(
         &mut actions,
-        supports(Action::SetValue),
-        NodeAction::SetValue,
+        supports(Action::Expand) || supports(Action::Collapse),
+        NodeAction::Expand,
     );
     push_action(
         &mut actions,
@@ -640,11 +614,15 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    #[cfg(feature = "gpui-fast")]
+    use gpui::{AccessibleAction, App};
     use gpui::{
         AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
         Render, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled as _,
         StyledText, TestAppContext, Window, div, px, rgb,
     };
+    #[cfg(feature = "gpui-fast")]
+    use gpui_mcp_protocol::SemanticAction;
     use gpui_mcp_protocol::{
         MouseButton, NodeAction, Point, PointerCommand, Role as McpRole, ViewOutcome,
         ViewRenderCause,
@@ -668,17 +646,12 @@ mod tests {
                         .w(px(100.0))
                         .h(px(40.0))
                         .on_click({
-                            let clicked = self.clicked.clone();
+                            let clicked = Rc::clone(&self.clicked);
                             move |_, _, _| clicked.set(true)
                         })
                         .child(div().id("save-label").child(StyledText::new("Save"))),
                 )
-                .child(
-                    div()
-                        .id("hover-target")
-                        .on_mouse_move(|_, _, _| {})
-                        .child("Hover target"),
-                )
+                .child(div().id("hover-target").on_mouse_move(|_, _, _| {}).child("Hover target"))
                 .child(div().id("status").child("Ready"))
         }
     }
@@ -688,12 +661,10 @@ mod tests {
         let automation = Automation::isolated();
         let clicked = Rc::new(Cell::new(false));
         let automation_for_window = automation.clone();
-        let clicked_by_handler = clicked.clone();
+        let clicked_by_handler = Rc::clone(&clicked);
         let (_view, visual) = cx.add_window_view(move |window, _| {
             automation_for_window.attach(window);
-            SemanticFixture {
-                clicked: clicked_by_handler,
-            }
+            SemanticFixture { clicked: clicked_by_handler }
         });
         visual.run_until_parked();
 
@@ -705,11 +676,7 @@ mod tests {
         assert_eq!(tree.nodes["save"].role, McpRole::Button);
         assert_eq!(tree.nodes["save"].label.as_deref(), Some("Save"));
         assert!(tree.nodes["save"].actions.contains(&NodeAction::Click));
-        assert!(
-            tree.nodes["hover-target"]
-                .actions
-                .contains(&NodeAction::Hover)
-        );
+        assert!(tree.nodes["hover-target"].actions.contains(&NodeAction::Hover));
         assert_eq!(tree.nodes["status"].label.as_deref(), None);
 
         assert!(tree.nodes["save"].bounds.is_some());
@@ -719,10 +686,7 @@ mod tests {
             assert_eq!(
                 dispatch_pointer(
                     &PointerCommand::MouseDown {
-                        point: Point {
-                            x: point.x,
-                            y: point.y
-                        },
+                        point: Point { x: point.x, y: point.y },
                         button: MouseButton::Left,
                         click_count: 1,
                     },
@@ -734,10 +698,7 @@ mod tests {
             assert_eq!(
                 dispatch_pointer(
                     &PointerCommand::MouseUp {
-                        point: Point {
-                            x: point.x,
-                            y: point.y
-                        },
+                        point: Point { x: point.x, y: point.y },
                         button: MouseButton::Left,
                         click_count: 1,
                     },
@@ -757,24 +718,9 @@ mod tests {
             div()
                 .id("root")
                 .role(Role::Application)
-                .child(
-                    div()
-                        .id("editable")
-                        .role(Role::TextInput)
-                        .aria_read_only(false),
-                )
-                .child(
-                    div()
-                        .id("read-only")
-                        .role(Role::TextInput)
-                        .aria_read_only(true),
-                )
-                .child(
-                    div()
-                        .id("disabled")
-                        .role(Role::TextInput)
-                        .aria_disabled(true),
-                )
+                .child(div().id("editable").role(Role::TextInput).aria_read_only(false))
+                .child(div().id("read-only").role(Role::TextInput).aria_read_only(true))
+                .child(div().id("disabled").role(Role::TextInput).aria_disabled(true))
         }
     }
 
@@ -805,19 +751,14 @@ mod tests {
                 .role(Role::Application)
                 .size_full()
                 .child(
-                    div()
-                        .id("hidden-container")
-                        .aria_hidden(true)
-                        .w(px(120.))
-                        .h(px(40.))
-                        .child(
-                            div()
-                                .id("hidden-action")
-                                .role(Role::Button)
-                                .w(px(100.))
-                                .h(px(30.))
-                                .child("Hidden action"),
-                        ),
+                    div().id("hidden-container").aria_hidden(true).w(px(120.)).h(px(40.)).child(
+                        div()
+                            .id("hidden-action")
+                            .role(Role::Button)
+                            .w(px(100.))
+                            .h(px(30.))
+                            .child("Hidden action"),
+                    ),
                 )
                 .child(
                     div()
@@ -849,11 +790,7 @@ mod tests {
         let tree = automation.snapshot();
         assert_eq!(tree.nodes["hidden-container"].role, McpRole::Group);
         assert!(!tree.nodes["hidden-container"].state.visible);
-        assert!(
-            tree.nodes["hidden-action"]
-                .bounds
-                .is_some_and(|bounds| bounds.width > 0.)
-        );
+        assert!(tree.nodes["hidden-action"].bounds.is_some_and(|bounds| bounds.width > 0.));
         assert!(!tree.nodes["hidden-action"].state.visible);
         assert_eq!(tree.nodes["redacted-button"].label, None);
         assert!(
@@ -868,18 +805,14 @@ mod tests {
 
     impl Render for RedactedChildFixture {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            div()
-                .id("container")
-                .role(Role::Button)
-                .child("Public")
-                .child(
-                    div()
-                        .id("secret")
-                        .role(Role::TextInput)
-                        .aria_value("private value")
-                        .frame_redacted(true)
-                        .child("private value"),
-                )
+            div().id("container").role(Role::Button).child("Public").child(
+                div()
+                    .id("secret")
+                    .role(Role::TextInput)
+                    .aria_value("private value")
+                    .frame_redacted(true)
+                    .child("private value"),
+            )
         }
     }
 
@@ -900,12 +833,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|text| text.redacted && text.text.is_empty())
         );
-        assert!(
-            tree.nodes["secret"]
-                .value
-                .as_ref()
-                .is_some_and(|value| value.value.is_empty())
-        );
+        assert!(tree.nodes["secret"].value.as_ref().is_some_and(|value| value.value.is_empty()));
     }
 
     struct CachedPrivateText;
@@ -923,17 +851,11 @@ mod tests {
 
     impl Render for RedactedCacheFixture {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            div()
-                .id("container")
-                .role(Role::Button)
-                .child("Public")
-                .child(
-                    div().id("boundary").frame_redacted(self.redacted).child(
-                        self.content
-                            .clone()
-                            .cached(StyleRefinement::default().w(px(160.)).h(px(40.))),
-                    ),
-                )
+            div().id("container").role(Role::Button).child("Public").child(
+                div().id("boundary").frame_redacted(self.redacted).child(
+                    self.content.clone().cached(StyleRefinement::default().w(px(160.)).h(px(40.))),
+                ),
+            )
         }
     }
 
@@ -943,10 +865,7 @@ mod tests {
         let observed = automation.clone();
         let (root, visual) = cx.add_window_view(move |window, cx| {
             observed.attach(window);
-            RedactedCacheFixture {
-                content: cx.new(|_| CachedPrivateText),
-                redacted: false,
-            }
+            RedactedCacheFixture { content: cx.new(|_| CachedPrivateText), redacted: false }
         });
         visual.run_until_parked();
         let cached = root.read_with(visual, |root, _| root.content.entity_id());
@@ -961,26 +880,13 @@ mod tests {
                 cx.notify();
             });
             visual.run_until_parked();
-            let expected = if redacted {
-                "Public"
-            } else {
-                "Public Cached content"
-            };
-            assert_eq!(
-                automation.snapshot().nodes["container"].label.as_deref(),
-                Some(expected)
-            );
+            let expected = if redacted { "Public" } else { "Public Cached content" };
+            assert_eq!(automation.snapshot().nodes["container"].label.as_deref(), Some(expected));
             automation.mark_frames();
             visual.update(|window, _| window.request_frame());
             visual.run_until_parked();
-            assert_eq!(
-                outcome(&automation.frame_report(None, 16), cached),
-                Some((ViewOutcome::Reused, None))
-            );
-            assert_eq!(
-                automation.snapshot().nodes["container"].label.as_deref(),
-                Some(expected)
-            );
+            assert_eq!(outcome(&automation.frame_report(None, 16), cached), Some(UNCHANGED_CACHED));
+            assert_eq!(automation.snapshot().nodes["container"].label.as_deref(), Some(expected));
         }
     }
 
@@ -995,10 +901,7 @@ mod tests {
     impl Render for DockPanel {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().id("tab-panel").size_full().child(
-                div()
-                    .id("tab")
-                    .on_click(|_, _, _| {})
-                    .child(StyledText::new(self.title.clone())),
+                div().id("tab").on_click(|_, _, _| {}).child(StyledText::new(self.title.clone())),
             )
         }
     }
@@ -1028,12 +931,8 @@ mod tests {
             automation_for_window.attach(window);
             DockFixture {
                 panels: vec![
-                    cx.new(|_| DockPanel {
-                        title: "Hierarchy".into(),
-                    }),
-                    cx.new(|_| DockPanel {
-                        title: "Console".into(),
-                    }),
+                    cx.new(|_| DockPanel { title: "Hierarchy".into() }),
+                    cx.new(|_| DockPanel { title: "Console".into() }),
                 ],
             }
         });
@@ -1074,10 +973,7 @@ mod tests {
                     "each panel must list its tab, got {:?}",
                     panel.children
                 );
-                tree.nodes[&panel.children[0]]
-                    .label
-                    .clone()
-                    .unwrap_or_default()
+                tree.nodes[&panel.children[0]].label.clone().unwrap_or_default()
             })
             .collect::<Vec<_>>();
         titles.sort();
@@ -1146,10 +1042,7 @@ mod tests {
         visual.update(|window, cx| {
             assert_eq!(
                 dispatch_pointer(
-                    &PointerCommand::MouseMove {
-                        point,
-                        pressed_button: None,
-                    },
+                    &PointerCommand::MouseMove { point, pressed_button: None },
                     window,
                     cx,
                 ),
@@ -1157,6 +1050,23 @@ mod tests {
             );
         });
         visual.run_until_parked();
+    }
+
+    /// How a cached view that nothing changed draws in an observed frame:
+    /// replayed where view caching runs beside the accessibility tree, and
+    /// rendered in GPUI Fast, which draws nothing again from last frame while
+    /// the accessibility tree that a frame observer turns on is built.
+    const UNCHANGED_CACHED: (ViewOutcome, Option<ViewRenderCause>) = if cfg!(feature = "gpui-fast")
+    {
+        (ViewOutcome::Rendered, Some(ViewRenderCause::CachingDisabled))
+    } else {
+        (ViewOutcome::Reused, None)
+    };
+
+    /// `(rendered, reused)` for a cached view that nothing changed in `frames`
+    /// observed frames. See [`UNCHANGED_CACHED`].
+    const fn unchanged_cached_counts(frames: u32) -> (u32, u32) {
+        if cfg!(feature = "gpui-fast") { (frames, 0) } else { (0, frames) }
     }
 
     fn outcome(
@@ -1173,17 +1083,9 @@ mod tests {
     fn press(visual: &mut gpui::VisualTestContext, point: Point, down: bool) {
         visual.update(|window, cx| {
             let command = if down {
-                PointerCommand::MouseDown {
-                    point,
-                    button: MouseButton::Left,
-                    click_count: 1,
-                }
+                PointerCommand::MouseDown { point, button: MouseButton::Left, click_count: 1 }
             } else {
-                PointerCommand::MouseUp {
-                    point,
-                    button: MouseButton::Left,
-                    click_count: 1,
-                }
+                PointerCommand::MouseUp { point, button: MouseButton::Left, click_count: 1 }
             };
             assert_eq!(dispatch_pointer(&command, window, cx), Ok(()));
         });
@@ -1196,30 +1098,18 @@ mod tests {
     fn open_cached_regions<'a>(
         cx: &'a mut TestAppContext,
         automation: &Automation,
-    ) -> (
-        &'a mut gpui::VisualTestContext,
-        [gpui::EntityId; 3],
-        Point,
-        Point,
-    ) {
+    ) -> (&'a mut gpui::VisualTestContext, [gpui::EntityId; 3], Point, Point) {
         let automation_for_window = automation.clone();
         let (root, visual) = cx.add_window_view(move |window, cx| {
             automation_for_window.attach(window);
             CachedRegions {
-                left: cx.new(|_| HoverPanel {
-                    target: "left-target",
-                    label: "Left",
-                }),
-                right: cx.new(|_| HoverPanel {
-                    target: "right-target",
-                    label: "Right",
-                }),
+                left: cx.new(|_| HoverPanel { target: "left-target", label: "Left" }),
+                right: cx.new(|_| HoverPanel { target: "right-target", label: "Right" }),
             }
         });
         visual.run_until_parked();
-        let (left, right) = root.read_with(visual, |regions, _| {
-            (regions.left.entity_id(), regions.right.entity_id())
-        });
+        let (left, right) = root
+            .read_with(visual, |regions, _| (regions.left.entity_id(), regions.right.entity_id()));
         let tree = automation.snapshot();
         let center = |id: &str| tree.nodes[id].bounds.unwrap_or_default().center();
         let parking = center("parking");
@@ -1254,15 +1144,12 @@ mod tests {
         let reused = view(reused);
         assert_eq!(
             (reused.rendered, reused.reused),
-            (0, report.summary.frames),
+            unchanged_cached_counts(report.summary.frames),
             "the untouched region replays in every frame: {:?}",
             report.views
         );
         assert!(
-            report
-                .views
-                .iter()
-                .all(|view| !view.causes.contains_key(&ViewRenderCause::Refresh)),
+            report.views.iter().all(|view| !view.causes.contains_key(&ViewRenderCause::Refresh)),
             "{:?}",
             report.views
         );
@@ -1314,20 +1201,13 @@ mod tests {
         let (root, visual) = cx.add_window_view(move |window, cx| {
             automation_for_window.attach(window);
             CachedRegions {
-                left: cx.new(|_| HoverPanel {
-                    target: "left-target",
-                    label: "Left",
-                }),
-                right: cx.new(|_| HoverPanel {
-                    target: "right-target",
-                    label: "Right",
-                }),
+                left: cx.new(|_| HoverPanel { target: "left-target", label: "Left" }),
+                right: cx.new(|_| HoverPanel { target: "right-target", label: "Right" }),
             }
         });
         visual.run_until_parked();
-        let (left, right) = root.read_with(visual, |regions, _| {
-            (regions.left.entity_id(), regions.right.entity_id())
-        });
+        let (left, right) = root
+            .read_with(visual, |regions, _| (regions.left.entity_id(), regions.right.entity_id()));
 
         let tree = automation.snapshot();
         let center = |id: &str| tree.nodes[id].bounds.unwrap_or_default().center();
@@ -1342,11 +1222,7 @@ mod tests {
         move_pointer(visual, left_target);
 
         let report = automation.frame_report(None, 16);
-        assert_eq!(
-            report.summary.frames, 1,
-            "one hover is one frame, got {:?}",
-            report.frames
-        );
+        assert_eq!(report.summary.frames, 1, "one hover is one frame, got {:?}", report.frames);
         assert_eq!(
             outcome(&report, left),
             Some((ViewOutcome::Rendered, Some(ViewRenderCause::Notified))),
@@ -1354,7 +1230,7 @@ mod tests {
         );
         assert_eq!(
             outcome(&report, right),
-            Some((ViewOutcome::Reused, None)),
+            Some(UNCHANGED_CACHED),
             "the other region replays its previous frame: {:?}",
             report.last_frame_views
         );
@@ -1363,8 +1239,8 @@ mod tests {
             Some((ViewOutcome::Rendered, Some(ViewRenderCause::Uncached)))
         );
         let frame = &report.frames[0];
-        assert_eq!(frame.views_rendered, 2);
-        assert_eq!(frame.views_reused, 1);
+        let (rendered, reused) = unchanged_cached_counts(1);
+        assert_eq!((frame.views_rendered, frame.views_reused), (2 + rendered, reused));
         assert!(frame.draw_ms > 0.0);
         assert!(frame.bridge_ms <= frame.draw_ms);
         assert!(
@@ -1393,10 +1269,7 @@ mod tests {
             outcome(&report, right),
             Some((ViewOutcome::Rendered, Some(ViewRenderCause::Refresh)))
         );
-        assert_eq!(
-            automation.snapshot().nodes["right-group"].label.as_deref(),
-            Some("Right")
-        );
+        assert_eq!(automation.snapshot().nodes["right-group"].label.as_deref(), Some("Right"));
     }
 
     #[gpui::test]
@@ -1406,20 +1279,13 @@ mod tests {
         let (root, visual) = cx.add_window_view(move |window, cx| {
             automation_for_window.attach(window);
             CachedRegions {
-                left: cx.new(|_| HoverPanel {
-                    target: "left-target",
-                    label: "Left",
-                }),
-                right: cx.new(|_| HoverPanel {
-                    target: "right-target",
-                    label: "Right",
-                }),
+                left: cx.new(|_| HoverPanel { target: "left-target", label: "Left" }),
+                right: cx.new(|_| HoverPanel { target: "right-target", label: "Right" }),
             }
         });
         visual.run_until_parked();
-        let (left, right) = root.read_with(visual, |regions, _| {
-            (regions.left.entity_id(), regions.right.entity_id())
-        });
+        let (left, right) = root
+            .read_with(visual, |regions, _| (regions.left.entity_id(), regions.right.entity_id()));
 
         automation.mark_frames();
         visual.update(|window, _| {
@@ -1432,8 +1298,8 @@ mod tests {
 
         let report = automation.frame_report(None, 16);
         assert_eq!(report.summary.frames, 1);
-        assert_eq!(outcome(&report, left), Some((ViewOutcome::Reused, None)));
-        assert_eq!(outcome(&report, right), Some((ViewOutcome::Reused, None)));
+        assert_eq!(outcome(&report, left), Some(UNCHANGED_CACHED));
+        assert_eq!(outcome(&report, right), Some(UNCHANGED_CACHED));
     }
 
     /// A view whose two nested element ids spell, when joined, an element id
@@ -1468,9 +1334,7 @@ mod tests {
         let automation_for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, cx| {
             automation_for_window.attach(window);
-            SeparatorFixture {
-                nested: cx.new(|_| NestedPanel),
-            }
+            SeparatorFixture { nested: cx.new(|_| NestedPanel) }
         });
         visual.run_until_parked();
 
@@ -1486,12 +1350,225 @@ mod tests {
             "a repeated id is qualified by its parent when that separates it"
         );
         assert!(
-            tree.nodes
-                .keys()
-                .any(|id| id.ends_with(".q.y") && id != "q.y"),
+            tree.nodes.keys().any(|id| id.ends_with(".q.y") && id != "q.y"),
             "the nested pair must be pushed past the id it would otherwise spell, got {:?}",
             tree.nodes.keys().collect::<Vec<_>>()
         );
+    }
+
+    /// A numeric control that registers the AccessKit actions a real slider
+    /// does, using the same `on_a11y_action` path gpui-component's slider uses.
+    /// Like a real one, the listener updates the owning view, which repaints.
+    #[cfg(feature = "gpui-fast")]
+    struct SliderFixture {
+        value: f64,
+        seen: Rc<Cell<f64>>,
+    }
+
+    #[cfg(feature = "gpui-fast")]
+    impl Render for SliderFixture {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let step = |delta: f64| {
+                let view = cx.entity();
+                move |_: Option<&gpui::accesskit::ActionData>, _: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| {
+                        this.value = (this.value + delta).clamp(0., 100.);
+                        this.seen.set(this.value);
+                        cx.notify();
+                    });
+                }
+            };
+            div().id("root").role(Role::Application).size_full().child(
+                div()
+                    .id("volume")
+                    .role(Role::Slider)
+                    .w(px(200.))
+                    .h(px(24.))
+                    .aria_numeric_value(self.value)
+                    .aria_numeric_value_step(1.)
+                    .on_a11y_action(AccessibleAction::Increment, step(1.))
+                    .on_a11y_action(AccessibleAction::Decrement, step(-1.)),
+            )
+        }
+    }
+
+    #[cfg(feature = "gpui-fast")]
+    #[gpui::test]
+    fn semantic_increment_steps_a_numeric_node_without_a_keyboard(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let seen = Rc::new(Cell::new(0.0));
+        let seen_by_view = Rc::clone(&seen);
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            SliderFixture { value: 0.0, seen: seen_by_view }
+        });
+        visual.run_until_parked();
+
+        let before = automation.snapshot();
+        assert!(
+            before.nodes["volume"].actions.contains(&NodeAction::Step),
+            "a node stepping up or down advertises Step, got {:?}",
+            before.nodes["volume"].actions
+        );
+        assert!(
+            !before.nodes["volume"].actions.contains(&NodeAction::SetValue),
+            "a node that only registers Increment and Decrement must not advertise value \
+             replacement: the bridge would refuse it, so the advertisement would be a promise \
+             the tree cannot keep. Got {:?}",
+            before.nodes["volume"].actions
+        );
+        assert_eq!(
+            before.nodes["volume"].value.as_ref().map(|v| v.value.clone()),
+            Some("0".to_owned())
+        );
+
+        visual.update(|window, cx| {
+            let target = window
+                .a11y_node_id("volume")
+                .unwrap_or_else(|| unreachable!("the fixture publishes its slider"));
+            let (action, data) = crate::input::accesskit_action(SemanticAction::Increment);
+            assert!(
+                window.a11y_action_is_handled(target, action),
+                "the node registered an Increment listener (C17)"
+            );
+            window.perform_a11y_action(target, action, data, cx);
+        });
+        visual.run_until_parked();
+
+        assert!(
+            (seen.get() - 1.0).abs() < f64::EPSILON,
+            "the node's own listener ran (C17), saw {}",
+            seen.get()
+        );
+        assert_eq!(
+            automation.snapshot().nodes["volume"].value.as_ref().map(|value| value.value.clone()),
+            Some("1".to_owned()),
+            "the published value follows the step"
+        );
+    }
+
+    /// A disclosure control: a trigger that reports expansion and handles
+    /// Expand and Collapse, the way an accordion trigger does.
+    #[cfg(feature = "gpui-fast")]
+    struct DisclosureFixture {
+        expanded: bool,
+        seen: Rc<Cell<Option<bool>>>,
+    }
+
+    #[cfg(feature = "gpui-fast")]
+    impl Render for DisclosureFixture {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let set = |expanded: bool| {
+                let view = cx.entity();
+                move |_: Option<&gpui::accesskit::ActionData>, _: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| {
+                        this.expanded = expanded;
+                        this.seen.set(Some(expanded));
+                        cx.notify();
+                    });
+                }
+            };
+            div().id("root").role(Role::Application).size_full().child(
+                div()
+                    .id("details")
+                    .role(Role::Button)
+                    .w(px(120.))
+                    .h(px(24.))
+                    .aria_expanded(self.expanded)
+                    .on_a11y_action(AccessibleAction::Expand, set(true))
+                    .on_a11y_action(AccessibleAction::Collapse, set(false)),
+            )
+        }
+    }
+
+    #[cfg(feature = "gpui-fast")]
+    #[gpui::test]
+    fn semantic_expand_and_collapse_toggle_a_disclosure_node(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let seen = Rc::new(Cell::new(None));
+        let seen_by_view = Rc::clone(&seen);
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            DisclosureFixture { expanded: false, seen: seen_by_view }
+        });
+        visual.run_until_parked();
+
+        let tree = automation.snapshot();
+        assert!(
+            tree.nodes["details"].actions.contains(&NodeAction::Expand),
+            "a disclosure advertises Expand, got {:?}",
+            tree.nodes["details"].actions
+        );
+        assert_eq!(tree.nodes["details"].state.expanded, Some(false));
+
+        for (action, expected) in
+            [(SemanticAction::Expand, true), (SemanticAction::Collapse, false)]
+        {
+            visual.update(|window, cx| {
+                let target = window
+                    .a11y_node_id("details")
+                    .unwrap_or_else(|| unreachable!("the fixture publishes its trigger"));
+                let (accesskit, data) = crate::input::accesskit_action(action.clone());
+                assert!(
+                    window.a11y_action_is_handled(target, accesskit),
+                    "{action:?} has a listener (C17)"
+                );
+                window.perform_a11y_action(target, accesskit, data, cx);
+            });
+            visual.run_until_parked();
+            assert_eq!(seen.get(), Some(expected), "{action:?} reached the listener");
+            assert_eq!(
+                automation.snapshot().nodes["details"].state.expanded,
+                Some(expected),
+                "{action:?} is reflected in the published state"
+            );
+        }
+    }
+
+    #[cfg(feature = "gpui-fast")]
+    #[gpui::test]
+    fn a_click_needs_no_listener_because_gpui_dispatches_it_itself(cx: &mut TestAppContext) {
+        let automation = Automation::isolated();
+        let clicked = Rc::new(Cell::new(false));
+        let clicked_by_handler = Rc::clone(&clicked);
+        let automation_for_window = automation.clone();
+        let (_view, visual) = cx.add_window_view(move |window, _| {
+            automation_for_window.attach(window);
+            SemanticFixture { clicked: clicked_by_handler }
+        });
+        visual.run_until_parked();
+
+        assert!(!clicked.get(), "nothing has clicked the button before the action");
+
+        visual.update(|window, cx| {
+            let status = window
+                .a11y_node_id("status")
+                .unwrap_or_else(|| unreachable!("the fixture publishes its status line"));
+            let (increment, data) = crate::input::accesskit_action(SemanticAction::Increment);
+            assert!(
+                !window.a11y_action_is_handled(status, increment),
+                "an element with no listener handles nothing: this is the case the \
+                 bridge reports as Unsupported instead of silently doing nothing"
+            );
+            assert!(data.is_none(), "Increment carries no payload");
+
+            let save = window
+                .a11y_node_id("save")
+                .unwrap_or_else(|| unreachable!("the fixture publishes its button"));
+            assert!(
+                !window.a11y_action_is_handled(save, gpui::accesskit::Action::Click),
+                "the button registers no a11y listener; its click handler is a pointer handler"
+            );
+            // This is why the bridge must not refuse a click: GPUI clicks the
+            // node's center itself, so the action still reaches the application.
+            window.perform_a11y_action(save, gpui::accesskit::Action::Click, None, cx);
+        });
+        visual.run_until_parked();
+
+        assert!(clicked.get(), "performing the click action ran the button's own click handler");
+        assert!(automation.snapshot().nodes.contains_key("save"));
     }
 }
 
@@ -1502,12 +1579,7 @@ mod overlay_math_tests {
     use super::{contrasting_text, intersect, quarter_alpha};
 
     fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
-        Rect {
-            x,
-            y,
-            width,
-            height,
-        }
+        Rect { x, y, width, height }
     }
 
     #[test]
@@ -1592,11 +1664,7 @@ mod annotation_tests {
         let for_window = automation.clone();
         let (view, visual) = cx.add_window_view(move |window, _| {
             for_window.attach(window);
-            Moving {
-                offset: 40.,
-                show_target: true,
-                scrolled_away: false,
-            }
+            Moving { offset: 40., show_target: true, scrolled_away: false }
         });
         visual.run_until_parked();
 
@@ -1604,9 +1672,7 @@ mod annotation_tests {
             .update(|window, _| {
                 automation.set_annotations(
                     vec![
-                        AnnotationSpec::node("target")
-                            .with_id("t")
-                            .with_label("Save button"),
+                        AnnotationSpec::node("target").with_id("t").with_label("Save button"),
                         AnnotationSpec::node("inside").with_id("in-scroll"),
                         AnnotationSpec::node("missing").with_id("m"),
                     ],
@@ -1615,10 +1681,7 @@ mod annotation_tests {
                 )
             })
             .map_err(|error| error.message);
-        assert_eq!(
-            applied.map(|applied| applied[0].source),
-            Ok(AnnotationSource::App)
-        );
+        assert_eq!(applied.map(|applied| applied[0].source), Ok(AnnotationSource::App));
         visual.run_until_parked();
 
         let first = resolved(&automation, "t");
@@ -1635,9 +1698,7 @@ mod annotation_tests {
         visual.run_until_parked();
         let moved = resolved(&automation, "t");
         assert!(
-            first
-                .zip(moved)
-                .is_some_and(|(first, moved)| (moved.y - first.y - 50.).abs() < 0.5),
+            first.zip(moved).is_some_and(|(first, moved)| (moved.y - first.y - 50.).abs() < 0.5),
             "{first:?} -> {moved:?}"
         );
         assert_eq!(
@@ -1652,11 +1713,7 @@ mod annotation_tests {
         });
         visual.run_until_parked();
         assert_eq!(resolved(&automation, "t"), None);
-        assert_eq!(
-            automation.annotations().len(),
-            3,
-            "absence hides, not removes"
-        );
+        assert_eq!(automation.annotations().len(), 3, "absence hides, not removes");
     }
 
     #[gpui::test]
@@ -1666,11 +1723,7 @@ mod annotation_tests {
         let for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             for_window.attach(window);
-            Moving {
-                offset: 0.,
-                show_target: true,
-                scrolled_away: false,
-            }
+            Moving { offset: 0., show_target: true, scrolled_away: false }
         });
         visual.run_until_parked();
         let annotated = visual.update(|window, _| {
@@ -1687,7 +1740,7 @@ mod annotation_tests {
 
         executor.advance_clock(Duration::from_millis(200));
         visual.run_until_parked();
-        assert!(automation.annotations().is_empty());
+        assert_eq!(automation.annotations(), [] as [gpui_mcp_protocol::Annotation; 0]);
         assert!(automation.annotation_revision() > revision);
     }
 
@@ -1697,19 +1750,13 @@ mod annotation_tests {
         let for_window = automation.clone();
         let (_view, visual) = cx.add_window_view(move |window, _| {
             for_window.attach(window);
-            Moving {
-                offset: 0.,
-                show_target: true,
-                scrolled_away: false,
-            }
+            Moving { offset: 0., show_target: true, scrolled_away: false }
         });
         visual.run_until_parked();
         visual.update(|window, _| {
             automation.paint_annotations(false, window);
             assert!(
-                automation
-                    .annotate(AnnotationSpec::node("target").with_id("t"), window)
-                    .is_ok()
+                automation.annotate(AnnotationSpec::node("target").with_id("t"), window).is_ok()
             );
         });
         visual.run_until_parked();
@@ -1717,9 +1764,6 @@ mod annotation_tests {
             resolved(&automation, "t").is_some(),
             "bounds still resolve for an app that draws annotations itself"
         );
-        assert_eq!(
-            visual.update(|window, _| automation.clear_annotations(None, window)),
-            1
-        );
+        assert_eq!(visual.update(|window, _| automation.clear_annotations(None, window)), 1);
     }
 }

@@ -1,0 +1,562 @@
+---
+source: crates/gpui-mcp-server/tests/default_replies_unchanged.rs
+expression: "snapshot_text(tool, canonical)?"
+---
+{
+  "content": [
+    {
+      "text": "{\"generation\":0,\"nodes\":{\"annotation-count\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":173.0,\"x\":247.0,\"y\":316.0},\"children\":[],\"description\":null,\"id\":\"annotation-count\",\"label\":\"Annotations: 0 (expired)\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.annotation-count\"},\"parent\":\"demo-root\",\"role\":\"generic\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"chat-reply\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":88.0,\"x\":147.0,\"y\":316.0},\"children\":[],\"description\":null,\"id\":\"chat-reply\",\"label\":\"No reply yet\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.chat-reply\"},\"parent\":\"demo-root\",\"role\":\"generic\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"chat-send\":{\"actions\":[\"click\"],\"bounds\":{\"height\":42.0,\"width\":103.0,\"x\":32.0,\"y\":308.0},\"children\":[],\"description\":null,\"id\":\"chat-send\",\"label\":\"Ask agent\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.chat-send\"},\"parent\":\"demo-root\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"count\":{\"actions\":[],\"bounds\":{\"height\":29.0,\"width\":576.0,\"x\":32.0,\"y\":87.0},\"children\":[],\"description\":null,\"id\":\"count\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.count\"},\"parent\":\"demo-root\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"demo-root\":{\"actions\":[],\"bounds\":{\"height\":480.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"annotation-count\",\"chat-reply\",\"chat-send\",\"count\",\"filter\",\"heading\",\"increment\",\"lock-toggle\",\"locked-action\",\"reset\",\"search\",\"probe-left\",\"probe-right\",\"volume\"],\"description\":null,\"id\":\"demo-root\",\"label\":\"GPUI MCP Demo\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root\"},\"parent\":null,\"role\":\"application\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"filter\":{\"actions\":[\"focus\",\"hover\"],\"bounds\":{\"height\":44.0,\"width\":240.0,\"x\":284.0,\"y\":132.0},\"children\":[],\"description\":null,\"id\":\"filter\",\"label\":\"Filter\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.filter\"},\"parent\":\"demo-root\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"Filter\"},\"value\":null},\"heading\":{\"actions\":[],\"bounds\":{\"height\":39.0,\"width\":576.0,\"x\":32.0,\"y\":32.0},\"children\":[],\"description\":null,\"id\":\"heading\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.heading\"},\"parent\":\"demo-root\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"increment\":{\"actions\":[\"click\"],\"bounds\":{\"height\":42.0,\"width\":106.0,\"x\":32.0,\"y\":192.0},\"children\":[],\"description\":null,\"id\":\"increment\",\"label\":\"Increment\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.increment\"},\"parent\":\"demo-root\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"lock-toggle\":{\"actions\":[\"click\"],\"bounds\":{\"height\":42.0,\"width\":82.0,\"x\":175.0,\"y\":250.0},\"children\":[],\"description\":null,\"id\":\"lock-toggle\",\"label\":\"Unlock\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.lock-toggle\"},\"parent\":\"demo-root\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"locked-action\":{\"actions\":[],\"bounds\":{\"height\":42.0,\"width\":131.0,\"x\":32.0,\"y\":250.0},\"children\":[],\"description\":null,\"id\":\"locked-action\",\"label\":\"Locked action\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.locked-action\"},\"parent\":\"demo-root\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":false,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-left\":{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":32.0,\"y\":366.0},\"children\":[\"probe-left-target\"],\"description\":null,\"id\":\"probe-left\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.view-4294967298.probe-left\"},\"parent\":\"demo-root\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-left-target\":{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":108.0,\"x\":32.0,\"y\":365.0},\"children\":[],\"description\":null,\"id\":\"probe-left-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.view-4294967298.probe-left.probe-left-target\"},\"parent\":\"probe-left\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-right\":{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":244.0,\"y\":366.0},\"children\":[\"probe-right-target\"],\"description\":null,\"id\":\"probe-right\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.view-4294967299.probe-right\"},\"parent\":\"demo-root\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-right-target\":{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":118.0,\"x\":244.0,\"y\":365.0},\"children\":[],\"description\":null,\"id\":\"probe-right-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.view-4294967299.probe-right.probe-right-target\"},\"parent\":\"probe-right\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"reset\":{\"actions\":[\"click\"],\"bounds\":{\"height\":42.0,\"width\":73.0,\"x\":150.0,\"y\":192.0},\"children\":[],\"description\":null,\"id\":\"reset\",\"label\":\"Reset\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.reset\"},\"parent\":\"demo-root\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"search\":{\"actions\":[\"focus\",\"hover\"],\"bounds\":{\"height\":44.0,\"width\":240.0,\"x\":32.0,\"y\":132.0},\"children\":[],\"description\":null,\"id\":\"search\",\"label\":\"Search\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.search\"},\"parent\":\"demo-root\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"Search\"},\"value\":null},\"volume\":{\"actions\":[\"step\"],\"bounds\":{\"height\":12.0,\"width\":200.0,\"x\":32.0,\"y\":422.0},\"children\":[],\"description\":null,\"id\":\"volume\",\"label\":\"Volume\",\"metadata\":{\"gpui_path\":\"view-4294967297.demo-root.volume\"},\"parent\":\"demo-root\",\"role\":\"slider\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":{\"max\":0,\"min\":0.0,\"step\":1.0,\"value\":\"5\"}}},\"roots\":[\"demo-root\"]}",
+      "type": "text"
+    }
+  ],
+  "isError": false,
+  "structuredContent": {
+    "generation": 0,
+    "nodes": {
+      "annotation-count": {
+        "actions": [],
+        "bounds": {
+          "height": 26.0,
+          "width": 173.0,
+          "x": 247.0,
+          "y": 316.0
+        },
+        "children": [],
+        "description": null,
+        "id": "annotation-count",
+        "label": "Annotations: 0 (expired)",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.annotation-count"
+        },
+        "parent": "demo-root",
+        "role": "generic",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "chat-reply": {
+        "actions": [],
+        "bounds": {
+          "height": 26.0,
+          "width": 88.0,
+          "x": 147.0,
+          "y": 316.0
+        },
+        "children": [],
+        "description": null,
+        "id": "chat-reply",
+        "label": "No reply yet",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.chat-reply"
+        },
+        "parent": "demo-root",
+        "role": "generic",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "chat-send": {
+        "actions": [
+          "click"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 103.0,
+          "x": 32.0,
+          "y": 308.0
+        },
+        "children": [],
+        "description": null,
+        "id": "chat-send",
+        "label": "Ask agent",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.chat-send"
+        },
+        "parent": "demo-root",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "count": {
+        "actions": [],
+        "bounds": {
+          "height": 29.0,
+          "width": 576.0,
+          "x": 32.0,
+          "y": 87.0
+        },
+        "children": [],
+        "description": null,
+        "id": "count",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.count"
+        },
+        "parent": "demo-root",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "demo-root": {
+        "actions": [],
+        "bounds": {
+          "height": 480.0,
+          "width": 640.0,
+          "x": 0.0,
+          "y": 0.0
+        },
+        "children": [
+          "annotation-count",
+          "chat-reply",
+          "chat-send",
+          "count",
+          "filter",
+          "heading",
+          "increment",
+          "lock-toggle",
+          "locked-action",
+          "reset",
+          "search",
+          "probe-left",
+          "probe-right",
+          "volume"
+        ],
+        "description": null,
+        "id": "demo-root",
+        "label": "GPUI MCP Demo",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root"
+        },
+        "parent": null,
+        "role": "application",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "filter": {
+        "actions": [
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 44.0,
+          "width": 240.0,
+          "x": 284.0,
+          "y": 132.0
+        },
+        "children": [],
+        "description": null,
+        "id": "filter",
+        "label": "Filter",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.filter"
+        },
+        "parent": "demo-root",
+        "role": "text_input",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": {
+          "caret": null,
+          "redacted": false,
+          "selection": null,
+          "text": "Filter"
+        },
+        "value": null
+      },
+      "heading": {
+        "actions": [],
+        "bounds": {
+          "height": 39.0,
+          "width": 576.0,
+          "x": 32.0,
+          "y": 32.0
+        },
+        "children": [],
+        "description": null,
+        "id": "heading",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.heading"
+        },
+        "parent": "demo-root",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "increment": {
+        "actions": [
+          "click"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 106.0,
+          "x": 32.0,
+          "y": 192.0
+        },
+        "children": [],
+        "description": null,
+        "id": "increment",
+        "label": "Increment",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.increment"
+        },
+        "parent": "demo-root",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "lock-toggle": {
+        "actions": [
+          "click"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 82.0,
+          "x": 175.0,
+          "y": 250.0
+        },
+        "children": [],
+        "description": null,
+        "id": "lock-toggle",
+        "label": "Unlock",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.lock-toggle"
+        },
+        "parent": "demo-root",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "locked-action": {
+        "actions": [],
+        "bounds": {
+          "height": 42.0,
+          "width": 131.0,
+          "x": 32.0,
+          "y": 250.0
+        },
+        "children": [],
+        "description": null,
+        "id": "locked-action",
+        "label": "Locked action",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.locked-action"
+        },
+        "parent": "demo-root",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": false,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "probe-left": {
+        "actions": [],
+        "bounds": {
+          "height": 40.0,
+          "width": 200.0,
+          "x": 32.0,
+          "y": 366.0
+        },
+        "children": [
+          "probe-left-target"
+        ],
+        "description": null,
+        "id": "probe-left",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.view-4294967298.probe-left"
+        },
+        "parent": "demo-root",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "probe-left-target": {
+        "actions": [
+          "hover"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 108.0,
+          "x": 32.0,
+          "y": 365.0
+        },
+        "children": [],
+        "description": null,
+        "id": "probe-left-target",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.view-4294967298.probe-left.probe-left-target"
+        },
+        "parent": "probe-left",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "probe-right": {
+        "actions": [],
+        "bounds": {
+          "height": 40.0,
+          "width": 200.0,
+          "x": 244.0,
+          "y": 366.0
+        },
+        "children": [
+          "probe-right-target"
+        ],
+        "description": null,
+        "id": "probe-right",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.view-4294967299.probe-right"
+        },
+        "parent": "demo-root",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "probe-right-target": {
+        "actions": [
+          "hover"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 118.0,
+          "x": 244.0,
+          "y": 365.0
+        },
+        "children": [],
+        "description": null,
+        "id": "probe-right-target",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.view-4294967299.probe-right.probe-right-target"
+        },
+        "parent": "probe-right",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "reset": {
+        "actions": [
+          "click"
+        ],
+        "bounds": {
+          "height": 42.0,
+          "width": 73.0,
+          "x": 150.0,
+          "y": 192.0
+        },
+        "children": [],
+        "description": null,
+        "id": "reset",
+        "label": "Reset",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.reset"
+        },
+        "parent": "demo-root",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "search": {
+        "actions": [
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 44.0,
+          "width": 240.0,
+          "x": 32.0,
+          "y": 132.0
+        },
+        "children": [],
+        "description": null,
+        "id": "search",
+        "label": "Search",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.search"
+        },
+        "parent": "demo-root",
+        "role": "text_input",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": {
+          "caret": null,
+          "redacted": false,
+          "selection": null,
+          "text": "Search"
+        },
+        "value": null
+      },
+      "volume": {
+        "actions": [
+          "step"
+        ],
+        "bounds": {
+          "height": 12.0,
+          "width": 200.0,
+          "x": 32.0,
+          "y": 422.0
+        },
+        "children": [],
+        "description": null,
+        "id": "volume",
+        "label": "Volume",
+        "metadata": {
+          "gpui_path": "view-4294967297.demo-root.volume"
+        },
+        "parent": "demo-root",
+        "role": "slider",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": {
+          "max": 0,
+          "min": 0.0,
+          "step": 1.0,
+          "value": "5"
+        }
+      }
+    },
+    "roots": [
+      "demo-root"
+    ]
+  }
+}

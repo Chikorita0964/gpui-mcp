@@ -29,18 +29,18 @@ one owner; the others call it rather than re-implementing it.
 
 ## Owners
 
-| Concern | Owner | Notes |
-|---|---|---|
-| Layout, text, painting, input, focus, accessibility | **GPUI** (gpui-pre for GPUI Kit) | Nobody else lays out or paints. |
-| Components (buttons, menus, dialogs, …), theme model | **GPUI Kit** (`gpui-component`) | Studio and exported apps use them directly. |
-| Motion primitives: value transitions, keyframes, easing, springs, presence | **GPUI Kit** (`gpui_base::motion`) | Called by both `LiveHtml` and generated code; no second engine. |
-| View transitions (capture, named-element morphs, cross-fade, pseudo-element timing) | **`gpui-view-transitions`** (gpui-mcp repo) | The one motion gap in GPUI Kit; built on `gpui_base::motion`, independent of HTML (callers draw the outgoing state and style each name), and a candidate to upstream. |
-| HTML parsing, CSS parsing, selectors and the cascade, bindings validation | **htmlswap** | Uses lightningcss; resolves at compile time what can be static. |
-| CSS → GPUI-shaped typed lowering (lengths and units, colors, `var()`, `light-dark()`, state styles, motion plan) | **htmlswap** | One lowering, consumed by both back ends below, so preview and export cannot drift. |
-| Rust code generation for exported apps | **htmlswap** (GPUI Kit adapter) | Emits GPUI Kit builder chains and `gpui_base::motion` calls; no interpreter ships. |
-| Interpreting the lowering at runtime (hot reload, canvas, agents editing live) | **gpui-mcp-html** (`LiveHtml`) | Maps the typed lowering onto GPUI styles each frame; binds hooks; publishes semantics. |
-| MCP automation, semantic tree, annotations, messaging | **gpui-mcp** (bridge) | Unchanged by this document. |
-| Component graph, projections, editing, export UX | **gpui-studio** | Projects the graph to HTML/CSS/RON (rendered by `LiveHtml`) and to GPUI Kit code (via htmlswap). |
+| Concern                                                                                                          | Owner                                       | Notes                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layout, text, painting, input, focus, accessibility                                                              | **GPUI** (gpui-pre for GPUI Kit)            | Nobody else lays out or paints.                                                                                                                                       |
+| Components (buttons, menus, dialogs, …), theme model                                                             | **GPUI Kit** (`gpui-component`)             | Studio and exported apps use them directly.                                                                                                                           |
+| Motion primitives: value transitions, keyframes, easing, springs, presence                                       | **GPUI Kit** (`gpui_base::motion`)          | Called by both `LiveHtml` and generated code; no second engine.                                                                                                       |
+| View transitions (capture, named-element morphs, cross-fade, pseudo-element timing)                              | **`gpui-view-transitions`** (gpui-mcp repo) | The one motion gap in GPUI Kit; built on `gpui_base::motion`, independent of HTML (callers draw the outgoing state and style each name), and a candidate to upstream. |
+| HTML parsing, CSS parsing, selectors and the cascade, bindings validation                                        | **htmlswap**                                | Uses lightningcss; resolves at compile time what can be static.                                                                                                       |
+| CSS → GPUI-shaped typed lowering (lengths and units, colors, `var()`, `light-dark()`, state styles, motion plan) | **htmlswap**                                | One lowering, consumed by both back ends below, so preview and export cannot drift.                                                                                   |
+| Rust code generation for exported apps                                                                           | **htmlswap** (GPUI Kit adapter)             | Emits GPUI Kit builder chains and `gpui_base::motion` calls; no interpreter ships.                                                                                    |
+| Interpreting the lowering at runtime (hot reload, canvas, agents editing live)                                   | **gpui-mcp-html** (`LiveHtml`)              | Maps the typed lowering onto GPUI styles each frame; binds hooks; publishes semantics.                                                                                |
+| MCP automation, semantic tree, annotations, messaging                                                            | **gpui-mcp** (bridge)                       | Unchanged by this document.                                                                                                                                           |
+| Component graph, projections, editing, export UX                                                                 | **gpui-studio**                             | Projects the graph to HTML/CSS/RON (rendered by `LiveHtml`) and to GPUI Kit code (via htmlswap).                                                                      |
 
 ## Who calls whom
 
@@ -75,22 +75,23 @@ one owner; the others call it rather than re-implementing it.
 4. **Spec behavior over convenience.** Selectors, cascade, units and colors
    follow the CSS specifications; state pseudo-classes apply to the element
    they are written on (`.card:hover .title` lowers to a GPUI group hover).
-5. **Version ranges, not pins.** Dependencies accept every release they work
-   with (`gpui-pre >=0.3.5, <=0.3.7`, `gpui-base >=0.6.4, <0.8`), and CI tests
-   each supported release. A pin is only for a vendored tree or an upstream
-   that pins itself.
+5. **The latest releases only.** Dependencies move to each new release and
+   drop the old ones: each vendored GPUI is the one supported version
+   (`gpui-pre =0.3.8`, `gpui-fast =0.1.6`), GPUI Kit comes from its GitHub main
+   at a pinned revision (its GPUI Fast support is not released yet), and the
+   whole workspace builds on its one pinned Rust toolchain.
 
 ## Migration status
 
-| Before | Now | Status |
-|---|---|---|
-| `LiveHtml` parsed CSS strings every frame | Maps htmlswap's typed lowering (`gpui_style`), cached per element and state | Done |
-| `LiveHtml` and the code generator each decided how CSS maps to GPUI | htmlswap's `computed::gpui::plan` decides once (including what is approximate or unsupported); `LiveHtml` applies it and the code generator prints it | Done |
-| Lengths were folded to pixels at a fixed 16px rem and viewport | `rem` and viewport units stay symbolic until the window resolves them | Done |
-| `LiveHtml` had its own transition and animation engine | `gpui_base::motion` on the `gpui-pre` backend; end states on Zed | Done |
-| htmlswap attached dynamic pseudo-classes to the subject element | State attached to the element written on (`ElementState { ancestor }`) | Done |
-| View-transition elements inside `LiveHtml` | `gpui-view-transitions` crate on `gpui_base::motion`; `LiveHtml` keeps only CSS-to-style mapping and inert drawing of the old document | Done |
-| `gpui-mcp-html` pinned one GPUI Kit release | `gpui-base >=0.6.4, <0.8`: a Kit release for every gpui-pre the bridge supports (0.3.5–0.3.7), each tested in CI | Done |
-| htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | `GpuiTarget::Kit` (`--gpui-kit`): `gpui-pre` 0.3 and `gpui-component` 0.7, styles from the shared plan, `:hover` transitions on `gpui_base::motion` | Done |
-| Generated GPUI Kit code animates `@keyframes` and view transitions | `gpui_base::motion::animate_keyframes`; view transitions need the app to provide its outgoing state | Next |
-| gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings | GPUI Kit on gpui-pre; themes as CSS custom properties | Planned |
+| Before                                                                  | Now                                                                                                                                                   | Status  |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `LiveHtml` parsed CSS strings every frame                               | Maps htmlswap's typed lowering (`gpui_style`), cached per element and state                                                                           | Done    |
+| `LiveHtml` and the code generator each decided how CSS maps to GPUI     | htmlswap's `computed::gpui::plan` decides once (including what is approximate or unsupported); `LiveHtml` applies it and the code generator prints it | Done    |
+| Lengths were folded to pixels at a fixed 16px rem and viewport          | `rem` and viewport units stay symbolic until the window resolves them                                                                                 | Done    |
+| `LiveHtml` had its own transition and animation engine                  | `gpui_base::motion` on the `gpui-pre` backend; end states on Zed                                                                                      | Done    |
+| htmlswap attached dynamic pseudo-classes to the subject element         | State attached to the element written on (`ElementState { ancestor }`)                                                                                | Done    |
+| View-transition elements inside `LiveHtml`                              | `gpui-view-transitions` crate on `gpui_base::motion`; `LiveHtml` keeps only CSS-to-style mapping and inert drawing of the old document                | Done    |
+| `gpui-mcp-html` followed one GPUI Kit release behind                    | `gpui-base` from GPUI Kit's GitHub main on the vendored `gpui-pre` 0.3.8                                                                              | Done    |
+| htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | `GpuiTarget::Kit` (`--gpui-kit`): `gpui-pre` 0.3 and `gpui-component` 0.7, styles from the shared plan, `:hover` transitions on `gpui_base::motion`   | Done    |
+| Generated GPUI Kit code animates `@keyframes` and view transitions      | `gpui_base::motion::animate_keyframes`; view transitions need the app to provide its outgoing state                                                   | Next    |
+| gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings       | GPUI Kit on gpui-pre; themes as CSS custom properties                                                                                                 | Planned |

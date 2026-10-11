@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[lib]
+# No doc tests in this crate: cargo test --doc would build its docs for nothing.
+doctest = false
+
 [dependencies]
 base64.workspace = true
 gpui-mcp-protocol = { path = "../gpui-mcp-protocol" }
