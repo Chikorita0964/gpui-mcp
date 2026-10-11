@@ -52,7 +52,7 @@ let bridge = BridgeHandle::install(
 ```
 
 That is the whole integration. The client discovers running apps on its own.
-See the [demo](examples/demo/src/main.rs) for a complete window.
+See the [GPUI Kit demo](examples/gpui-kit/src/main.rs) for a complete window.
 
 ## Making your UI agent-ready
 

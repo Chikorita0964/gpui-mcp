@@ -68,8 +68,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-extern crate gpui_pre as gpui;
-
 use gpui::{AnyElement, Bounds, IntoElement, Pixels, SharedString, Styled, Window, div};
 use gpui::{ParentElement, Point};
 use rustc_hash::FxHashMap;

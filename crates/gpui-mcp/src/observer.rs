@@ -47,7 +47,6 @@ impl FrameObserver for BridgeObserver {
 
     /// GPUI Fast asks whether the frame builds the accessibility tree: only while something needs
     /// it, so its retained rendering works in between.
-    #[cfg(feature = "gpui-fast")]
     fn wants_accessibility(&self) -> bool {
         self.state.upgrade().is_some_and(|state| state.frame_wants_semantics())
     }
@@ -299,14 +298,6 @@ fn paint_label(
     );
 }
 
-// zed, gpui-pre and gpui-fast convert through `From`, gpui-ce through its own function; `lib.rs`
-// refuses combinations of the backend features, so these two arms cover every build.
-#[cfg(feature = "gpui-ce")]
-fn hsla(color: u32) -> Hsla {
-    gpui::rgb_to_hsla(rgba(color))
-}
-
-#[cfg(any(feature = "zed", feature = "gpui-pre", feature = "gpui-fast"))]
 fn hsla(color: u32) -> Hsla {
     Hsla::from(rgba(color))
 }
@@ -621,14 +612,12 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    #[cfg(feature = "gpui-fast")]
     use gpui::{AccessibleAction, App};
     use gpui::{
         AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
         Render, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled as _,
         StyledText, TestAppContext, Window, div, px, rgb,
     };
-    #[cfg(feature = "gpui-fast")]
     use gpui_mcp_protocol::SemanticAction;
     use gpui_mcp_protocol::{
         MouseButton, NodeAction, Point, PointerCommand, Role as McpRole, ViewOutcome,
@@ -1059,21 +1048,16 @@ mod tests {
         visual.run_until_parked();
     }
 
-    /// How a cached view that nothing changed draws in an observed frame:
-    /// replayed where view caching runs beside the accessibility tree, and
-    /// rendered in GPUI Fast, which draws nothing again from last frame while
-    /// the accessibility tree that a frame observer turns on is built.
-    const UNCHANGED_CACHED: (ViewOutcome, Option<ViewRenderCause>) = if cfg!(feature = "gpui-fast")
-    {
-        (ViewOutcome::Rendered, Some(ViewRenderCause::CachingDisabled))
-    } else {
-        (ViewOutcome::Reused, None)
-    };
+    /// How a cached view that nothing changed draws in an observed frame: GPUI
+    /// Fast draws nothing again from last frame while the accessibility tree a
+    /// frame observer turns on is built, so it renders.
+    const UNCHANGED_CACHED: (ViewOutcome, Option<ViewRenderCause>) =
+        (ViewOutcome::Rendered, Some(ViewRenderCause::CachingDisabled));
 
     /// `(rendered, reused)` for a cached view that nothing changed in `frames`
     /// observed frames. See [`UNCHANGED_CACHED`].
     const fn unchanged_cached_counts(frames: u32) -> (u32, u32) {
-        if cfg!(feature = "gpui-fast") { (frames, 0) } else { (0, frames) }
+        (frames, 0)
     }
 
     fn outcome(
@@ -1311,7 +1295,6 @@ mod tests {
 
     /// An IPC bridge builds the accessibility tree only on demand: without one, GPUI Fast draws
     /// an unchanged view from the last frame, and a demand draws a frame with the tree again.
-    #[cfg(feature = "gpui-fast")]
     #[gpui::test]
     fn without_a_demand_views_are_reused_and_a_demand_builds_the_tree(cx: &mut TestAppContext) {
         let hold = std::time::Duration::from_secs(3);
@@ -1403,13 +1386,11 @@ mod tests {
     /// A numeric control that registers the AccessKit actions a real slider
     /// does, using the same `on_a11y_action` path gpui-component's slider uses.
     /// Like a real one, the listener updates the owning view, which repaints.
-    #[cfg(feature = "gpui-fast")]
     struct SliderFixture {
         value: f64,
         seen: Rc<Cell<f64>>,
     }
 
-    #[cfg(feature = "gpui-fast")]
     impl Render for SliderFixture {
         fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let step = |delta: f64| {
@@ -1436,7 +1417,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gpui-fast")]
     #[gpui::test]
     fn semantic_increment_steps_a_numeric_node_without_a_keyboard(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
@@ -1494,13 +1474,11 @@ mod tests {
 
     /// A disclosure control: a trigger that reports expansion and handles
     /// Expand and Collapse, the way an accordion trigger does.
-    #[cfg(feature = "gpui-fast")]
     struct DisclosureFixture {
         expanded: bool,
         seen: Rc<Cell<Option<bool>>>,
     }
 
-    #[cfg(feature = "gpui-fast")]
     impl Render for DisclosureFixture {
         fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let set = |expanded: bool| {
@@ -1526,7 +1504,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gpui-fast")]
     #[gpui::test]
     fn semantic_expand_and_collapse_toggle_a_disclosure_node(cx: &mut TestAppContext) {
         let automation = Automation::isolated();
@@ -1571,7 +1548,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gpui-fast")]
     #[gpui::test]
     fn a_click_needs_no_listener_because_gpui_dispatches_it_itself(cx: &mut TestAppContext) {
         let automation = Automation::isolated();

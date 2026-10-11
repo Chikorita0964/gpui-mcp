@@ -901,7 +901,6 @@ fn handle_ui_operation(
 /// Only the gpui-fast series carries the accessibility actions patch, so only that backend compiles
 /// this. GPUI handles click, focus, and blur itself, so a node without a
 /// listener for them is still actionable; anything else must register one.
-#[cfg(feature = "gpui-fast")]
 fn dispatch_semantic_action(
     node_id: &str,
     action: SemanticAction,
@@ -925,20 +924,6 @@ fn dispatch_semantic_action(
     Ok(BridgeResult::Ack)
 }
 
-/// Every backend but gpui-fast lacks the accessibility actions patch, so it refuses the operation
-/// instead of failing to compile.
-#[cfg(not(feature = "gpui-fast"))]
-fn dispatch_semantic_action(
-    _node_id: &str,
-    _action: SemanticAction,
-    _window: &mut Window,
-    _cx: &mut App,
-) -> Result<BridgeResult, BridgeError> {
-    Err(BridgeError::new(
-        ErrorCode::Unsupported,
-        "this backend does not support semantic accessibility actions",
-    ))
-}
 async fn run_listener(
     listener: LocalSocketListener,
     command_tx: Sender<UiCommand>,
@@ -1825,23 +1810,6 @@ mod tests {
             ActionFixture { steps: steps_by_view }
         });
         visual.run_until_parked();
-
-        // Every backend but gpui-fast lacks the accessibility actions patch, so it refuses.
-        if cfg!(not(feature = "gpui-fast")) {
-            let refusal = visual.update(|window, cx| {
-                super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)
-                    .err()
-                    .map(|error| (error.code, error.message))
-            });
-            assert_eq!(
-                refusal,
-                Some((
-                    ErrorCode::Unsupported,
-                    "this backend does not support semantic accessibility actions".to_owned(),
-                ))
-            );
-            return;
-        }
 
         let ack = visual.update(|window, cx| {
             super::dispatch_semantic_action("volume", SemanticAction::Increment, window, cx)

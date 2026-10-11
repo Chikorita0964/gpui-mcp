@@ -2,8 +2,10 @@
 //!
 //! The fixture draws two regions as separate cached views, the way a workbench
 //! draws each panel, so hovering the control in one region notifies that view
-//! alone. GPUI should then render the hovered region and replay the other from
-//! cache. The bridge used to hide this: it refreshed the whole window after every
+//! alone. GPUI should then render the hovered region because it was notified.
+//! The other region replays from cache, or, in GPUI Fast while the accessibility
+//! tree a reading client holds on is built, renders only because caching is off
+//! for that frame (`caching_disabled`), never because the hover notified it. The bridge used to hide this: it refreshed the whole window after every
 //! injected event and settled with two more refreshes, so every hover measured a
 //! whole-window redraw, three times over. `mark_frames` and `get_frame_report`
 //! now show exactly which views rendered in the frames a hover caused, and why.
@@ -267,7 +269,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(fixture_executable()?)
+        let child = Command::new(support::fixture_executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())
@@ -281,20 +283,6 @@ impl Fixture {
 
     async fn stop(mut self) {
         let _ = self.child.kill().await;
-    }
-}
-
-/// The demo application is a separate workspace member, so its binary is found
-/// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
-fn fixture_executable() -> Result<PathBuf, String> {
-    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory =
-        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
-    let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 
@@ -346,8 +334,9 @@ where
     outcome
 }
 
-/// Check that the report covers a hover that rendered one probe region, for the
-/// reason a hover gives, and replayed the other; return the rendered entity.
+/// Check that the report covers a hover that notified one probe region, and that
+/// the other either replayed or rendered only because GPUI Fast builds the
+/// accessibility tree that frame; return the notified entity.
 fn one_region_rendered(report: &Report, hover: &str) -> Result<u64, String> {
     let rendered = report.rendered_regions();
     let reused = report.reused_regions();
@@ -361,14 +350,21 @@ fn one_region_rendered(report: &Report, hover: &str) -> Result<u64, String> {
             "{hover} refreshed the window, rendering every cached view: {described}"
         ));
     }
-    let [(entity, cause)] = rendered.as_slice() else {
-        return Err(format!("{hover} must render exactly one probe region: {described}"));
+    let notified: Vec<u64> = rendered
+        .iter()
+        .filter(|(_, cause)| cause == "notified")
+        .map(|(entity, _)| *entity)
+        .collect();
+    let [entity] = notified.as_slice() else {
+        return Err(format!("{hover} must notify exactly one probe region: {described}"));
     };
-    if cause != "notified" {
-        return Err(format!("the hovered region must render because it was notified: {described}"));
+    if rendered.iter().any(|(_, cause)| cause != "notified" && cause != "caching_disabled") {
+        return Err(format!(
+            "the other region may render only because caching is off for the frame: {described}"
+        ));
     }
-    if reused.is_empty() || reused.contains(entity) {
-        return Err(format!("the other region must replay from cache and only it: {described}"));
+    if rendered.len() + reused.len() != 2 || reused.contains(entity) {
+        return Err(format!("the report must account for both regions once: {described}"));
     }
     Ok(*entity)
 }

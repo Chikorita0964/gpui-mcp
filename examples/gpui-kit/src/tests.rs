@@ -1,6 +1,11 @@
+#![expect(
+    clippy::expect_used,
+    reason = "a GPUI test fails with the expectation's message where there is nothing to drive"
+)]
+
 use super::Demo;
 use gpui_kit::{
-    AppContext, Bounds, Focusable, TestAppContext, WindowBounds, WindowOptions, px, size,
+    AppContext, Bounds, Focusable, Point, TestAppContext, WindowBounds, WindowOptions, px, size,
     test::TestWindowExt,
 };
 use gpui_mcp::{Automation, NodeAction, Role};
@@ -14,7 +19,7 @@ fn observes_and_drives_kit_controls(cx: &mut TestAppContext) {
         gpui_kit::open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                    Default::default(),
+                    Point::default(),
                     size(px(640.0), px(420.0)),
                 ))),
                 ..WindowOptions::default()
@@ -51,14 +56,9 @@ fn observes_and_drives_kit_controls(cx: &mut TestAppContext) {
     cx.update_window(handle, |_, window, cx| {
         // Kit exposes the outer frame as the semantic input and redirects its
         // accessibility Focus action to the inner editor's input handler.
-        let input = automation
-            .snapshot()
-            .nodes
-            .values()
-            .find(|node| node.role == Role::TextInput)
-            .expect("observed Kit text input")
-            .id
-            .clone();
+        // Kit's input, by its id: the demo's plain fields are text inputs too
+        let input =
+            automation.snapshot().nodes.get("name").expect("observed Kit text input").id.clone();
         assert!(window.focus_observed_element(&input, cx));
         assert!(
             view.read(cx).input.focus_handle(cx).is_focused(window),
@@ -78,11 +78,7 @@ fn observes_and_drives_kit_controls(cx: &mut TestAppContext) {
         window.render_frame(cx);
         assert_eq!(view.read(cx).input.read(cx).value(), "Grüße 🦀!");
         let tree = automation.snapshot();
-        let input = tree
-            .nodes
-            .values()
-            .find(|node| node.role == Role::TextInput)
-            .expect("observed updated Kit input");
+        let input = tree.nodes.get("name").expect("observed updated Kit input");
         assert_eq!(input.text.as_ref().expect("input text").text, "Grüße 🦀!");
     })
     .expect("replace and type Kit text");
@@ -102,7 +98,7 @@ fn wrapped_controls_keep_provenance_and_redaction(cx: &mut TestAppContext) {
                     .aria_value("secret")
                     .frame_redacted(true)
                     .frame_metadata("wrapped", "true")
-                    .hover(|style| style.bg(rgb(0x112233)))
+                    .hover(|style| style.bg(rgb(0x0011_2233)))
                     .child("secret")
                     .test_support(),
             )
@@ -122,8 +118,8 @@ fn wrapped_controls_keep_provenance_and_redaction(cx: &mut TestAppContext) {
     assert!(node.actions.contains(&NodeAction::Hover));
     assert_eq!(node.metadata.get("wrapped").map(String::as_str), Some("true"));
     assert!(node.text.as_ref().expect("redacted text").redacted);
-    assert!(node.text.as_ref().expect("redacted text").text.is_empty());
-    assert!(node.value.as_ref().expect("redacted value").value.is_empty());
+    assert_eq!(node.text.as_ref().expect("redacted text").text, "");
+    assert_eq!(node.value.as_ref().expect("redacted value").value, "");
     assert_eq!(node.label, None);
     assert_eq!(tree.nodes["public-parent"].label.as_deref(), Some("Public"));
 }

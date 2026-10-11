@@ -9,9 +9,9 @@ use crate::{
     Binding, BindingDocument, BindingDocumentError, BindingTarget, ElementId, HandlerId, UiEvent,
 };
 
-const GPUI_MCP_REPOSITORY: &str = "https://github.com/themixednuts/gpui-mcp";
-const ZED_REPOSITORY: &str = "https://github.com/zed-industries/zed";
-const ZED_REVISION: &str = "82878540b5410b288a2c92cb9ee5675533e4d807";
+const GPUI_MCP_REPOSITORY: &str = "https://github.com/Chikorita0964/gpui-mcp";
+/// The branch a project follows when no revision pins it.
+const GPUI_MCP_BRANCH: &str = "dev";
 
 /// Inputs for a new standalone GPUI HTML project.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -240,33 +240,27 @@ fn cargo_manifest(name: &str, dependencies: &ManifestDependencies<'_>) -> String
     let dependencies = match dependencies {
         ManifestDependencies::PublicRepository { revision } => {
             let selector = revision.map_or_else(
-                || "branch = \"main\"".to_owned(),
+                || format!("branch = \"{GPUI_MCP_BRANCH}\""),
                 |revision| format!("rev = \"{revision}\""),
             );
             format!(
-                r#"gpui = "=0.2.2"
-gpui_platform = {{ git = "{ZED_REPOSITORY}", rev = "{ZED_REVISION}", features = ["font-kit", "wayland", "x11"] }}
+                r#"gpui = {{ package = "gpui-fast", version = "=0.1.6" }}
+gpui_platform = {{ package = "gpui-fast-platform", version = "=0.1.6", features = ["font-kit", "wayland", "x11"] }}
 gpui-mcp = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}
 gpui-mcp-html = {{ git = "{GPUI_MCP_REPOSITORY}", {selector}, features = ["dev-watch"] }}
 
 [patch.crates-io]
-gpui = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}
-
-[patch."{ZED_REPOSITORY}"]
-gpui = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}"#
+gpui-fast = {{ git = "{GPUI_MCP_REPOSITORY}", {selector} }}"#
             )
         }
         ManifestDependencies::LocalWorkspace(root) => format!(
-            r#"gpui = "=0.2.2"
-gpui_platform = {{ git = "{ZED_REPOSITORY}", rev = "{ZED_REVISION}", features = ["font-kit", "wayland", "x11"] }}
+            r#"gpui = {{ package = "gpui-fast", version = "=0.1.6" }}
+gpui_platform = {{ package = "gpui-fast-platform", version = "=0.1.6", features = ["font-kit", "wayland", "x11"] }}
 gpui-mcp = {{ path = "{root}/crates/gpui-mcp" }}
 gpui-mcp-html = {{ path = "{root}/crates/gpui-mcp-html", features = ["dev-watch"] }}
 
 [patch.crates-io]
-gpui = {{ path = "{root}/vendor/gpui" }}
-
-[patch."{ZED_REPOSITORY}"]
-gpui = {{ path = "{root}/vendor/gpui" }}"#
+gpui-fast = {{ path = "{root}/vendor/gpui-fast" }}"#
         ),
     };
     format!(
@@ -485,7 +479,7 @@ fn validate_workspace(workspace: &Path) -> Result<(), ScaffoldError> {
     for manifest in [
         workspace.join("crates/gpui-mcp/Cargo.toml"),
         workspace.join("crates/gpui-mcp-html/Cargo.toml"),
-        workspace.join("vendor/gpui/Cargo.toml"),
+        workspace.join("vendor/gpui-fast/Cargo.toml"),
     ] {
         if !manifest.is_file() {
             return Err(ScaffoldError::MissingWorkspaceCrate { manifest });
@@ -625,11 +619,10 @@ mod tests {
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
         assert!(manifest.contains("[workspace]"));
         assert!(manifest.contains("features = [\"dev-watch\"]"));
-        assert!(manifest.contains("gpui = \"=0.2.2\""));
-        assert!(manifest.contains("https://github.com/themixednuts/gpui-mcp"));
-        assert!(manifest.contains("https://github.com/zed-industries/zed"));
-        assert!(manifest.contains("[patch.crates-io]"));
-        assert!(manifest.contains("[patch.\"https://github.com/zed-industries/zed\"]"));
+        assert!(manifest.contains("gpui = { package = \"gpui-fast\", version = \"=0.1.6\" }"));
+        assert!(manifest.contains("https://github.com/Chikorita0964/gpui-mcp"));
+        assert!(manifest.contains("branch = \"dev\""));
+        assert!(manifest.contains("[patch.crates-io]\ngpui-fast = "));
         assert!(!manifest.contains("path ="));
         let main = std::fs::read_to_string(destination.join("src/main.rs"))?;
         assert!(main.contains("ProjectWatcher"));
@@ -670,10 +663,10 @@ mod tests {
         generate(&ProjectSpec::new("offline-app", &destination).workspace(workspace))?;
 
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
-        assert!(manifest.contains("gpui = \"=0.2.2\""));
+        assert!(manifest.contains("gpui = { package = \"gpui-fast\", version = \"=0.1.6\" }"));
         assert!(manifest.contains("path ="));
-        assert!(manifest.contains("vendor/gpui"));
-        assert!(!manifest.contains("git = \"https://github.com/themixednuts/gpui-mcp\""));
+        assert!(manifest.contains("vendor/gpui-fast"));
+        assert!(!manifest.contains("git = \"https://github.com/Chikorita0964/gpui-mcp\""));
         Ok(())
     }
 
@@ -687,7 +680,7 @@ mod tests {
 
         let manifest = std::fs::read_to_string(destination.join("Cargo.toml"))?;
         assert!(manifest.contains(&format!("rev = \"{revision}\"")));
-        assert!(!manifest.contains("branch = \"main\""));
+        assert!(!manifest.contains("branch = "));
         Ok(())
     }
 

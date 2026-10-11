@@ -1,9 +1,0 @@
-{
-  "vendored": "0.3.8",
-  "versions": {
-    "0.3.8": {
-      "sha256": "d7f0bc3ebba070f8981b3f8e905a12f47d27794a30d029e59cdb9edf7a4b3360",
-      "zed_rev": "279fe070bb389b79652e52065b2f001edcc0b11b"
-    }
-  }
-}

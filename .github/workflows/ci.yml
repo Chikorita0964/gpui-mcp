@@ -66,11 +66,8 @@ jobs:
       - name: Check workspace
         run: cargo check --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
 
-      - name: Check screenshot-free integration
-        run: cargo check -p gpui-mcp --no-default-features --features zed --locked
-
       - name: Build integration test fixture
-        run: cargo build -p gpui-mcp-demo --locked
+        run: cargo build -p gpui-mcp-kit-demo --locked
 
       - name: Test workspace
         run: cargo test --workspace --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked
@@ -87,54 +84,6 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --features gpui-mcp/test-support,gpui-mcp-html/dev-watch,gpui-mcp-html/visual-parity --locked -- -D warnings
-
-      - name: Check gpui-pre integration
-        run: cargo check -p gpui-mcp --no-default-features --features gpui-pre --locked
-
-      - name: Test bridge with gpui-pre
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-pre,test-support --locked
-
-      - name: Test HTML runtime and view transitions with gpui-pre
-        run: cargo test -p gpui-mcp-html -p gpui-view-transitions --no-default-features --features gpui-mcp-html/gpui-pre,gpui-mcp-html/json,gpui-mcp-html/ron,gpui-mcp-html/dev-watch --locked
-
-      - name: Clippy HTML runtime and view transitions with gpui-pre
-        run: cargo clippy -p gpui-mcp-html -p gpui-view-transitions --all-targets --no-default-features --features gpui-mcp-html/gpui-pre,gpui-mcp-html/json,gpui-mcp-html/ron,gpui-mcp-html/dev-watch --locked -- -D warnings
-
-      - name: Check GPUI Kit example formatting
-        run: cargo fmt --manifest-path examples/gpui-kit/Cargo.toml -- --check
-
-      - name: Check GPUI Kit integration
-        run: cargo check --manifest-path examples/gpui-kit/Cargo.toml --all-targets --locked
-
-      - name: Test GPUI Kit controls and input
-        run: cargo test --manifest-path examples/gpui-kit/Cargo.toml --locked
-
-      - name: Clippy GPUI Kit bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-pre,test-support --locked -- -D warnings
-
-      - name: Check gpui-ce integration
-        run: cargo check -p gpui-mcp --no-default-features --features gpui-ce --locked
-
-      - name: Test bridge with gpui-ce
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-ce,test-support,gpui_ce/test-support --locked
-
-      - name: Clippy gpui-ce bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-ce,test-support,gpui_ce/test-support --locked -- -D warnings
-
-      - name: Check gpui-fast integration
-        run: cargo check -p gpui-mcp --no-default-features --features gpui-fast --locked
-
-      - name: Test bridge with gpui-fast
-        run: cargo test -p gpui-mcp --no-default-features --features gpui-fast,test-support --locked
-
-      - name: Clippy gpui-fast bridge
-        run: cargo clippy -p gpui-mcp --all-targets --no-default-features --features gpui-fast,test-support --locked -- -D warnings
-
-      - name: Check GPUI Kit integration on GPUI Fast
-        run: cargo check --manifest-path examples/gpui-kit/Cargo.toml --all-targets --no-default-features --features gpui-fast --locked
-
-      - name: Test GPUI Kit controls and input on GPUI Fast
-        run: cargo test --manifest-path examples/gpui-kit/Cargo.toml --no-default-features --features gpui-fast --locked
 
       - name: Upload visual parity failure artifacts
         if: failure()
@@ -171,8 +120,6 @@ jobs:
         with:
           key: xtask
 
-      - run: cargo xtask vendor --crate gpui-pre --check
-      - run: cargo xtask vendor --crate gpui-ce --check
       - run: cargo xtask vendor --crate gpui-fast --check
 
   patch-series:
@@ -189,15 +136,6 @@ jobs:
       matrix:
         include:
           # The optional patches must stay independent of the automation patch.
-          - crate: gpui-pre
-            version: 0.3.8
-            without: font-fallback
-          - crate: gpui-pre
-            version: 0.3.8
-            without: grid
-          - crate: gpui-ce
-            version: 0.2.2
-            without: font-fallback
           - crate: gpui-fast
             version: 0.1.6
             without: grid
@@ -237,14 +175,11 @@ jobs:
 
       # The committed lockfile names the vendored release, so these steps
       # resolve the patched release instead of using --locked.
-      # The bridge's unit tests need the GPUI crate's own test support, which
-      # its test-support feature doesn't turn on for gpui-ce.
       - name: Test bridge
         env:
           CRATE: ${{ matrix.crate }}
         run: >-
-          cargo test -p gpui-mcp --no-default-features
-          --features "$CRATE,test-support,${CRATE//-/_}/test-support"
+          cargo test -p gpui-mcp --features test-support
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
 
       - name: Check that the bridge resolved the patched release
@@ -252,7 +187,7 @@ jobs:
           CRATE: ${{ matrix.crate }}
           VERSION: ${{ matrix.version }}
         run: >-
-          cargo tree -p gpui-mcp --no-default-features --features "$CRATE"
+          cargo tree -p gpui-mcp
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'"
           --depth 1 --prefix none | grep -Fx "$CRATE v$VERSION ($RUNNER_TEMP/$CRATE)"
 
@@ -260,26 +195,8 @@ jobs:
         env:
           CRATE: ${{ matrix.crate }}
         run: >-
-          cargo clippy -p gpui-mcp --all-targets --no-default-features
-          --features "$CRATE,test-support,${CRATE//-/_}/test-support"
+          cargo clippy -p gpui-mcp --all-targets --features test-support
           --config "patch.crates-io.$CRATE.path='$RUNNER_TEMP/$CRATE'" -- -D warnings
-
-      # The HTML runtime and view transitions support the same releases, with
-      # GPUI Kit motion. The runtime needs every optional patch (grid layout),
-      # so rows without one skip it.
-      - name: Test HTML runtime and view transitions
-        if: matrix.crate == 'gpui-pre' && !matrix.without
-        run: >-
-          cargo test -p gpui-mcp-html -p gpui-view-transitions --no-default-features
-          --features "gpui-mcp-html/gpui-pre,gpui-mcp-html/json,gpui-mcp-html/ron,gpui-mcp-html/dev-watch"
-          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'"
-
-      - name: Clippy HTML runtime and view transitions
-        if: matrix.crate == 'gpui-pre' && !matrix.without
-        run: >-
-          cargo clippy -p gpui-mcp-html -p gpui-view-transitions --all-targets --no-default-features
-          --features "gpui-mcp-html/gpui-pre,gpui-mcp-html/json,gpui-mcp-html/ron,gpui-mcp-html/dev-watch"
-          --config "patch.crates-io.gpui-pre.path='$RUNNER_TEMP/gpui-pre'" -- -D warnings
 
   external-consumer:
     name: Public Git installation
@@ -328,21 +245,5 @@ jobs:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: >-
           cargo xtask check-consumer --backend gpui-kit
-          --repository "$REPOSITORY_URL" --rev "$REV"
-          --target-dir "$GITHUB_WORKSPACE/target"
-
-      - name: Check external GPUI Kit consumer on GPUI Fast
-        env:
-          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: >-
-          cargo xtask check-consumer --backend gpui-kit-fast
-          --repository "$REPOSITORY_URL" --rev "$REV"
-          --target-dir "$GITHUB_WORKSPACE/target"
-
-      - name: Check external gpui-ce consumer
-        env:
-          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: >-
-          cargo xtask check-consumer --backend gpui-ce
           --repository "$REPOSITORY_URL" --rev "$REV"
           --target-dir "$GITHUB_WORKSPACE/target"

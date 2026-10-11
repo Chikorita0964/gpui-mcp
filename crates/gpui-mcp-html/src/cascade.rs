@@ -170,7 +170,6 @@ pub(crate) fn supported(variant: &RenderStyleVariant) -> bool {
 /// Whether a condition holds in an environment, for rules outside the
 /// element tree (view-transition pseudo-elements). Interaction states do
 /// not apply there.
-#[cfg(feature = "gpui-pre")]
 pub(crate) fn condition_holds(
     condition: &RenderStyleCondition,
     environment: &Environment<'_>,
@@ -276,7 +275,6 @@ pub(crate) struct Computed {
     pub(crate) animations: Vec<Animation>,
     /// The typed style with `@starting-style` applied, when the element has
     /// one. Only GPUI Kit's motion runtime animates from it.
-    #[cfg_attr(not(feature = "gpui-pre"), expect(dead_code))]
     pub(crate) starting: Option<ComputedStyle>,
 }
 

@@ -142,7 +142,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(fixture_executable()?)
+        let child = Command::new(support::fixture_executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())
@@ -156,20 +156,6 @@ impl Fixture {
 
     async fn stop(mut self) {
         let _ = self.child.kill().await;
-    }
-}
-
-/// The demo application is a separate workspace member, so its binary is found
-/// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
-fn fixture_executable() -> Result<PathBuf, String> {
-    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory =
-        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
-    let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!("the demo fixture is not built at {}", path.display()))
     }
 }
 

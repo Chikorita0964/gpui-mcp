@@ -24,12 +24,11 @@
 //! or without the flag: they pin that the flag is accepted and the documented fixture
 //! error is unchanged.
 //!
-//! The fixture is the GPUI Kit example on GPUI Fast, which the test builds itself (`kit_fixture`),
+//! The fixture is the GPUI Kit example on GPUI Fast, built beside the server binary (`cargo build -p gpui-mcp-kit-demo`),
 //! and running needs a desktop session: without `DISPLAY` or `WAYLAND_DISPLAY` each test prints a
 //! note and passes without opening a window. One window is open at a time, because
 //! the static `WINDOW` mutex is held for the whole of each test body.
 
-mod kit_fixture;
 mod support;
 
 use std::collections::BTreeSet;
@@ -232,7 +231,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(kit_fixture::executable()?)
+        let child = Command::new(support::fixture_executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())

@@ -12,19 +12,12 @@ use sha2::{Digest as _, Sha256};
 use crate::patch::{self, Files};
 
 /// The patches in each version's series, applied in this order.
-const SERIES: [Patch; 4] =
-    [Patch::Automation, Patch::Accessibility, Patch::FontFallback, Patch::Grid];
+const SERIES: [Patch; 3] = [Patch::Automation, Patch::Accessibility, Patch::Grid];
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Crate {
-    /// The release GPUI Kit and gpui-component use.
-    #[value(name = "gpui-pre")]
-    Pre,
-    /// The community fork of GPUI.
-    #[value(name = "gpui-ce")]
-    Ce,
     /// Longbridge's GPUI with retained rendering, which GPUI Kit selects
-    /// with its `gpui-fast` feature.
+    /// with its `gpui-fast` feature: the one GPUI the workspace builds on.
     #[value(name = "gpui-fast")]
     Fast,
 }
@@ -32,8 +25,6 @@ pub(crate) enum Crate {
 impl Crate {
     fn name(self) -> &'static str {
         match self {
-            Self::Pre => "gpui-pre",
-            Self::Ce => "gpui-ce",
             Self::Fast => "gpui-fast",
         }
     }
@@ -41,9 +32,7 @@ impl Crate {
     /// The crate's key in the workspace's `[workspace.dependencies]`.
     fn dependency_key(self) -> &'static str {
         match self {
-            Self::Pre => "gpui_pre",
-            Self::Ce => "gpui_ce",
-            Self::Fast => "gpui_fast",
+            Self::Fast => "gpui",
         }
     }
 }
@@ -53,11 +42,8 @@ pub(crate) enum Patch {
     /// Everything the bridge needs.
     Automation,
     /// Semantic accessibility actions for the bridge's `perform_action` tool.
-    /// Only the `gpui-fast` series carries it.
     #[value(name = "accessibility-actions")]
     Accessibility,
-    /// An unrelated font fix that consumers may skip.
-    FontFallback,
     /// CSS grid track lists, which gpui-mcp-html renders `grid-template-*` with.
     /// Consumers that don't use gpui-mcp-html may skip it.
     Grid,
@@ -68,19 +54,7 @@ impl Patch {
         match self {
             Self::Automation => "automation",
             Self::Accessibility => "accessibility-actions",
-            Self::FontFallback => "font-fallback",
             Self::Grid => "grid",
-        }
-    }
-
-    /// Whether this crate's series carries the patch: only `gpui-fast` gets the
-    /// accessibility actions, and `gpui-fast` already keeps a fallback font's
-    /// requested weight, style and features.
-    fn applies_to(self, krate: Crate) -> bool {
-        match self {
-            Self::Accessibility => krate == Crate::Fast,
-            Self::FontFallback => krate != Crate::Fast,
-            _ => true,
         }
     }
 
@@ -93,7 +67,7 @@ impl Patch {
 #[derive(Args)]
 pub(crate) struct VendorArgs {
     /// The crate to patch.
-    #[arg(long = "crate", value_enum, default_value = "gpui-pre")]
+    #[arg(long = "crate", value_enum, default_value = "gpui-fast")]
     krate: Crate,
     /// A supported release (default: the vendored one).
     #[arg(long)]
@@ -101,7 +75,7 @@ pub(crate) struct VendorArgs {
     /// Write the patched crate here instead of `vendor/<crate>`.
     #[arg(long)]
     output: Option<PathBuf>,
-    /// Leave out an optional patch: font-fallback or grid.
+    /// Leave out an optional patch: grid.
     #[arg(long, value_enum)]
     without: Vec<Patch>,
     /// Verify `vendor/<crate>` instead of writing anything.
@@ -125,7 +99,7 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
     let supported = metadata["versions"].as_object().context("missing `versions`")?;
     check_requirement(root, args.krate, supported.keys().map(String::as_str))?;
     for version in supported.keys() {
-        for patch in SERIES.into_iter().filter(|patch| patch.applies_to(args.krate)) {
+        for patch in SERIES {
             let path = patches.join(version).join(format!("{}.patch", patch.name()));
             if !path.is_file() {
                 bail!("missing vendor/patches/{name}/{version}/{}.patch", patch.name());
@@ -150,10 +124,8 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
         bail!("refusing to replace {}: it is not a {name} crate", destination.display());
     }
 
-    let applied: Vec<_> = SERIES
-        .into_iter()
-        .filter(|patch| patch.applies_to(args.krate) && !args.without.contains(patch))
-        .collect();
+    let applied: Vec<_> =
+        SERIES.into_iter().filter(|patch| !args.without.contains(patch)).collect();
     let files = patched_release(name, version, release, &patches.join(version), &applied)?;
     let applied: Vec<_> = applied.iter().map(|patch| patch.name()).collect();
 
@@ -192,16 +164,6 @@ fn patched_release(
         bail!("{name} archive checksum mismatch");
     }
     let mut files = extract(&archive, &format!("{name}-{version}"))?;
-    // gpui-pre records the Zed commit it was cut from; gpui-ce does not.
-    if let Some(zed_rev) = release.get("zed_rev").and_then(serde_json::Value::as_str) {
-        let manifest: toml::Value = toml::from_str(std::str::from_utf8(
-            files.get(Path::new("Cargo.toml")).context("archive has no Cargo.toml")?,
-        )?)?;
-        let recorded = manifest["package"]["metadata"]["gpui-pre"]["zed-rev"].as_str();
-        if recorded != Some(zed_rev) {
-            bail!("archive Zed revision does not match vendor/{name}.json");
-        }
-    }
     // The publisher ships CRLF sources; keep source patches independent of it.
     for (path, content) in &mut files {
         if path.starts_with("src") && path.extension().is_some_and(|ext| ext == "rs") {

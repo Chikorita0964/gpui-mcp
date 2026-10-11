@@ -4,17 +4,6 @@
 //! fail-closed pure-HTML policy. Bindings live in a separate, versioned document
 //! and resolve to application-owned hooks rather than executable source strings.
 
-#[cfg(all(feature = "zed", feature = "gpui-pre"))]
-compile_error!(
-    "select one GPUI backend: the default `zed`, or default-features = false with \
-     features = [\"gpui-pre\"] for GPUI Kit"
-);
-#[cfg(all(feature = "runtime", not(any(feature = "zed", feature = "gpui-pre"))))]
-compile_error!("the `runtime` feature needs a GPUI backend: enable `zed` or `gpui-pre`");
-
-#[cfg(feature = "gpui-pre")]
-extern crate gpui_pre as gpui;
-
 mod binding;
 #[cfg(feature = "runtime")]
 mod cascade;

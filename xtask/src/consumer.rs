@@ -1,11 +1,10 @@
 //! `cargo xtask check-consumer`: build a standalone app that installs the
 //! bridge from a published Git commit.
 //!
-//! The app follows the README's recipe for one backend: GPUI Kit on gpui-pre,
-//! GPUI Kit on GPUI Fast, or gpui-ce with its platform crate. It type-checks `BridgeHandle::install`
-//! with that backend's `Window` and `App`, and verifies that the app's GPUI
-//! crates and the bridge all share the one patched GPUI package from the
-//! requested commit.
+//! The app follows the README's recipe: GPUI Kit on GPUI Fast. It type-checks
+//! `BridgeHandle::install` with GPUI Kit's `Window` and `App`, and verifies that
+//! the app's GPUI crates and the bridge all share the one patched GPUI Fast
+//! package from the requested commit.
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -18,23 +17,15 @@ use serde_json::Value;
 
 #[derive(Clone, Copy, ValueEnum)]
 pub(crate) enum Backend {
-    /// GPUI Kit from its GitHub main on gpui-pre 0.3.8.
-    #[value(name = "gpui-kit")]
-    Kit,
     /// GPUI Kit from its GitHub main with its `gpui-fast` feature, on GPUI Fast
     /// 0.1.6.
-    #[value(name = "gpui-kit-fast")]
-    KitFast,
-    /// gpui-ce 0.2.2 with `gpui_ce_platform`.
-    #[value(name = "gpui-ce")]
-    Ce,
+    #[value(name = "gpui-kit")]
+    Kit,
 }
 
 struct Recipe {
     /// The app's own dependencies.
     dependencies: &'static str,
-    /// The bridge feature that selects this backend.
-    feature: &'static str,
     /// The crates.io GPUI package the Git patch replaces, and its version.
     gpui: (&'static str, &'static str),
     /// The path the app reaches GPUI's types through.
@@ -50,8 +41,6 @@ impl Backend {
     fn name(self) -> &'static str {
         match self {
             Self::Kit => "gpui-kit",
-            Self::KitFast => "gpui-kit-fast",
-            Self::Ce => "gpui-ce",
         }
     }
 
@@ -59,24 +48,8 @@ impl Backend {
         match self {
             Self::Kit => Recipe {
                 dependencies: "gpui-kit = { git = \"https://github.com/longbridge/gpui-kit\", \
-                               rev = \"ed27c6293b585acc40c10be7138534243bee5841\" }",
-                feature: "gpui-pre",
-                gpui: ("gpui-pre", "0.3.8"),
-                types: "gpui_kit",
-                owners: &[
-                    "gpui-base",
-                    "gpui-component",
-                    "gpui-kit",
-                    "gpui-mcp",
-                    "gpui-pre-platform",
-                ],
-                exclusive: true,
-            },
-            Self::KitFast => Recipe {
-                dependencies: "gpui-kit = { git = \"https://github.com/longbridge/gpui-kit\", \
                                rev = \"ed27c6293b585acc40c10be7138534243bee5841\", \
                                features = [\"gpui-fast\"] }",
-                feature: "gpui-fast",
                 gpui: ("gpui-fast", "0.1.6"),
                 types: "gpui_kit",
                 owners: &[
@@ -87,14 +60,6 @@ impl Backend {
                     "gpui-fast-platform",
                 ],
                 exclusive: false,
-            },
-            Self::Ce => Recipe {
-                dependencies: "gpui-ce = \"=0.2.2\"\ngpui_ce_platform = \"=0.1.0\"",
-                feature: "gpui-ce",
-                gpui: ("gpui-ce", "0.2.2"),
-                types: "gpui",
-                owners: &["gpui-mcp", "gpui_ce_platform"],
-                exclusive: true,
             },
         }
     }
@@ -145,14 +110,13 @@ rust-version = "1.99"
 
 [dependencies]
 {dependencies}
-gpui-mcp = {{ git = {repository}, rev = {rev}, default-features = false, features = ["{feature}"] }}
+gpui-mcp = {{ git = {repository}, rev = {rev} }}
 
 [patch.crates-io]
 {gpui_package} = {{ git = {repository}, rev = {rev} }}
 "#,
             name = args.backend.name(),
             dependencies = recipe.dependencies,
-            feature = recipe.feature,
         ),
     )?;
     fs::write(

@@ -1,9 +1,27 @@
 use std::fs::File;
 use std::io::{Read as _, Seek as _, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+
+/// The GPUI Kit example the tests drive. It is a workspace member built beside
+/// the server binary (`cargo build -p gpui-mcp-kit-demo`), so it is found there:
+/// `CARGO_BIN_EXE` names only this package's own binaries.
+pub(crate) fn fixture_executable() -> Result<PathBuf, String> {
+    let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
+    let directory =
+        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let path = directory.join(format!("gpui-mcp-kit-demo{}", std::env::consts::EXE_SUFFIX));
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!(
+            "the GPUI Kit demo is not built at {} (cargo build -p gpui-mcp-kit-demo)",
+            path.display()
+        ))
+    }
+}
 
 pub(crate) trait FixtureClient {
     async fn call_json(&mut self, tool: &str, arguments: Value) -> Result<Value, String>;

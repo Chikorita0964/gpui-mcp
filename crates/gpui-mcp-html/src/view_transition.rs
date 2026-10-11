@@ -99,77 +99,8 @@ pub(crate) struct OldState {
     pub(crate) disclosures: FxHashMap<ElementId, bool>,
 }
 
-#[cfg(feature = "gpui-pre")]
 pub(crate) use kit::DocumentTransitions;
-#[cfg(not(feature = "gpui-pre"))]
-pub(crate) use off::DocumentTransitions;
 
-/// Without GPUI Kit's motion runtime, a transition applies its end state at
-/// once: nothing is captured, and the incoming state draws as is.
-#[cfg(not(feature = "gpui-pre"))]
-mod off {
-    use std::rc::Rc;
-    use std::time::Instant;
-
-    use gpui::{AnyElement, IntoElement, SharedString, Styled, Window};
-    use htmlswap::computed::MediaEnvironment;
-
-    use super::OldState;
-    use crate::HtmlUi;
-
-    #[derive(Clone, Default)]
-    pub(crate) struct DocumentTransitions(());
-
-    // The same methods as the GPUI Kit version, so the renderer has one path.
-    #[expect(clippy::unused_self)]
-    impl DocumentTransitions {
-        pub(crate) fn set_document(&self, _: Rc<HtmlUi>) {}
-
-        pub(crate) fn begin_frame(&self, _: Instant, _: MediaEnvironment) {}
-
-        pub(crate) fn end_frame(&self, _: &mut Window) {}
-
-        pub(crate) fn start(&self, _: Vec<SharedString>, _: OldState) -> bool {
-            false
-        }
-
-        pub(crate) fn skip(&self) {}
-
-        pub(crate) fn is_active(&self) -> bool {
-            false
-        }
-
-        pub(crate) fn is_pending(&self) -> bool {
-            false
-        }
-
-        pub(crate) fn types(&self) -> Option<Vec<SharedString>> {
-            None
-        }
-
-        pub(crate) fn add_types(&self, _: impl IntoIterator<Item = SharedString>) {}
-
-        pub(crate) fn named<E: IntoElement + Styled>(
-            &self,
-            _: SharedString,
-            _: &[SharedString],
-            _: Vec<usize>,
-            element: E,
-        ) -> AnyElement {
-            element.into_any_element()
-        }
-
-        pub(crate) fn stage<E: IntoElement + Styled>(
-            &self,
-            root: E,
-            _: impl FnMut(&OldState, Option<&[usize]>, &dyn Fn(&[usize]) -> bool) -> Option<AnyElement>,
-        ) -> AnyElement {
-            root.into_any_element()
-        }
-    }
-}
-
-#[cfg(feature = "gpui-pre")]
 mod kit {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;

@@ -215,7 +215,6 @@ impl SharedState {
 
     /// Whether the frame being drawn builds the accessibility tree (asked by GPUI after the frame
     /// started, so one frame is decided once).
-    #[cfg(feature = "gpui-fast")]
     pub(crate) fn frame_wants_semantics(&self) -> bool {
         self.frame_wants_semantics.load(Ordering::Relaxed)
     }

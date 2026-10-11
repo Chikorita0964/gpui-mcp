@@ -5,7 +5,7 @@ expression: "snapshot_text(tool, canonical)?"
 {
   "content": [
     {
-      "text": "{\"generation\":0,\"nodes\":{\"agree\":{\"actions\":[\"click\",\"focus\"],\"bounds\":{\"height\":18.0,\"width\":592.0,\"x\":24.0,\"y\":156.0},\"children\":[],\"description\":null,\"id\":\"agree\",\"label\":\"Agree\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::checkbox::Checkbox.gpui_base::checkbox::Checkbox.agree\"},\"parent\":\"kit-demo\",\"role\":\"checkbox\",\"state\":{\"checked\":false,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"count\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":592.0,\"x\":24.0,\"y\":114.0},\"children\":[],\"description\":null,\"id\":\"count\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.count\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"heading\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":592.0,\"x\":24.0,\"y\":24.0},\"children\":[],\"description\":null,\"id\":\"heading\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.heading\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"increment\":{\"actions\":[\"click\",\"focus\",\"hover\"],\"bounds\":{\"height\":32.0,\"width\":592.0,\"x\":24.0,\"y\":66.0},\"children\":[\"label\"],\"description\":null,\"id\":\"increment\",\"label\":\"Increment\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"input-state\":{\"actions\":[\"hover\",\"scroll\"],\"bounds\":{\"height\":20.0,\"width\":570.0,\"x\":35.0,\"y\":196.0},\"children\":[],\"description\":null,\"id\":\"input-state\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name.view-4294967299.input-state\"},\"parent\":\"name\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"kit-demo\":{\"actions\":[],\"bounds\":{\"height\":420.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"count\",\"increment\",\"agree\",\"name\",\"heading\",\"probe-left\",\"probe-right\",\"volume-row\"],\"description\":null,\"id\":\"kit-demo\",\"label\":\"GPUI Kit MCP Demo\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo\"},\"parent\":\"root\",\"role\":\"application\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"label\":{\"actions\":[],\"bounds\":{\"height\":30.0,\"width\":570.0,\"x\":35.0,\"y\":67.0},\"children\":[],\"description\":null,\"id\":\"label\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment.label\"},\"parent\":\"increment\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"name\":{\"actions\":[\"focus\",\"set_text\",\"set_value\"],\"bounds\":{\"height\":32.0,\"width\":592.0,\"x\":24.0,\"y\":190.0},\"children\":[\"input-state\"],\"description\":null,\"id\":\"name\",\"label\":\"Enter your name\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name\"},\"parent\":\"kit-demo\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"\"},\"value\":{\"max\":null,\"min\":null,\"step\":null,\"value\":\"\"}},\"probe-left\":{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":24.0,\"y\":278.0},\"children\":[\"probe-left-target\"],\"description\":null,\"id\":\"probe-left\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-left-target\":{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":108.0,\"x\":24.0,\"y\":277.0},\"children\":[],\"description\":null,\"id\":\"probe-left-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left.probe-left-target\"},\"parent\":\"probe-left\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-right\":{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":236.0,\"y\":278.0},\"children\":[\"probe-right-target\"],\"description\":null,\"id\":\"probe-right\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-right-target\":{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":118.0,\"x\":236.0,\"y\":277.0},\"children\":[],\"description\":null,\"id\":\"probe-right-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right.probe-right-target\"},\"parent\":\"probe-right\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"root\":{\"actions\":[],\"bounds\":{\"height\":420.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"kit-demo\"],\"description\":null,\"id\":\"root\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root\"},\"parent\":null,\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"slider-4294967298\":{\"actions\":[\"step\"],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":238.0},\"children\":[\"slider-bar-container\"],\"description\":null,\"id\":\"slider-4294967298\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298\"},\"parent\":\"volume-row\",\"role\":\"slider\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":{\"max\":0,\"min\":0.0,\"step\":1.0,\"value\":\"5\"}},\"slider-bar\":{\"actions\":[],\"bounds\":{\"height\":6.0,\"width\":256.0,\"x\":24.0,\"y\":247.0},\"children\":[\"slider-thumb-0\"],\"description\":null,\"id\":\"slider-bar\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar\"},\"parent\":\"slider-bar-container\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"slider-bar-container\":{\"actions\":[\"hover\",\"drag\"],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":238.0},\"children\":[\"slider-bar\"],\"description\":null,\"id\":\"slider-bar-container\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container\"},\"parent\":\"slider-4294967298\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"slider-thumb-0\":{\"actions\":[\"hover\",\"drag\"],\"bounds\":{\"height\":16.0,\"width\":16.0,\"x\":144.0,\"y\":242.0},\"children\":[],\"description\":null,\"id\":\"slider-thumb-0\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar.gpui_base::slider::SliderThumb.slider-thumb-0\"},\"parent\":\"slider-bar\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"volume-row\":{\"actions\":[],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":238.0},\"children\":[\"slider-4294967298\"],\"description\":null,\"id\":\"volume-row\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null}},\"roots\":[\"root\"]}",
+      "text": "{\"generation\":0,\"nodes\":{\"agree\":{\"actions\":[\"click\",\"focus\"],\"bounds\":{\"height\":18.0,\"width\":592.0,\"x\":24.0,\"y\":298.0},\"children\":[],\"description\":null,\"id\":\"agree\",\"label\":\"Agree\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::checkbox::Checkbox.gpui_base::checkbox::Checkbox.agree\"},\"parent\":\"kit-demo\",\"role\":\"checkbox\",\"state\":{\"checked\":false,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"annotation-count\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":173.0,\"x\":221.0,\"y\":257.0},\"children\":[],\"description\":null,\"id\":\"annotation-count\",\"label\":\"Annotations: 0 (expired)\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.annotation-count\"},\"parent\":\"kit-demo\",\"role\":\"generic\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"chat-reply\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":88.0,\"x\":121.0,\"y\":257.0},\"children\":[],\"description\":null,\"id\":\"chat-reply\",\"label\":\"No reply yet\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.chat-reply\"},\"parent\":\"kit-demo\",\"role\":\"generic\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"chat-send\":{\"actions\":[\"click\",\"focus\",\"hover\"],\"bounds\":{\"height\":32.0,\"width\":85.0,\"x\":24.0,\"y\":254.0},\"children\":[\"chat-send.label\"],\"description\":null,\"id\":\"chat-send\",\"label\":\"Ask agent\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.chat-send\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"chat-send.label\":{\"actions\":[],\"bounds\":{\"height\":30.0,\"width\":63.0,\"x\":35.0,\"y\":255.0},\"children\":[],\"description\":null,\"id\":\"chat-send.label\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.chat-send.label\"},\"parent\":\"chat-send\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"count\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":592.0,\"x\":24.0,\"y\":62.0},\"children\":[],\"description\":null,\"id\":\"count\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.count\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"filter\":{\"actions\":[\"focus\",\"hover\"],\"bounds\":{\"height\":44.0,\"width\":240.0,\"x\":276.0,\"y\":100.0},\"children\":[],\"description\":null,\"id\":\"filter\",\"label\":\"Filter\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.filter\"},\"parent\":\"kit-demo\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"Filter\"},\"value\":null},\"heading\":{\"actions\":[],\"bounds\":{\"height\":26.0,\"width\":592.0,\"x\":24.0,\"y\":24.0},\"children\":[],\"description\":null,\"id\":\"heading\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.heading\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"increment\":{\"actions\":[\"click\",\"focus\",\"hover\"],\"bounds\":{\"height\":32.0,\"width\":87.0,\"x\":24.0,\"y\":156.0},\"children\":[\"increment.label\"],\"description\":null,\"id\":\"increment\",\"label\":\"Increment\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"increment.label\":{\"actions\":[],\"bounds\":{\"height\":30.0,\"width\":65.0,\"x\":35.0,\"y\":157.0},\"children\":[],\"description\":null,\"id\":\"increment.label\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment.label\"},\"parent\":\"increment\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"input-state\":{\"actions\":[\"hover\",\"scroll\"],\"bounds\":{\"height\":20.0,\"width\":570.0,\"x\":35.0,\"y\":334.0},\"children\":[],\"description\":null,\"id\":\"input-state\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name.view-4294967299.input-state\"},\"parent\":\"name\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"kit-demo\":{\"actions\":[],\"bounds\":{\"height\":720.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"annotation-count\",\"chat-reply\",\"count\",\"filter\",\"chat-send\",\"increment\",\"reset\",\"agree\",\"name\",\"heading\",\"lock-toggle\",\"locked-action\",\"search\",\"probe-left\",\"probe-right\",\"volume-row\"],\"description\":null,\"id\":\"kit-demo\",\"label\":\"GPUI Kit MCP Demo\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo\"},\"parent\":\"root\",\"role\":\"application\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"lock-toggle\":{\"actions\":[\"click\"],\"bounds\":{\"height\":42.0,\"width\":82.0,\"x\":167.0,\"y\":200.0},\"children\":[],\"description\":null,\"id\":\"lock-toggle\",\"label\":\"Unlock\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.lock-toggle\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"locked-action\":{\"actions\":[],\"bounds\":{\"height\":42.0,\"width\":131.0,\"x\":24.0,\"y\":200.0},\"children\":[],\"description\":null,\"id\":\"locked-action\",\"label\":\"Locked action\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.locked-action\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":false,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"name\":{\"actions\":[\"focus\",\"set_text\",\"set_value\"],\"bounds\":{\"height\":32.0,\"width\":592.0,\"x\":24.0,\"y\":328.0},\"children\":[\"input-state\"],\"description\":null,\"id\":\"name\",\"label\":\"Enter your name\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::input::input::Input.name\"},\"parent\":\"kit-demo\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"\"},\"value\":{\"max\":null,\"min\":null,\"step\":null,\"value\":\"\"}},\"probe-left\":{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":24.0,\"y\":408.0},\"children\":[\"probe-left-target\"],\"description\":null,\"id\":\"probe-left\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-left-target\":{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":108.0,\"x\":24.0,\"y\":407.0},\"children\":[],\"description\":null,\"id\":\"probe-left-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967301.probe-left.probe-left-target\"},\"parent\":\"probe-left\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-right\":{\"actions\":[],\"bounds\":{\"height\":40.0,\"width\":200.0,\"x\":236.0,\"y\":408.0},\"children\":[\"probe-right-target\"],\"description\":null,\"id\":\"probe-right\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"probe-right-target\":{\"actions\":[\"hover\"],\"bounds\":{\"height\":42.0,\"width\":118.0,\"x\":236.0,\"y\":407.0},\"children\":[],\"description\":null,\"id\":\"probe-right-target\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.view-4294967302.probe-right.probe-right-target\"},\"parent\":\"probe-right\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"reset\":{\"actions\":[\"click\",\"focus\",\"hover\"],\"bounds\":{\"height\":32.0,\"width\":58.0,\"x\":123.0,\"y\":156.0},\"children\":[\"reset.label\"],\"description\":null,\"id\":\"reset\",\"label\":\"Reset\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.reset\"},\"parent\":\"kit-demo\",\"role\":\"button\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"reset.label\":{\"actions\":[],\"bounds\":{\"height\":30.0,\"width\":36.0,\"x\":134.0,\"y\":157.0},\"children\":[],\"description\":null,\"id\":\"reset.label\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.reset.label\"},\"parent\":\"reset\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"root\":{\"actions\":[],\"bounds\":{\"height\":720.0,\"width\":640.0,\"x\":0.0,\"y\":0.0},\"children\":[\"kit-demo\"],\"description\":null,\"id\":\"root\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root\"},\"parent\":null,\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"search\":{\"actions\":[\"focus\",\"hover\"],\"bounds\":{\"height\":44.0,\"width\":240.0,\"x\":24.0,\"y\":100.0},\"children\":[],\"description\":null,\"id\":\"search\",\"label\":\"Search\",\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.search\"},\"parent\":\"kit-demo\",\"role\":\"text_input\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":{\"caret\":null,\"redacted\":false,\"selection\":null,\"text\":\"Search\"},\"value\":null},\"slider-4294967298\":{\"actions\":[\"step\"],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":372.0},\"children\":[\"slider-bar-container\"],\"description\":null,\"id\":\"slider-4294967298\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298\"},\"parent\":\"volume-row\",\"role\":\"slider\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"read_only\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":{\"max\":0,\"min\":0.0,\"step\":1.0,\"value\":\"5\"}},\"slider-bar\":{\"actions\":[],\"bounds\":{\"height\":6.0,\"width\":256.0,\"x\":24.0,\"y\":381.0},\"children\":[\"slider-thumb-0\"],\"description\":null,\"id\":\"slider-bar\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar\"},\"parent\":\"slider-bar-container\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"slider-bar-container\":{\"actions\":[\"hover\",\"drag\"],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":372.0},\"children\":[\"slider-bar\"],\"description\":null,\"id\":\"slider-bar-container\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container\"},\"parent\":\"slider-4294967298\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"slider-thumb-0\":{\"actions\":[\"hover\",\"drag\"],\"bounds\":{\"height\":16.0,\"width\":16.0,\"x\":144.0,\"y\":376.0},\"children\":[],\"description\":null,\"id\":\"slider-thumb-0\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row.gpui_component::slider::Slider.gpui_base::slider::Slider.slider-4294967298.gpui_base::slider::SliderTrack.slider-bar-container.gpui_base::slider::SliderIndicator.slider-bar.gpui_base::slider::SliderThumb.slider-thumb-0\"},\"parent\":\"slider-bar\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null},\"volume-row\":{\"actions\":[],\"bounds\":{\"height\":24.0,\"width\":256.0,\"x\":24.0,\"y\":372.0},\"children\":[\"slider-4294967298\"],\"description\":null,\"id\":\"volume-row\",\"label\":null,\"metadata\":{\"gpui_path\":\"view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.volume-row\"},\"parent\":\"kit-demo\",\"role\":\"group\",\"state\":{\"checked\":null,\"enabled\":true,\"expanded\":null,\"focused\":false,\"selected\":null,\"visible\":true},\"text\":null,\"value\":null}},\"roots\":[\"root\"]}",
       "type": "text"
     }
   ],
@@ -22,7 +22,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 18.0,
           "width": 592.0,
           "x": 24.0,
-          "y": 156.0
+          "y": 298.0
         },
         "children": [],
         "description": null,
@@ -45,13 +45,134 @@ expression: "snapshot_text(tool, canonical)?"
         "text": null,
         "value": null
       },
+      "annotation-count": {
+        "actions": [],
+        "bounds": {
+          "height": 26.0,
+          "width": 173.0,
+          "x": 221.0,
+          "y": 257.0
+        },
+        "children": [],
+        "description": null,
+        "id": "annotation-count",
+        "label": "Annotations: 0 (expired)",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.annotation-count"
+        },
+        "parent": "kit-demo",
+        "role": "generic",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "chat-reply": {
+        "actions": [],
+        "bounds": {
+          "height": 26.0,
+          "width": 88.0,
+          "x": 121.0,
+          "y": 257.0
+        },
+        "children": [],
+        "description": null,
+        "id": "chat-reply",
+        "label": "No reply yet",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.chat-reply"
+        },
+        "parent": "kit-demo",
+        "role": "generic",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "chat-send": {
+        "actions": [
+          "click",
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 32.0,
+          "width": 85.0,
+          "x": 24.0,
+          "y": 254.0
+        },
+        "children": [
+          "chat-send.label"
+        ],
+        "description": null,
+        "id": "chat-send",
+        "label": "Ask agent",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.chat-send"
+        },
+        "parent": "kit-demo",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "chat-send.label": {
+        "actions": [],
+        "bounds": {
+          "height": 30.0,
+          "width": 63.0,
+          "x": 35.0,
+          "y": 255.0
+        },
+        "children": [],
+        "description": null,
+        "id": "chat-send.label",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.chat-send.label"
+        },
+        "parent": "chat-send",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
       "count": {
         "actions": [],
         "bounds": {
           "height": 26.0,
           "width": 592.0,
           "x": 24.0,
-          "y": 114.0
+          "y": 62.0
         },
         "children": [],
         "description": null,
@@ -71,6 +192,43 @@ expression: "snapshot_text(tool, canonical)?"
           "visible": true
         },
         "text": null,
+        "value": null
+      },
+      "filter": {
+        "actions": [
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 44.0,
+          "width": 240.0,
+          "x": 276.0,
+          "y": 100.0
+        },
+        "children": [],
+        "description": null,
+        "id": "filter",
+        "label": "Filter",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.filter"
+        },
+        "parent": "kit-demo",
+        "role": "text_input",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": {
+          "caret": null,
+          "redacted": false,
+          "selection": null,
+          "text": "Filter"
+        },
         "value": null
       },
       "heading": {
@@ -109,12 +267,12 @@ expression: "snapshot_text(tool, canonical)?"
         ],
         "bounds": {
           "height": 32.0,
-          "width": 592.0,
+          "width": 87.0,
           "x": 24.0,
-          "y": 66.0
+          "y": 156.0
         },
         "children": [
-          "label"
+          "increment.label"
         ],
         "description": null,
         "id": "increment",
@@ -136,6 +294,34 @@ expression: "snapshot_text(tool, canonical)?"
         "text": null,
         "value": null
       },
+      "increment.label": {
+        "actions": [],
+        "bounds": {
+          "height": 30.0,
+          "width": 65.0,
+          "x": 35.0,
+          "y": 157.0
+        },
+        "children": [],
+        "description": null,
+        "id": "increment.label",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment.label"
+        },
+        "parent": "increment",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
       "input-state": {
         "actions": [
           "hover",
@@ -145,7 +331,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 20.0,
           "width": 570.0,
           "x": 35.0,
-          "y": 196.0
+          "y": 334.0
         },
         "children": [],
         "description": null,
@@ -170,17 +356,25 @@ expression: "snapshot_text(tool, canonical)?"
       "kit-demo": {
         "actions": [],
         "bounds": {
-          "height": 420.0,
+          "height": 720.0,
           "width": 640.0,
           "x": 0.0,
           "y": 0.0
         },
         "children": [
+          "annotation-count",
+          "chat-reply",
           "count",
+          "filter",
+          "chat-send",
           "increment",
+          "reset",
           "agree",
           "name",
           "heading",
+          "lock-toggle",
+          "locked-action",
+          "search",
           "probe-left",
           "probe-right",
           "volume-row"
@@ -205,28 +399,60 @@ expression: "snapshot_text(tool, canonical)?"
         "text": null,
         "value": null
       },
-      "label": {
-        "actions": [],
+      "lock-toggle": {
+        "actions": [
+          "click"
+        ],
         "bounds": {
-          "height": 30.0,
-          "width": 570.0,
-          "x": 35.0,
-          "y": 67.0
+          "height": 42.0,
+          "width": 82.0,
+          "x": 167.0,
+          "y": 200.0
         },
         "children": [],
         "description": null,
-        "id": "label",
-        "label": null,
+        "id": "lock-toggle",
+        "label": "Unlock",
         "metadata": {
-          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.increment.label"
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.lock-toggle"
         },
-        "parent": "increment",
-        "role": "group",
+        "parent": "kit-demo",
+        "role": "button",
         "state": {
           "checked": null,
           "enabled": true,
           "expanded": null,
           "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "locked-action": {
+        "actions": [],
+        "bounds": {
+          "height": 42.0,
+          "width": 131.0,
+          "x": 24.0,
+          "y": 200.0
+        },
+        "children": [],
+        "description": null,
+        "id": "locked-action",
+        "label": "Locked action",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.locked-action"
+        },
+        "parent": "kit-demo",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": false,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
           "selected": null,
           "visible": true
         },
@@ -243,7 +469,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 32.0,
           "width": 592.0,
           "x": 24.0,
-          "y": 190.0
+          "y": 328.0
         },
         "children": [
           "input-state"
@@ -284,7 +510,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 40.0,
           "width": 200.0,
           "x": 24.0,
-          "y": 278.0
+          "y": 408.0
         },
         "children": [
           "probe-left-target"
@@ -316,7 +542,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 42.0,
           "width": 108.0,
           "x": 24.0,
-          "y": 277.0
+          "y": 407.0
         },
         "children": [],
         "description": null,
@@ -344,7 +570,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 40.0,
           "width": 200.0,
           "x": 236.0,
-          "y": 278.0
+          "y": 408.0
         },
         "children": [
           "probe-right-target"
@@ -376,7 +602,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 42.0,
           "width": 118.0,
           "x": 236.0,
-          "y": 277.0
+          "y": 407.0
         },
         "children": [],
         "description": null,
@@ -398,10 +624,73 @@ expression: "snapshot_text(tool, canonical)?"
         "text": null,
         "value": null
       },
+      "reset": {
+        "actions": [
+          "click",
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 32.0,
+          "width": 58.0,
+          "x": 123.0,
+          "y": 156.0
+        },
+        "children": [
+          "reset.label"
+        ],
+        "description": null,
+        "id": "reset",
+        "label": "Reset",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.reset"
+        },
+        "parent": "kit-demo",
+        "role": "button",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
+      "reset.label": {
+        "actions": [],
+        "bounds": {
+          "height": 30.0,
+          "width": 36.0,
+          "x": 134.0,
+          "y": 157.0
+        },
+        "children": [],
+        "description": null,
+        "id": "reset.label",
+        "label": null,
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.gpui_component::button::button::Button.gpui_base::button::Button.reset.label"
+        },
+        "parent": "reset",
+        "role": "group",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": null,
+        "value": null
+      },
       "root": {
         "actions": [],
         "bounds": {
-          "height": 420.0,
+          "height": 720.0,
           "width": 640.0,
           "x": 0.0,
           "y": 0.0
@@ -428,6 +717,43 @@ expression: "snapshot_text(tool, canonical)?"
         "text": null,
         "value": null
       },
+      "search": {
+        "actions": [
+          "focus",
+          "hover"
+        ],
+        "bounds": {
+          "height": 44.0,
+          "width": 240.0,
+          "x": 24.0,
+          "y": 100.0
+        },
+        "children": [],
+        "description": null,
+        "id": "search",
+        "label": "Search",
+        "metadata": {
+          "gpui_path": "view-4294967303.gpui_component::window_border::WindowBorder.root.view-4294967297.kit-demo.search"
+        },
+        "parent": "kit-demo",
+        "role": "text_input",
+        "state": {
+          "checked": null,
+          "enabled": true,
+          "expanded": null,
+          "focused": false,
+          "read_only": false,
+          "selected": null,
+          "visible": true
+        },
+        "text": {
+          "caret": null,
+          "redacted": false,
+          "selection": null,
+          "text": "Search"
+        },
+        "value": null
+      },
       "slider-4294967298": {
         "actions": [
           "step"
@@ -436,7 +762,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 24.0,
           "width": 256.0,
           "x": 24.0,
-          "y": 238.0
+          "y": 372.0
         },
         "children": [
           "slider-bar-container"
@@ -472,7 +798,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 6.0,
           "width": 256.0,
           "x": 24.0,
-          "y": 247.0
+          "y": 381.0
         },
         "children": [
           "slider-thumb-0"
@@ -505,7 +831,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 24.0,
           "width": 256.0,
           "x": 24.0,
-          "y": 238.0
+          "y": 372.0
         },
         "children": [
           "slider-bar"
@@ -538,7 +864,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 16.0,
           "width": 16.0,
           "x": 144.0,
-          "y": 242.0
+          "y": 376.0
         },
         "children": [],
         "description": null,
@@ -566,7 +892,7 @@ expression: "snapshot_text(tool, canonical)?"
           "height": 24.0,
           "width": 256.0,
           "x": 24.0,
-          "y": 238.0
+          "y": 372.0
         },
         "children": [
           "slider-4294967298"

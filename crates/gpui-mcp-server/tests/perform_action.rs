@@ -38,7 +38,6 @@
 //! held for the whole of each test body, and every wait is bounded by a
 //! deadline.
 
-mod kit_fixture;
 mod support;
 
 use cow_utils::CowUtils as _;
@@ -264,7 +263,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(kit_fixture::executable()?)
+        let child = Command::new(support::fixture_executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())

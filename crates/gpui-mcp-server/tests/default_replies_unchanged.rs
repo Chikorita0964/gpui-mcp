@@ -54,7 +54,7 @@
 //! canonicalized recursively, so it is held to the same rule as the
 //! `structuredContent` copy of the same payload.
 //!
-//! Running: the fixture is the GPUI Kit example on GPUI Fast, which the test builds itself (`kit_fixture`),
+//! Running: the fixture is the GPUI Kit example on GPUI Fast, built beside the server binary (`cargo build -p gpui-mcp-kit-demo`),
 //! and the check needs a desktop session; without `DISPLAY`
 //! or `WAYLAND_DISPLAY` the check prints a note and passes. One window is open
 //! at a time through the static `WINDOW` mutex. After a deliberate
@@ -62,7 +62,6 @@
 //! gpui-mcp-server --test default_replies_unchanged --review`, and say so in the
 //! report.
 
-mod kit_fixture;
 mod support;
 
 use std::path::{Path, PathBuf};
@@ -236,7 +235,7 @@ impl Fixture {
         let log = endpoints.with_extension("fixture.stderr.log");
         let stderr = std::fs::File::create(&log)
             .map_err(|error| format!("could not create fixture log: {error}"))?;
-        let child = Command::new(kit_fixture::executable()?)
+        let child = Command::new(support::fixture_executable()?)
             .arg("--endpoint-dir")
             .arg(endpoints)
             .stdin(Stdio::null())

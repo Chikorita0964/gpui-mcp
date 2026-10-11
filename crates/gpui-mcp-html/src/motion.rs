@@ -17,7 +17,6 @@ use htmlswap::{RenderMotionPlan, StyleDeclaration};
 use crate::cascade::Computed;
 
 /// What one element animates this frame.
-#[cfg_attr(not(feature = "gpui-pre"), expect(dead_code))]
 pub(crate) struct Inputs<'a> {
     /// The element's runtime id, which keys its motion state.
     pub(crate) key: &'a str,
@@ -48,16 +47,8 @@ pub(crate) fn has_motion(computed: &Computed) -> bool {
         || computed.animations.iter().any(|animation| animation.name.is_some())
 }
 
-#[cfg(feature = "gpui-pre")]
 pub(crate) use kit::{animate, duration, easing, frames, keyframes, timing};
 
-/// Without GPUI Kit's motion runtime, values take their end state at once.
-#[cfg(not(feature = "gpui-pre"))]
-pub(crate) fn animate(_: &Inputs<'_>, _: &mut Window, _: &mut App) -> Output {
-    Output::default()
-}
-
-#[cfg(feature = "gpui-pre")]
 mod kit {
     use std::time::Duration;
 

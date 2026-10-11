@@ -2,7 +2,6 @@ use gpui::{
     App, Keystroke, Modifiers, MouseButton as GpuiMouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point, px,
 };
-#[cfg(feature = "gpui-fast")]
 use gpui_mcp_protocol::SemanticAction;
 use gpui_mcp_protocol::{
     BridgeError, ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
@@ -201,7 +200,6 @@ fn invalid(message: &'static str) -> BridgeError {
 ///
 /// Only the gpui-fast backend, whose patch series carries the accessibility actions, has a caller;
 /// the other backends compile without this mapping.
-#[cfg(feature = "gpui-fast")]
 pub(crate) fn accesskit_action(
     action: SemanticAction,
 ) -> (gpui::accesskit::Action, Option<gpui::accesskit::ActionData>) {
@@ -235,18 +233,15 @@ mod tests {
         MouseButton as GpuiMouseButton, ParentElement as _, Render,
         StatefulInteractiveElement as _, Styled as _, TestAppContext, Window, div, point, px, size,
     };
-    #[cfg(feature = "gpui-fast")]
     use gpui_mcp_protocol::SemanticAction;
     use gpui_mcp_protocol::{
         ErrorCode, InputCommand, MAX_KEY_SEQUENCE, MAX_TEXT_BYTES, MouseButton, Point,
         PointerCommand,
     };
 
-    #[cfg(feature = "gpui-fast")]
     use super::accesskit_action;
     use super::{dispatch_pointer, validate, validate_text};
 
-    #[cfg(feature = "gpui-fast")]
     #[test]
     fn set_value_always_carries_the_string_a_text_handler_reads() {
         use gpui::accesskit::{Action, ActionData};
@@ -265,7 +260,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gpui-fast")]
     #[test]
     fn the_other_semantic_actions_carry_no_payload() {
         use gpui::accesskit::Action;
