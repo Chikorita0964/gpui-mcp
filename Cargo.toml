@@ -10,7 +10,7 @@ members = [
     "examples/runtime-showcase",
     "xtask",
 ]
-exclude = ["vendor/gpui", "vendor/gpui-pre", "vendor/gpui-ce", "examples/gpui-kit"]
+exclude = ["vendor/gpui", "vendor/gpui-pre", "vendor/gpui-ce", "vendor/gpui-fast", "examples/gpui-kit"]
 default-members = ["crates/gpui-mcp-server"]
 resolver = "3"
 
@@ -91,10 +91,7 @@ opt-level = 2
 gpui = { path = "vendor/gpui" }
 gpui-pre = { path = "vendor/gpui-pre" }
 gpui-ce = { path = "vendor/gpui-ce" }
-# gpui-fast with the bridge's changes as commits on the published crate
-# (Chikorita0964/gpui-fast-mcp, PATCHES.md there); xtask check-consumer reads
-# this entry.
-gpui-fast = { git = "https://github.com/Chikorita0964/gpui-fast-mcp", rev = "4f14ed3b13fcafb8ef2e38e74426a12cfbcef79c" }
+gpui-fast = { path = "vendor/gpui-fast" }
 
 [patch."https://github.com/zed-industries/zed"]
 gpui = { path = "vendor/gpui" }

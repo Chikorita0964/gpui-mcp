@@ -124,15 +124,6 @@ pub(crate) fn run(args: &ConsumerArgs) -> Result<()> {
     let (gpui_package, gpui_version) = recipe.gpui;
     let repository = serde_json::to_string(&args.repository)?;
     let rev = serde_json::to_string(&args.rev)?;
-    // The patched GPUI is gpui-mcp's own vendored tree, unless the workspace
-    // patches it from a Git repository of its own, as it does gpui-fast.
-    let (patch_repository, patch_rev) = workspace_git_patch(gpui_package)?
-        .unwrap_or_else(|| (args.repository.clone(), args.rev.clone()));
-    let patch_source = format!(
-        "{{ git = {}, rev = {} }}",
-        serde_json::to_string(&patch_repository)?,
-        serde_json::to_string(&patch_rev)?
-    );
     let target_dir = args
         .target_dir
         .as_deref()
@@ -160,7 +151,7 @@ rust-version = "1.96"
 gpui-mcp = {{ git = {repository}, rev = {rev}, default-features = false, features = ["{feature}"] }}
 
 [patch.crates-io]
-{gpui_package} = {patch_source}
+{gpui_package} = {{ git = {repository}, rev = {rev} }}
 "#,
             name = args.backend.name(),
             dependencies = recipe.dependencies,
@@ -210,7 +201,7 @@ fn main() {{
         String::from_utf8_lossy(&output.stderr)
     );
     let metadata: Value = serde_json::from_slice(&output.stdout)?;
-    verify(&metadata, &recipe, &patch_rev)?;
+    verify(&metadata, &recipe, &args.rev)?;
     println!(
         "{}: all {} GPUI consumers use patched {gpui_package} {gpui_version} at {}",
         args.backend.name(),
@@ -218,23 +209,6 @@ fn main() {{
         args.rev
     );
     Ok(())
-}
-
-/// The Git repository and revision the workspace's `[patch.crates-io]` takes
-/// `package` from, when it takes it from Git rather than a vendored path.
-fn workspace_git_patch(package: &str) -> Result<Option<(String, String)>> {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../Cargo.toml");
-    let manifest: toml::Value = toml::from_str(&fs::read_to_string(&manifest)?)?;
-    let entry = manifest
-        .get("patch")
-        .and_then(|patch| patch.get("crates-io"))
-        .and_then(|patches| patches.get(package));
-    Ok(entry.and_then(|entry| {
-        Some((
-            entry.get("git")?.as_str()?.to_owned(),
-            entry.get("rev")?.as_str()?.to_owned(),
-        ))
-    }))
 }
 
 /// Check that exactly one patched GPUI package from `rev` was resolved, and

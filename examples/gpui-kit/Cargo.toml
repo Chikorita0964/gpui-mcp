@@ -29,4 +29,4 @@ gpui-mcp = { path = "../../crates/gpui-mcp", default-features = false, features 
 
 [patch.crates-io]
 gpui-pre = { path = "../../vendor/gpui-pre" }
-gpui-fast = { git = "https://github.com/Chikorita0964/gpui-fast-mcp", rev = "4f14ed3b13fcafb8ef2e38e74426a12cfbcef79c" }
+gpui-fast = { path = "../../vendor/gpui-fast" }
