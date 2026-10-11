@@ -22,9 +22,8 @@ This shape supports both ways of adopting the system:
    `gpui-mcp-html` project-generation API. It produces the bundle and a working
    GPUI/MCP host without overwriting an existing path.
 
-The renderer runs on Zed's GPUI (the default `zed` feature) and on the
-`gpui-pre` release GPUI Kit uses (`default-features = false, features =
-["gpui-pre", "json", "ron"]`). Generated projects use the Zed backend.
+The renderer runs on GPUI Fast, the GPUI GPUI Kit uses with its `gpui-fast`
+feature (the default `runtime` feature). Generated projects use it too.
 
 ## Why HTML, RON, and JSON each have a separate job
 
@@ -175,10 +174,8 @@ inspectable while a component is being implemented.
 
 Motion is written in standard CSS. Transitions and animations run on GPUI
 Kit's motion runtime (`gpui_base::motion`), the same runtime exported GPUI Kit
-code calls, so the canvas and the exported app move identically. This is
-always on with the `gpui-pre` backend. On the Zed backend, which GPUI Kit
-does not support, animated properties take their end values at once; nothing
-is approximated. Elements that declare no motion do no
+code calls, so the canvas and the exported app move identically. Nothing is
+approximated. Elements that declare no motion do no
 per-frame motion work.
 
 **Transitions.** `transition` (and its longhands) animates every property in
@@ -203,8 +200,7 @@ reduce-motion setting.
 two states: a group moves each one from its old box to its new box, while the
 old and new images cross-fade, and everything else (`root`) cross-fades as
 well. They run on the `gpui-view-transitions` crate (on `gpui_base::motion`),
-which exported GPUI Kit code uses too; on the Zed backend a transition applies
-its end state at once, and `start_view_transition` returns `false`. `view-transition-name: none` opts out, and `auto`/`match-element` name
+which exported GPUI Kit code uses too. `view-transition-name: none` opts out, and `auto`/`match-element` name
 an element by its id. A transition starts in one of two ways:
 
 ```rust,ignore

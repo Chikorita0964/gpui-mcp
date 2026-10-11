@@ -898,8 +898,7 @@ fn handle_ui_operation(
 
 /// Dispatch one semantic accessibility action through the node's AccessKit handle.
 ///
-/// Only the gpui-fast series carries the accessibility actions patch, so only that backend compiles
-/// this. GPUI handles click, focus, and blur itself, so a node without a
+/// It runs through the vendored GPUI Fast's accessibility actions patch. GPUI handles click, focus, and blur itself, so a node without a
 /// listener for them is still actionable; anything else must register one.
 fn dispatch_semantic_action(
     node_id: &str,

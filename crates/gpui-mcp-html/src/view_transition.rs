@@ -5,9 +5,6 @@
 //! uses too. This module holds what is specific to HTML documents: which
 //! elements are named, how author CSS styles each name's pseudo-elements,
 //! and the outgoing document the renderer draws again inertly.
-//!
-//! On the Zed backend, which GPUI Kit does not support, transitions apply
-//! their end state at once, as transitions and animations do there.
 use std::rc::Rc;
 
 use gpui::SharedString;

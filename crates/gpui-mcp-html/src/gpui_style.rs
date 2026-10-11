@@ -25,7 +25,7 @@ use htmlswap::computed::{
 };
 use rustc_hash::FxHashSet;
 
-/// What this renderer's GPUI draws: both backends carry the grid and
+/// What this renderer's GPUI draws: the vendored GPUI Fast carries the grid and
 /// inset-shadow patches.
 const FEATURES: Features = Features { grid_tracks: true, inset_shadows: true };
 

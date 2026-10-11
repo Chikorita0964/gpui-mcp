@@ -205,9 +205,7 @@ fn verify(metadata: &Value, recipe: &Recipe, rev: &str) -> Result<()> {
             .context("node has no deps")?
             .iter()
             .filter_map(|dep| dep["pkg"].as_str())
-            .filter(|pkg| {
-                matches!(names.get(pkg), Some(&("gpui" | "gpui-pre" | "gpui-ce" | "gpui-fast")))
-            })
+            .filter(|pkg| matches!(names.get(pkg), Some(&("gpui" | "gpui-pre" | "gpui-fast"))))
             .collect();
         let patched = snapshot["id"].as_str().unwrap_or_default();
         let links_patched =

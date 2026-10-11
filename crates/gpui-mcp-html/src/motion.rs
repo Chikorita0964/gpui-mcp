@@ -1,11 +1,10 @@
 //! CSS transitions and `@keyframes` for the live renderer.
 //!
-//! On the `gpui-pre` backend (GPUI Kit) they run on GPUI Kit's motion runtime
-//! (`gpui_base::motion`), the same runtime generated GPUI Kit code uses, so
-//! the Studio canvas and an exported app animate identically. The values
-//! come from htmlswap's typed lowering: `AnimatableProperty` says what a rule
-//! animates and `AnimatedValue` how values blend. Without the feature (the
-//! Zed GPUI backend), properties take their end values at once.
+//! They run on GPUI Kit's motion runtime (`gpui_base::motion`), the same
+//! runtime generated GPUI Kit code uses, so the Studio canvas and an exported
+//! app animate identically. The values come from htmlswap's typed lowering:
+//! `AnimatableProperty` says what a rule animates and `AnimatedValue` how
+//! values blend.
 
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId as GpuiElementId, GlobalElementId,

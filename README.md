@@ -13,31 +13,29 @@ It works on Windows 11, macOS, and Linux.
 Install the MCP server and add it to your MCP client:
 
 ```console
-cargo install --git https://github.com/themixednuts/gpui-mcp --locked gpui-mcp-server
+cargo install --git https://github.com/Chikorita0964/gpui-mcp --branch dev --locked gpui-mcp-server
 ```
 
 ```json
 { "mcpServers": { "gpui": { "command": "gpui-mcp" } } }
 ```
 
-Add the bridge and its GPUI build to your app:
+The bridge runs on [GPUI Fast](https://github.com/longbridge/gpui-fast), Zed's
+GPUI with retained rendering. Add it and its GPUI Fast build to your app:
 
 ```toml
 [dependencies]
-gpui = "=0.2.2"
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "16c9aa7ea6d897a8044d9501cde1b295256722f2", features = ["font-kit", "wayland", "x11"] }
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+gpui = { package = "gpui-fast", version = "=0.1.6" }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.6", features = ["font-kit", "wayland", "x11"] }
+gpui-mcp = { git = "https://github.com/Chikorita0964/gpui-mcp", branch = "dev" }
 
 [patch.crates-io]
-gpui = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
-
-[patch."https://github.com/zed-industries/zed"]
-gpui = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+gpui-fast = { git = "https://github.com/Chikorita0964/gpui-mcp", branch = "dev" }
 ```
 
-Both patches are required. They keep your app, `gpui_platform`, and the bridge
-on one GPUI build. They can go away once the additions in the
-[vendor patch inventory](vendor/gpui/PATCHES.md) land upstream.
+The patch is required. It keeps your app, `gpui_platform` and the bridge on one
+GPUI Fast build carrying the bridge's additions, which
+[`vendor/README.md`](vendor/README.md) lists.
 
 Install the bridge when you open a window:
 
@@ -136,8 +134,7 @@ technology does, without coordinates or keystrokes: `click`, `increment`,
 `decrement`, `expand`, `collapse`, and `set_value`. Use increment/decrement for
 sliders and spinners, expand/collapse for disclosure widgets, and set_value to
 replace a value; an element that does not register the action is reported
-rather than silently ignored. Only apps on the `gpui-fast` backend support it;
-the other backends refuse it.
+rather than silently ignored.
 
 Clients that support the MCP tasks extension (SEP-2663) get the tools that can
 block for seconds (`wait_for_messages`, `wait_for_element`, `wait_for_state`,
@@ -218,89 +215,39 @@ For a chat loop, tell the agent something like: "Call `wait_for_messages` with
 the latest id you have seen, act on each message from the app, and answer it
 with `send_message`, then wait again."
 
-## GPUI Kit, `gpui-pre`, `gpui-fast` and `gpui-ce`
+## GPUI Kit
 
-Besides Zed's own GPUI, the bridge works with three GPUI releases on crates.io:
-
-| GPUI crate  | Used by                                 | Supported versions | Bridge feature |
-| ----------- | --------------------------------------- | ------------------ | -------------- |
-| `gpui-pre`  | GPUI Kit, `gpui-component`              | 0.3.8              | `gpui-pre`     |
-| `gpui-fast` | GPUI Kit with its `gpui-fast` feature   | 0.1.6              | `gpui-fast`    |
-| `gpui-ce`   | The community fork and apps built on it | 0.2.2              | `gpui-ce`      |
-
-Each needs a small set of GPUI patches, which this repository provides. The
-recipes below pull in a patched copy from here.
-
-### GPUI Kit (`gpui-pre` 0.3.8)
-
-GPUI Kit comes from its GitHub main, whose GPUI Fast support is not in a
-release yet. Add this to your workspace's `Cargo.toml`:
-
-```toml
-[dependencies]
-gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "ed27c6293b585acc40c10be7138534243bee5841" }
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-pre"] }
-
-[patch.crates-io]
-gpui-pre = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
-```
-
-Call `gpui_kit::init(cx)`, open the window with `gpui_kit::open_window`, and
-install the bridge as usual. The bridge accepts Kit's `Window` and `App`
-directly. To see it working, run the [Kit demo](examples/gpui-kit):
-
-```console
-cargo run --manifest-path examples/gpui-kit/Cargo.toml
-```
-
-### GPUI Kit on GPUI Fast (`gpui-fast` 0.1.6)
-
-GPUI Kit's `gpui-fast` feature draws Kit and its components with
-[GPUI Fast](https://github.com/longbridge/gpui-fast); select the bridge's
-`gpui-fast` backend with it:
+GPUI Kit draws on GPUI Fast with its `gpui-fast` feature. It comes from its
+GitHub main, whose GPUI Fast support is not in a release yet. Add this to your
+workspace's `Cargo.toml`:
 
 ```toml
 [dependencies]
 gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "ed27c6293b585acc40c10be7138534243bee5841", features = ["gpui-fast"] }
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-fast"] }
+gpui-mcp = { git = "https://github.com/Chikorita0964/gpui-mcp", branch = "dev" }
 
 [patch.crates-io]
-gpui-fast = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
+gpui-fast = { git = "https://github.com/Chikorita0964/gpui-mcp", branch = "dev" }
 ```
 
-The Kit demo runs on it too:
+Call `gpui_kit::init(cx)`, open the window with `gpui_kit::open_window`, and
+install the bridge as usual. The bridge accepts Kit's `Window` and `App`
+directly. To see it working, run the [Kit demo](examples/gpui-kit), which the
+server's end-to-end tests drive too:
 
 ```console
-cargo run --manifest-path examples/gpui-kit/Cargo.toml --no-default-features --features gpui-fast
+cargo run -p gpui-mcp-kit-demo
 ```
 
-### `gpui-ce` 0.2.2
-
-Add this to your workspace's `Cargo.toml`:
-
-```toml
-[dependencies]
-gpui-ce = "=0.2.2"
-gpui_ce_platform = "=0.1.0"
-gpui-mcp = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main", default-features = false, features = ["gpui-ce"] }
-
-[patch.crates-io]
-gpui-ce = { git = "https://github.com/themixednuts/gpui-mcp", branch = "main" }
-```
-
-`gpui-ce` is imported as `gpui`, so install the bridge as usual when you open
-a window.
-
-### Your own GPUI patches
+### Your own GPUI Fast patches
 
 The `[patch]` recipes above give you the version this repository vendors. If
-you carry GPUI patches of your own, keep your own patched copy instead:
+you carry GPUI Fast patches of your own, keep your own patched copy instead:
 
-1. From a checkout of this repository, write a patched copy into your app.
-   Pass `--crate gpui-ce` for `gpui-ce`.
+1. From a checkout of this repository, write a patched copy into your app:
 
    ```console
-   cargo xtask vendor --crate gpui-pre --output /path/to/your-app/vendor/gpui-pre
+   cargo xtask vendor --crate gpui-fast --output /path/to/your-app/vendor/gpui-fast
    ```
 
 2. Apply your own patches to that copy, if you have any.
@@ -308,15 +255,15 @@ you carry GPUI patches of your own, keep your own patched copy instead:
 
    ```toml
    [patch.crates-io]
-   gpui-pre = { path = "vendor/gpui-pre" }
+   gpui-fast = { path = "vendor/gpui-fast" }
    ```
 
-The patches are in [`vendor/patches/`](vendor/patches), one folder per crate
-and version. Each has three:
+The patches are in [`vendor/patches/gpui-fast/`](vendor/patches/gpui-fast), one
+folder per version:
 
 - `automation.patch` has everything the bridge needs.
-- `font-fallback.patch` is an unrelated font fix. Add `--without font-fallback`
-  to skip it.
+- `accessibility-actions.patch` lets `perform_action` run an element's
+  accessibility actions.
 - `grid.patch` exposes CSS grid track lists (`grid_template_columns`,
   `grid_template_rows`, `grid_auto_rows`, `grid_auto_flow`, `grid_column`,
   `grid_row`, with `px`, `%`, `fr`, `auto`, `min-content`, `max-content`,
@@ -324,13 +271,11 @@ and version. Each has three:
   The bridge doesn't need it, but `gpui-mcp-html` does. Add
   `--without grid` to skip it.
 
-CI builds and tests the bridge against each supported version, so these
-patches are kept working.
+CI builds and tests the bridge against the vendored release and the patch
+series without its optional patch, so these patches are kept working.
 
 ### Things to know
 
-- Use one backend per app. Every `gpui-mcp` dependency in a GPUI Kit or
-  `gpui-ce` app needs `default-features = false`.
 - GPUI Fast draws nothing again from the last frame while it builds the
   accessibility tree. The bridge builds it only on demand: a request that reads
   the tree (the tree, input, focus, `perform_action`, annotations) holds it on
@@ -339,20 +284,14 @@ patches are kept working.
   between, GPUI Fast's retained rendering and scroll layers work and frame
   reports show what they reuse; while the tree is built, every view renders and
   frame reports name the cause of a cached view's render `caching_disabled`.
-- Only the `gpui-fast` tree carries accessibility action dispatch, so
-  `perform_action`'s semantic actions are refused on Zed, `gpui-pre` and
-  `gpui-ce`. Zed apps that turn off default features must add
-  `features = ["zed"]`.
 - Kit components that publish accessibility info work with all the tools.
   Custom-drawn components only show what they annotate.
 - In GPUI Kit, disabled controls report `enabled: true` and read-only inputs
   don't report `read_only`. Kit doesn't publish these states yet.
-- `gpui-mcp-html` works with GPUI Kit too: add it with
-  `default-features = false, features = ["gpui-pre", "json", "ron"]`. Its CSS
-  transitions and animations run on GPUI Kit's `gpui_base::motion` (GPUI Kit's
-  GitHub main). Its
-  `grid-template-*` support needs the `grid.patch` described below, which the
-  `[patch]` recipe already includes.
+- `gpui-mcp-html` runs on the same GPUI Fast. Its CSS transitions and
+  animations run on GPUI Kit's `gpui_base::motion` (GPUI Kit's GitHub main), and
+  its `grid-template-*` support needs the `grid.patch` described above, which
+  the `[patch]` recipe already includes.
 
 ## Measuring frame cost
 

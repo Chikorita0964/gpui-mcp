@@ -38,7 +38,7 @@
 //! counts, its view activity lists - is compared as sent. Object keys are
 //! rewritten in name order, the form the snapshots are written in: the
 //! workspace build enables `serde_json/preserve_order` through the vendored
-//! gpui-pre crate, which makes a live reply serialize its keys in insertion
+//! GPUI Fast crate, which makes a live reply serialize its keys in insertion
 //! order, and JSON object order carries no meaning - comparing name order is
 //! what makes the check mean the same thing under `-p gpui-mcp-server` and
 //! under the goal's workspace feature set. Volatile keys: any key ending in

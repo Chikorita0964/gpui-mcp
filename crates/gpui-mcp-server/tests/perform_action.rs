@@ -5,9 +5,8 @@
 //! technology does: the caller names a semantic node and one accessibility
 //! action — `click`, `increment`, `decrement`, `expand`, `collapse`, or
 //! `set_value` — and the element's own handler runs on the UI thread with no
-//! coordinates and no keystrokes. Only the gpui-fast backend's window performs
-//! accessibility actions, so the fixture is the GPUI Kit example
-//! (`examples/gpui-kit`) on GPUI Fast. The bridge's unit tests cover the
+//! coordinates and no keystrokes. The fixture is the GPUI Kit example
+//! (`examples/gpui-kit`). The bridge's unit tests cover the
 //! mapping from the wire action to AccessKit and the element handler; what they
 //! cannot show is the path a client actually takes: an MCP tool call, the
 //! bridge request, GPUI's own dispatch, and a change in the running fixture.
@@ -29,10 +28,8 @@
 //! automation on every change, so a case checks the change, not merely the
 //! acceptance.
 //!
-//! The example is a workspace of its own (Cargo features are additive, and the
-//! Zed demos must not turn on their backend in the bridge it uses), so the
-//! test builds it itself, once per run, into `target/kit-fast`; an up-to-date
-//! build is a no-op. Running needs a desktop session: without `DISPLAY` or
+//! The example is a workspace member built beside the server binary (`cargo
+//! build -p gpui-mcp-kit-demo`). Running needs a desktop session: without `DISPLAY` or
 //! `WAYLAND_DISPLAY` each test prints a note and passes without opening a
 //! window. One window is open at a time, because the static `WINDOW` mutex is
 //! held for the whole of each test body, and every wait is bounded by a

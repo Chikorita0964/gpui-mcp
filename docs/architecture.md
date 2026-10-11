@@ -23,7 +23,7 @@ one owner; the others call it rather than re-implementing it.
           └───────────────┘      └───────────────────┬──────────────────┘
                                                      │
                                            ┌─────────▼─────────┐
-                                           │  GPUI (gpui-pre)  │ layout, text,
+                                           │  GPUI (gpui-fast) │ layout, text,
                                            └───────────────────┘ paint, input
 ```
 
@@ -31,7 +31,7 @@ one owner; the others call it rather than re-implementing it.
 
 | Concern                                                                                                          | Owner                                       | Notes                                                                                                                                                                 |
 | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Layout, text, painting, input, focus, accessibility                                                              | **GPUI** (gpui-pre for GPUI Kit)            | Nobody else lays out or paints.                                                                                                                                       |
+| Layout, text, painting, input, focus, accessibility                                                              | **GPUI** (GPUI Fast)                        | Nobody else lays out or paints.                                                                                                                                       |
 | Components (buttons, menus, dialogs, …), theme model                                                             | **GPUI Kit** (`gpui-component`)             | Studio and exported apps use them directly.                                                                                                                           |
 | Motion primitives: value transitions, keyframes, easing, springs, presence                                       | **GPUI Kit** (`gpui_base::motion`)          | Called by both `LiveHtml` and generated code; no second engine.                                                                                                       |
 | View transitions (capture, named-element morphs, cross-fade, pseudo-element timing)                              | **`gpui-view-transitions`** (gpui-mcp repo) | The one motion gap in GPUI Kit; built on `gpui_base::motion`, independent of HTML (callers draw the outgoing state and style each name), and a candidate to upstream. |
@@ -48,7 +48,7 @@ one owner; the others call it rather than re-implementing it.
   → the gpui-mcp bridge (MCP), → GPUI Kit components, → htmlswap's GPUI Kit
   code generator (export).
 - **gpui-mcp-html** → htmlswap (compile and lower), → `gpui_base::motion` and
-  `gpui-view-transitions` (motion; the default on the `gpui-pre` backend), →
+  `gpui-view-transitions` (motion), →
   gpui-mcp (automation and semantics).
 - **gpui-view-transitions** → `gpui_base::motion` and GPUI only. It knows no
   HTML or CSS: callers hand it each name's `NameStyle` and draw the outgoing
@@ -66,9 +66,7 @@ one owner; the others call it rather than re-implementing it.
    GPUI. A feature the code generator cannot emit is not supported by
    `LiveHtml` either, and both report the same diagnostic.
 2. **One motion runtime.** Transitions, animations and view transitions run
-   on `gpui_base::motion` in both back ends; it is the default wherever GPUI
-   Kit is. On the Zed GPUI backend, which GPUI Kit does not support,
-   `LiveHtml` applies end states without animating.
+   on `gpui_base::motion`, the runtime GPUI Kit code uses too.
 3. **GPUI-expressible only.** The lowering covers what GPUI can draw: no
    general transforms beyond translation, no gradients or filters until GPUI
    has them. Unsupported CSS is a diagnostic, never a silent approximation.
@@ -76,8 +74,8 @@ one owner; the others call it rather than re-implementing it.
    follow the CSS specifications; state pseudo-classes apply to the element
    they are written on (`.card:hover .title` lowers to a GPUI group hover).
 5. **The latest releases only.** Dependencies move to each new release and
-   drop the old ones: each vendored GPUI is the one supported version
-   (`gpui-pre =0.3.8`, `gpui-fast =0.1.6`), GPUI Kit comes from its GitHub main
+   drop the old ones: the vendored GPUI Fast is the one supported version
+   (`=0.1.6`), GPUI Kit comes from its GitHub main
    at a pinned revision (its GPUI Fast support is not released yet), and the
    whole workspace builds on its one pinned Rust toolchain.
 
@@ -88,10 +86,10 @@ one owner; the others call it rather than re-implementing it.
 | `LiveHtml` parsed CSS strings every frame                               | Maps htmlswap's typed lowering (`gpui_style`), cached per element and state                                                                           | Done    |
 | `LiveHtml` and the code generator each decided how CSS maps to GPUI     | htmlswap's `computed::gpui::plan` decides once (including what is approximate or unsupported); `LiveHtml` applies it and the code generator prints it | Done    |
 | Lengths were folded to pixels at a fixed 16px rem and viewport          | `rem` and viewport units stay symbolic until the window resolves them                                                                                 | Done    |
-| `LiveHtml` had its own transition and animation engine                  | `gpui_base::motion` on the `gpui-pre` backend; end states on Zed                                                                                      | Done    |
+| `LiveHtml` had its own transition and animation engine                  | `gpui_base::motion` on GPUI Fast                                                                                                                      | Done    |
 | htmlswap attached dynamic pseudo-classes to the subject element         | State attached to the element written on (`ElementState { ancestor }`)                                                                                | Done    |
 | View-transition elements inside `LiveHtml`                              | `gpui-view-transitions` crate on `gpui_base::motion`; `LiveHtml` keeps only CSS-to-style mapping and inert drawing of the old document                | Done    |
-| `gpui-mcp-html` followed one GPUI Kit release behind                    | `gpui-base` from GPUI Kit's GitHub main on the vendored `gpui-pre` 0.3.8                                                                              | Done    |
+| `gpui-mcp-html` followed one GPUI Kit release behind                    | `gpui-base` from GPUI Kit's GitHub main on the vendored GPUI Fast 0.1.6                                                                               | Done    |
 | htmlswap code generators target `gpui` 0.2.2 and `gpui-component` 0.5.1 | `GpuiTarget::Kit` (`--gpui-kit`): `gpui-pre` 0.3 and `gpui-component` 0.7, styles from the shared plan, `:hover` transitions on `gpui_base::motion`   | Done    |
 | Generated GPUI Kit code animates `@keyframes` and view transitions      | `gpui_base::motion::animate_keyframes`; view transitions need the app to provide its outgoing state                                                   | Next    |
-| gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings       | GPUI Kit on gpui-pre; themes as CSS custom properties                                                                                                 | Planned |
+| gpui-studio on Zed `gpui` 0.2.2, themes via generated CSS strings       | GPUI Kit on GPUI Fast; themes as CSS custom properties                                                                                                | Planned |

@@ -240,7 +240,7 @@ impl GpuiMcp {
     }
 
     #[tool(
-        description = "Perform an accessibility action on an element the way assistive technology does, without coordinates or keystrokes. Actions: click, increment, decrement, expand, collapse, and set_value. Use increment/decrement for sliders and spinners, expand/collapse for disclosure widgets, and set_value to replace a value. An element that does not register the action is reported rather than silently ignored. Only apps on the gpui-fast backend support this tool; the others refuse it."
+        description = "Perform an accessibility action on an element the way assistive technology does, without coordinates or keystrokes. Actions: click, increment, decrement, expand, collapse, and set_value. Use increment/decrement for sliders and spinners, expand/collapse for disclosure widgets, and set_value to replace a value. An element that does not register the action is reported rather than silently ignored."
     )]
     async fn perform_action(
         &self,

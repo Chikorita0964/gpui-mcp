@@ -198,8 +198,6 @@ fn invalid(message: &'static str) -> BridgeError {
 
 /// The AccessKit action and payload that assistive technology sends for `action`.
 ///
-/// Only the gpui-fast backend, whose patch series carries the accessibility actions, has a caller;
-/// the other backends compile without this mapping.
 pub(crate) fn accesskit_action(
     action: SemanticAction,
 ) -> (gpui::accesskit::Action, Option<gpui::accesskit::ActionData>) {
