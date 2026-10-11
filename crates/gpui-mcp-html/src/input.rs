@@ -1,6 +1,5 @@
 use std::ops::Range;
 
-use cow_utils::CowUtils as _;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId as GpuiElementId,
     ElementInputHandler, EntityInputHandler, FocusHandle, Focusable, Global, GlobalElementId,
@@ -182,7 +181,11 @@ impl RuntimeTextInput {
     }
 
     fn cursor(&self) -> usize {
-        if self.selection_reversed { self.selection.start } else { self.selection.end }
+        if self.selection_reversed {
+            self.selection.start
+        } else {
+            self.selection.end
+        }
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -253,14 +256,17 @@ impl RuntimeTextInput {
 
     fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
         let cursor = self.cursor();
-        let start = self.content[..cursor].rfind('\n').map_or(0, |index| index + 1);
+        let start = self.content[..cursor]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
         self.move_to(start, cx);
     }
 
     fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
         let cursor = self.cursor();
-        let end =
-            self.content[cursor..].find('\n').map_or(self.content.len(), |index| cursor + index);
+        let end = self.content[cursor..]
+            .find('\n')
+            .map_or(self.content.len(), |index| cursor + index);
         self.move_to(end, cx);
     }
 
@@ -370,8 +376,15 @@ impl RuntimeTextInput {
         else {
             return 0;
         };
-        let display_index = line.shaped.closest_index_for_x((point.x - bounds.left()).max(px(0.)));
-        source_index_for_display(&self.content, &line.source, display_index, self.behavior.masked)
+        let display_index = line
+            .shaped
+            .closest_index_for_x((point.x - bounds.left()).max(px(0.)));
+        source_index_for_display(
+            &self.content,
+            &line.source,
+            display_index,
+            self.behavior.masked,
+        )
     }
 
     fn replace(
@@ -421,7 +434,9 @@ impl RuntimeTextInput {
     }
 
     fn offset_to_utf16(&self, offset: usize) -> usize {
-        self.content[..floor_char_boundary(&self.content, offset)].encode_utf16().count()
+        self.content[..floor_char_boundary(&self.content, offset)]
+            .encode_utf16()
+            .count()
     }
 
     fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
@@ -471,7 +486,9 @@ impl EntityInputHandler for RuntimeTextInput {
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked_range.as_ref().map(|range| self.range_to_utf16(range))
+        self.marked_range
+            .as_ref()
+            .map(|range| self.range_to_utf16(range))
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
@@ -546,8 +563,14 @@ impl EntityInputHandler for RuntimeTextInput {
             self.behavior.masked,
         );
         Some(Bounds::from_corners(
-            point(bounds.left() + line.shaped.x_for_index(start), line.origin.y),
-            point(bounds.left() + line.shaped.x_for_index(end), line.origin.y + line_height),
+            point(
+                bounds.left() + line.shaped.x_for_index(start),
+                line.origin.y,
+            ),
+            point(
+                bounds.left() + line.shaped.x_for_index(end),
+                line.origin.y + line_height,
+            ),
         ))
     }
 
@@ -664,8 +687,11 @@ impl Element for TextElement {
         let input = self.input.read(cx);
         let ranges = source_lines(&input.content);
         let line_count = ranges.len().max(1);
-        let line_height =
-            if input.behavior.multiline { window.line_height() } else { bounds.size.height };
+        let line_height = if input.behavior.multiline {
+            window.line_height()
+        } else {
+            bounds.size.height
+        };
         let style = window.text_style();
         let font_size = style.font_size.to_pixels(window.rem_size());
         let mut lines = Vec::with_capacity(line_count);
@@ -683,12 +709,18 @@ impl Element for TextElement {
             let run = TextRun {
                 len: display.len(),
                 font: style.font(),
-                color: if is_placeholder { rgba(0x8080_8099).into() } else { style.color },
+                color: if is_placeholder {
+                    rgba(0x8080_8099).into()
+                } else {
+                    style.color
+                },
                 background_color: None,
                 underline: None,
                 strikethrough: None,
             };
-            let shaped = window.text_system().shape_line(display.into(), font_size, &[run], None);
+            let shaped = window
+                .text_system()
+                .shape_line(display.into(), font_size, &[run], None);
             let origin = point(bounds.left(), origin_y);
             origin_y += line_height;
 
@@ -735,9 +767,18 @@ impl Element for TextElement {
                     style.color,
                 ));
             }
-            lines.push(PaintedLine { source, shaped, origin });
+            lines.push(PaintedLine {
+                source,
+                shaped,
+                origin,
+            });
         }
-        PrepaintState { lines, cursor, selections, line_height }
+        PrepaintState {
+            lines,
+            cursor,
+            selections,
+            line_height,
+        }
     }
 
     fn paint(
@@ -751,7 +792,11 @@ impl Element for TextElement {
         cx: &mut App,
     ) {
         let focus = self.input.read(cx).focus_handle.clone();
-        window.handle_input(&focus, ElementInputHandler::new(bounds, self.input.clone()), cx);
+        window.handle_input(
+            &focus,
+            ElementInputHandler::new(bounds, self.input.clone()),
+            cx,
+        );
         for selection in state.selections.drain(..) {
             window.paint_quad(selection);
         }
@@ -773,7 +818,11 @@ impl Element for TextElement {
                     window,
                     cx,
                 );
-                StoredLine { source: line.source, shaped: line.shaped, origin: line.origin }
+                StoredLine {
+                    source: line.source,
+                    shaped: line.shaped,
+                    origin: line.origin,
+                }
             })
             .collect();
         self.input.update(cx, |input, _| {
@@ -785,9 +834,12 @@ impl Element for TextElement {
 }
 
 fn normalize_value(value: &str, multiline: bool) -> String {
-    let normalized = value.cow_replace("\r\n", "\n");
-    let normalized = normalized.cow_replace('\r', "\n");
-    if multiline { normalized.into_owned() } else { normalized.cow_replace('\n', " ").into_owned() }
+    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+    if multiline {
+        normalized
+    } else {
+        normalized.replace('\n', " ")
+    }
 }
 
 fn source_lines(content: &str) -> Vec<Range<usize>> {

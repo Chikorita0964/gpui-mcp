@@ -32,10 +32,20 @@ fn observes_and_drives_kit_controls(cx: &mut TestAppContext) {
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
         let before = automation.snapshot();
-        assert!(before.nodes.contains_key("increment"), "observed tree: {before:#?}");
+        assert!(
+            before.nodes.contains_key("increment"),
+            "observed tree: {before:#?}"
+        );
         assert_eq!(before.nodes["increment"].role, Role::Button);
-        assert_eq!(before.nodes["increment"].label.as_deref(), Some("Increment"));
-        assert!(before.nodes["increment"].actions.contains(&NodeAction::Click));
+        assert_eq!(
+            before.nodes["increment"].label.as_deref(),
+            Some("Increment")
+        );
+        assert!(
+            before.nodes["increment"]
+                .actions
+                .contains(&NodeAction::Click)
+        );
         assert_eq!(before.nodes["agree"].role, Role::Checkbox);
         assert_eq!(before.nodes["agree"].state.checked, Some(false));
 
@@ -43,7 +53,10 @@ fn observes_and_drives_kit_controls(cx: &mut TestAppContext) {
         window.click("agree", cx);
         window.render_frame(cx);
         assert_eq!(view.read(cx).count, 1);
-        assert_eq!(automation.snapshot().nodes["agree"].state.checked, Some(true));
+        assert_eq!(
+            automation.snapshot().nodes["agree"].state.checked,
+            Some(true)
+        );
         assert!(automation.frame_stats().frame_count > 0);
     })
     .expect("drive Kit controls");
@@ -72,7 +85,10 @@ fn observes_and_drives_kit_controls(cx: &mut TestAppContext) {
     cx.update_window(handle, |_, window, cx| {
         // These are the two GPUI hooks used by MCP's set_text and type_text.
         // Non-ASCII text exercises the handler's UTF-16 document ranges.
-        assert!(view.read(cx).input.focus_handle(cx).is_focused(window), "Kit editor lost focus");
+        assert!(
+            view.read(cx).input.focus_handle(cx).is_focused(window),
+            "Kit editor lost focus"
+        );
         assert!(window.replace_input_text("Grüße 🦀", cx));
         assert!(window.insert_input_text("!", cx));
         window.render_frame(cx);
@@ -95,17 +111,21 @@ fn wrapped_controls_keep_provenance_and_redaction(cx: &mut TestAppContext) {
     struct WrappedControl;
     impl Render for WrappedControl {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            div().id("public-parent").role(gpui_kit::Role::Button).child("Public").child(
-                div()
-                    .id("wrapped-input")
-                    .role(gpui_kit::Role::TextInput)
-                    .aria_value("secret")
-                    .frame_redacted(true)
-                    .frame_metadata("wrapped", "true")
-                    .hover(|style| style.bg(rgb(0x112233)))
-                    .child("secret")
-                    .test_support(),
-            )
+            div()
+                .id("public-parent")
+                .role(gpui_kit::Role::Button)
+                .child("Public")
+                .child(
+                    div()
+                        .id("wrapped-input")
+                        .role(gpui_kit::Role::TextInput)
+                        .aria_value("secret")
+                        .frame_redacted(true)
+                        .frame_metadata("wrapped", "true")
+                        .hover(|style| style.bg(rgb(0x112233)))
+                        .child("secret")
+                        .test_support(),
+                )
         }
     }
 
@@ -120,10 +140,19 @@ fn wrapped_controls_keep_provenance_and_redaction(cx: &mut TestAppContext) {
     let node = &tree.nodes["wrapped-input"];
     assert_eq!(node.role, Role::TextInput);
     assert!(node.actions.contains(&NodeAction::Hover));
-    assert_eq!(node.metadata.get("wrapped").map(String::as_str), Some("true"));
+    assert_eq!(
+        node.metadata.get("wrapped").map(String::as_str),
+        Some("true")
+    );
     assert!(node.text.as_ref().expect("redacted text").redacted);
     assert!(node.text.as_ref().expect("redacted text").text.is_empty());
-    assert!(node.value.as_ref().expect("redacted value").value.is_empty());
+    assert!(
+        node.value
+            .as_ref()
+            .expect("redacted value")
+            .value
+            .is_empty()
+    );
     assert_eq!(node.label, None);
     assert_eq!(tree.nodes["public-parent"].label.as_deref(), Some("Public"));
 }

@@ -39,7 +39,9 @@ impl GpuiMcp {
     ) -> Result<Json<Value>, String> {
         let tree = self.tree().await?;
         let node = get_node(&tree, &args.id)?;
-        Ok(object_output(serde_json::to_value(node).map_err(encode_error)?))
+        Ok(object_output(
+            serde_json::to_value(node).map_err(encode_error)?,
+        ))
     }
 
     #[tool(description = "Return window-relative logical bounds for one semantic element")]
@@ -50,7 +52,9 @@ impl GpuiMcp {
         let tree = self.tree().await?;
         let node = get_node(&tree, &args.id)?;
         let bounds = require_bounds(node)?;
-        Ok(object_output(json!({ "id": args.id, "bounds": bounds, "center": bounds.center() })))
+        Ok(object_output(
+            json!({ "id": args.id, "bounds": bounds, "center": bounds.center() }),
+        ))
     }
 
     #[tool(description = "Wait until a label/role query matches a visible semantic element")]
@@ -161,7 +165,9 @@ impl GpuiMcp {
         if args.ids_only {
             return Ok(object_output(tree_ids_reply(tree)));
         }
-        Ok(object_output(serde_json::to_value(tree).map_err(encode_error)?))
+        Ok(object_output(
+            serde_json::to_value(tree).map_err(encode_error)?,
+        ))
     }
 
     #[tool(

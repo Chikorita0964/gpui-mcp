@@ -161,7 +161,11 @@ fn run_fixture(fixture: FixtureName, state: FixtureState) -> Result<()> {
     );
     let ui = HtmlUi::compile(fixture.html(), BindingDocument::new())
         .context("compile visual parity fixture")?;
-    ensure!(ui.diagnostics().is_empty(), "fixture compiler diagnostics: {:?}", ui.diagnostics());
+    ensure!(
+        ui.diagnostics().is_empty(),
+        "fixture compiler diagnostics: {:?}",
+        ui.diagnostics()
+    );
     let automation = Automation::for_test();
     let live = LiveHtml::new(ui, automation.clone(), HookRegistry::new())
         .context("connect visual parity fixture")?;
@@ -246,7 +250,9 @@ fn run_fixture(fixture: FixtureName, state: FixtureState) -> Result<()> {
             },
         );
         if let Err(error) = opened {
-            print_error(format_args!("could not open visual parity fixture: {error:#}"));
+            print_error(format_args!(
+                "could not open visual parity fixture: {error:#}"
+            ));
             cx.quit();
             return;
         }
@@ -334,11 +340,13 @@ async fn wait_for_content_surface(
     let target = fixture_content_size();
     let started = Instant::now();
     loop {
-        let viewport =
-            cx.update(|window, _| window.viewport_size()).context("inspect fixture viewport")?;
+        let viewport = cx
+            .update(|window, _| window.viewport_size())
+            .context("inspect fixture viewport")?;
         if viewport == target {
             let completed_frame = automation.completed_frames();
-            cx.update(|window, _| window.refresh()).context("refresh resized fixture")?;
+            cx.update(|window, _| window.refresh())
+                .context("refresh resized fixture")?;
             return wait_for_completed_frame(automation, completed_frame, cx).await;
         }
         ensure!(
@@ -365,13 +373,11 @@ async fn wait_for_completed_frame(
     Ok(())
 }
 
-#[expect(clippy::print_stdout, reason = "the parity driver reads the ready line from stdout")]
 fn print_ready(window_id: u32) {
     println!("READY {} {window_id}", std::process::id());
     let _ = std::io::stdout().flush();
 }
 
-#[expect(clippy::print_stderr, reason = "the parity driver reads a failure from stderr")]
 fn print_error(error: impl std::fmt::Display) {
     for line in error.to_string().lines() {
         eprintln!("{ERROR_PREFIX}{line}");
@@ -388,9 +394,11 @@ struct CaptureRequest {
     settle: Duration,
 }
 
-#[expect(clippy::print_stdout, reason = "the parity driver reads the capture result from stdout")]
 fn capture_window(request: &CaptureRequest) -> Result<()> {
-    ensure!(request.width > 0 && request.height > 0, "capture size must be non-zero");
+    ensure!(
+        request.width > 0 && request.height > 0,
+        "capture size must be non-zero"
+    );
     ensure!(
         request.width <= 16_384 && request.height <= 16_384,
         "capture size exceeds 16384 pixels"
@@ -425,13 +433,17 @@ fn capture_window(request: &CaptureRequest) -> Result<()> {
 }
 
 // The fixed fixture dimensions are exactly representable as f32 values.
-#[expect(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss)]
 fn fixture_content_size() -> gpui::Size<gpui::Pixels> {
     size(px(VIEWPORT_WIDTH as f32), px(VIEWPORT_HEIGHT as f32))
 }
 
 // The logical dimensions and native scale are bounded before conversion.
-#[expect(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 fn normalize_capture(
     image: &RgbaImage,
     width: u32,
@@ -458,7 +470,10 @@ fn normalize_capture(
         .rev()
         .find(|y| *image.get_pixel(vertical_probe, *y) == FIXTURE_BACKGROUND)
         .map_or(image.height(), |y| y.saturating_add(1));
-    ensure!(right > left && bottom > top, "native capture contains no fixture surface");
+    ensure!(
+        right > left && bottom > top,
+        "native capture contains no fixture surface"
+    );
     let content_width = right - left;
     let content_height = bottom - top;
     let scaled_width = (width as f32 * scale_factor).round() as u32;

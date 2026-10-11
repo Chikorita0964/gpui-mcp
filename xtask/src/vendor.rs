@@ -12,8 +12,12 @@ use sha2::{Digest as _, Sha256};
 use crate::patch::{self, Files};
 
 /// The patches in each version's series, applied in this order.
-const SERIES: [Patch; 4] =
-    [Patch::Automation, Patch::Accessibility, Patch::FontFallback, Patch::Grid];
+const SERIES: [Patch; 4] = [
+    Patch::Automation,
+    Patch::Accessibility,
+    Patch::FontFallback,
+    Patch::Grid,
+];
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Crate {
@@ -109,11 +113,13 @@ pub(crate) struct VendorArgs {
     check: bool,
 }
 
-#[expect(clippy::print_stdout, reason = "xtask is a command-line tool: its result goes to stdout")]
 pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
     let name = args.krate.name();
     if let Some(patch) = args.without.iter().find(|patch| patch.required()) {
-        bail!("the {} patch is what the bridge needs and can't be left out", patch.name());
+        bail!(
+            "the {} patch is what the bridge needs and can't be left out",
+            patch.name()
+        );
     }
     let vendor = root.join("vendor").join(name);
     let patches = root.join("vendor/patches").join(name);
@@ -121,14 +127,26 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
         &fs::read_to_string(root.join(format!("vendor/{name}.json")))
             .with_context(|| format!("reading vendor/{name}.json"))?,
     )?;
-    let vendored = metadata["vendored"].as_str().context("missing `vendored`")?;
-    let supported = metadata["versions"].as_object().context("missing `versions`")?;
+    let vendored = metadata["vendored"]
+        .as_str()
+        .context("missing `vendored`")?;
+    let supported = metadata["versions"]
+        .as_object()
+        .context("missing `versions`")?;
     check_requirement(root, args.krate, supported.keys().map(String::as_str))?;
     for version in supported.keys() {
-        for patch in SERIES.into_iter().filter(|patch| patch.applies_to(args.krate)) {
-            let path = patches.join(version).join(format!("{}.patch", patch.name()));
+        for patch in SERIES
+            .into_iter()
+            .filter(|patch| patch.applies_to(args.krate))
+        {
+            let path = patches
+                .join(version)
+                .join(format!("{}.patch", patch.name()));
             if !path.is_file() {
-                bail!("missing vendor/patches/{name}/{version}/{}.patch", patch.name());
+                bail!(
+                    "missing vendor/patches/{name}/{version}/{}.patch",
+                    patch.name()
+                );
             }
         }
     }
@@ -137,7 +155,10 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
     let Some(release) = supported.get(version) else {
         let mut versions: Vec<_> = supported.keys().map(String::as_str).collect();
         versions.sort_by_key(|version| version_key(version));
-        bail!("{name} {version} has no patch series; supported: {}", versions.join(", "));
+        bail!(
+            "{name} {version} has no patch series; supported: {}",
+            versions.join(", ")
+        );
     };
     if args.output.is_none() && (version != vendored || !args.without.is_empty()) {
         bail!("vendor/{name} holds the full series for the vendored release; use --output");
@@ -147,7 +168,10 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
         None => vendor.clone(),
     };
     if destination.exists() && !is_crate(&destination, name) {
-        bail!("refusing to replace {}: it is not a {name} crate", destination.display());
+        bail!(
+            "refusing to replace {}: it is not a {name} crate",
+            destination.display()
+        );
     }
 
     let applied: Vec<_> = SERIES
@@ -172,7 +196,11 @@ pub(crate) fn run(root: &Path, args: &VendorArgs) -> Result<()> {
         println!("{name} {version}: vendored snapshot matches archive plus patches");
     } else {
         replace(&destination, &files)?;
-        println!("{name} {version} ({}): written to {}", applied.join(", "), destination.display());
+        println!(
+            "{name} {version} ({}): written to {}",
+            applied.join(", "),
+            destination.display()
+        );
     }
     Ok(())
 }
@@ -195,7 +223,9 @@ fn patched_release(
     // gpui-pre records the Zed commit it was cut from; gpui-ce does not.
     if let Some(zed_rev) = release.get("zed_rev").and_then(serde_json::Value::as_str) {
         let manifest: toml::Value = toml::from_str(std::str::from_utf8(
-            files.get(Path::new("Cargo.toml")).context("archive has no Cargo.toml")?,
+            files
+                .get(Path::new("Cargo.toml"))
+                .context("archive has no Cargo.toml")?,
         )?)?;
         let recorded = manifest["package"]["metadata"]["gpui-pre"]["zed-rev"].as_str();
         if recorded != Some(zed_rev) {
@@ -269,7 +299,10 @@ fn check_requirement<'a>(
 }
 
 fn version_key(version: &str) -> Vec<u64> {
-    version.split('.').map(|part| part.parse().unwrap_or(0)).collect()
+    version
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0))
+        .collect()
 }
 
 fn is_crate(directory: &Path, name: &str) -> bool {
@@ -277,7 +310,11 @@ fn is_crate(directory: &Path, name: &str) -> bool {
         .ok()
         .and_then(|manifest| toml::from_str::<toml::Value>(&manifest).ok())
         .and_then(|manifest| {
-            manifest.get("package")?.get("name")?.as_str().map(|found| found == name)
+            manifest
+                .get("package")?
+                .get("name")?
+                .as_str()
+                .map(|found| found == name)
         })
         .unwrap_or(false)
 }
@@ -285,7 +322,11 @@ fn is_crate(directory: &Path, name: &str) -> bool {
 fn download(url: &str) -> Result<Vec<u8>> {
     use ureq::tls::{RootCerts, TlsConfig};
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .tls_config(TlsConfig::builder().root_certs(RootCerts::PlatformVerifier).build())
+        .tls_config(
+            TlsConfig::builder()
+                .root_certs(RootCerts::PlatformVerifier)
+                .build(),
+        )
         .timeout_global(Some(std::time::Duration::from_mins(2)))
         .build()
         .into();
@@ -311,7 +352,9 @@ fn extract(archive: &[u8], prefix: &str) -> Result<Files> {
         let kind = entry.header().entry_type();
         let mut components = path.components();
         let valid = components.next() == Some(Component::Normal(prefix.as_ref()))
-            && components.clone().all(|component| matches!(component, Component::Normal(_)));
+            && components
+                .clone()
+                .all(|component| matches!(component, Component::Normal(_)));
         if !valid || !(kind.is_file() || kind.is_dir()) {
             bail!("unexpected archive member: {}", path.display());
         }
@@ -335,7 +378,10 @@ fn read_tree(directory: &Path) -> Result<Files> {
             if path.is_dir() {
                 pending.push(path);
             } else {
-                files.insert(path.strip_prefix(directory)?.to_path_buf(), fs::read(&path)?);
+                files.insert(
+                    path.strip_prefix(directory)?.to_path_buf(),
+                    fs::read(&path)?,
+                );
             }
         }
     }
@@ -345,9 +391,13 @@ fn read_tree(directory: &Path) -> Result<Files> {
 /// Write `files` beside `destination`, then swap it into place, so a failure
 /// leaves any existing copy untouched.
 fn replace(destination: &Path, files: &Files) -> Result<()> {
-    let parent = destination.parent().context("destination has no parent directory")?;
+    let parent = destination
+        .parent()
+        .context("destination has no parent directory")?;
     fs::create_dir_all(parent)?;
-    let staging = tempfile::Builder::new().prefix(".gpui-vendor-").tempdir_in(parent)?;
+    let staging = tempfile::Builder::new()
+        .prefix(".gpui-vendor-")
+        .tempdir_in(parent)?;
     let fresh = staging.path().join("fresh");
     for (path, content) in files {
         let path = fresh.join(path);

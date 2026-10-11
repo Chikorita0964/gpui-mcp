@@ -10,17 +10,15 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-cow-utils.workspace = true
 flate2 = "1.1.9"
-rustc-hash.workspace = true
 serde_json.workspace = true
-sha2 = "0.11"
+sha2 = "0.10.9"
 tar = "0.4"
 tempfile.workspace = true
-toml = "1.1"
+toml = "0.8.23"
 # The platform verifier trusts the system's certificates, including a
 # corporate or proxy CA, and ureq reads HTTPS_PROXY from the environment.
-ureq = { version = "3.4", features = ["platform-verifier"] }
+ureq = { version = "3.3.0", features = ["platform-verifier"] }
 
 [lints]
 workspace = true

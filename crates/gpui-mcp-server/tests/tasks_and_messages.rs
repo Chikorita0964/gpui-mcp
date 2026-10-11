@@ -41,8 +41,14 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "the server has no stdout".to_owned())?;
         Ok(Self {
             child,
             stdin,
@@ -128,7 +134,9 @@ async fn blocking_tools_run_as_tasks_for_clients_that_declare_them() -> Result<(
     let call =
         json!({ "name": "wait_for_messages", "arguments": { "since": 0, "timeout_ms": 50 } });
 
-    let created = server.request("tools/call", modern(&tasks_capability(), call.clone())).await?;
+    let created = server
+        .request("tools/call", modern(&tasks_capability(), call.clone()))
+        .await?;
     assert_eq!(created["resultType"], "task", "{created}");
     let task_id = created
         .get("taskId")
@@ -140,7 +148,10 @@ async fn blocking_tools_run_as_tasks_for_clients_that_declare_them() -> Result<(
     let terminal = async {
         loop {
             last = server
-                .request("tasks/get", modern(&tasks_capability(), json!({ "taskId": task_id })))
+                .request(
+                    "tasks/get",
+                    modern(&tasks_capability(), json!({ "taskId": task_id })),
+                )
                 .await?;
             let status = last
                 .pointer("/task/status")
@@ -163,7 +174,9 @@ async fn blocking_tools_run_as_tasks_for_clients_that_declare_them() -> Result<(
     );
 
     // A client without the extension gets the tool's own answer inline.
-    let inline = server.request("tools/call", modern(&json!({}), call)).await?;
+    let inline = server
+        .request("tools/call", modern(&json!({}), call))
+        .await?;
     assert!(
         inline.get("task").is_none() && inline.get("content").is_some(),
         "expected an inline tool result, got {inline}"
@@ -191,7 +204,9 @@ async fn the_message_log_is_a_subscribable_resource() -> Result<(), String> {
         Some(&json!(true)),
         "the server must advertise resource subscriptions, got {initialize}"
     );
-    server.notify("notifications/initialized", json!({})).await?;
+    server
+        .notify("notifications/initialized", json!({}))
+        .await?;
 
     let resources = server.request("resources/list", json!({})).await?;
     assert!(
@@ -201,12 +216,19 @@ async fn the_message_log_is_a_subscribable_resource() -> Result<(), String> {
             .is_some_and(|list| list.iter().any(|r| r["uri"] == "gpui://messages")),
         "gpui://messages must be listed, got {resources}"
     );
-    server.request("resources/subscribe", json!({ "uri": "gpui://messages" })).await?;
+    server
+        .request("resources/subscribe", json!({ "uri": "gpui://messages" }))
+        .await?;
     assert!(
-        server.request("resources/subscribe", json!({ "uri": "gpui://apps" })).await.is_err(),
+        server
+            .request("resources/subscribe", json!({ "uri": "gpui://apps" }))
+            .await
+            .is_err(),
         "only the message log supports subscriptions"
     );
-    server.request("resources/unsubscribe", json!({ "uri": "gpui://messages" })).await?;
+    server
+        .request("resources/unsubscribe", json!({ "uri": "gpui://messages" }))
+        .await?;
 
     server.stop().await;
     Ok(())

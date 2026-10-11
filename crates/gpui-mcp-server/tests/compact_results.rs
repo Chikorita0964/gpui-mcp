@@ -99,9 +99,20 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout).lines(),
+            next_id: 1,
+        })
     }
 
     /// The MCP handshake, then wait until the fixture is discoverable and rendered.
@@ -165,7 +176,11 @@ impl Server {
     /// A `tools/call` reply exactly as it arrived, `isError` included, so a
     /// documented error path can be inspected instead of failing the call.
     async fn call_raw(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await
+        self.request(
+            "tools/call",
+            json!({ "name": tool, "arguments": arguments }),
+        )
+        .await
     }
 
     /// A tool call that must succeed, with its JSON payload and the serialized
@@ -179,7 +194,10 @@ impl Server {
         if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
             return Err(format!("{tool} reported an error: {}", reply_text(&result)));
         }
-        Ok(Measured { payload: payload(tool, &result)?, result_bytes: result_bytes(&result)? })
+        Ok(Measured {
+            payload: payload(tool, &result)?,
+            result_bytes: result_bytes(&result)?,
+        })
     }
 
     /// The structured payload of a tool that answers with JSON.
@@ -201,11 +219,16 @@ impl Server {
                 .and_then(JsonValue::as_f64)
                 .ok_or_else(|| format!("the bounds of {id} carry no {name}"))
         };
-        Ok((field("x")? + field("width")? / 2.0, field("y")? + field("height")? / 2.0))
+        Ok((
+            field("x")? + field("width")? / 2.0,
+            field("y")? + field("height")? / 2.0,
+        ))
     }
 
     async fn pointer_move(&mut self, point: (f64, f64)) -> Result<(), String> {
-        self.call_json("pointer_move", json!({ "x": point.0, "y": point.1 })).await.map(drop)
+        self.call_json("pointer_move", json!({ "x": point.0, "y": point.1 }))
+            .await
+            .map(drop)
     }
 
     async fn stop(mut self) {
@@ -254,13 +277,17 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory =
-        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory = server
+        .parent()
+        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!("the demo fixture is not built at {}", path.display()))
+        Err(format!(
+            "the demo fixture is not built at {}",
+            path.display()
+        ))
     }
 }
 
@@ -374,7 +401,9 @@ fn payload(tool: &str, result: &JsonValue) -> Result<JsonValue, String> {
         .get("content")
         .and_then(JsonValue::as_array)
         .and_then(|content| {
-            content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+            content
+                .iter()
+                .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
         })
         .ok_or_else(|| format!("{tool} returned no JSON payload: {result}"))?;
     serde_json::from_str(text).map_err(|error| format!("{tool} returned unreadable JSON: {error}"))
@@ -393,7 +422,11 @@ fn reply_text(result: &JsonValue) -> String {
                 .collect()
         })
         .unwrap_or_default();
-    if text.is_empty() { result.to_string() } else { text.join("\n") }
+    if text.is_empty() {
+        result.to_string()
+    } else {
+        text.join("\n")
+    }
 }
 
 /// The serialized size of the raw JSON-RPC `result` object, compact, UTF-8: the
@@ -406,7 +439,9 @@ fn result_bytes(result: &JsonValue) -> Result<usize, String> {
 
 /// One named field of an object, as the value it carries.
 fn field<'a>(value: &'a JsonValue, name: &str, what: &str) -> Result<&'a JsonValue, String> {
-    value.get(name).ok_or_else(|| format!("{what} carries no {name}: {value}"))
+    value
+        .get(name)
+        .ok_or_else(|| format!("{what} carries no {name}: {value}"))
 }
 
 /// The object a value must be.
@@ -414,7 +449,9 @@ fn object<'a>(
     value: &'a JsonValue,
     what: &str,
 ) -> Result<&'a serde_json::Map<String, JsonValue>, String> {
-    value.as_object().ok_or_else(|| format!("{what} is not a JSON object: {value}"))
+    value
+        .as_object()
+        .ok_or_else(|| format!("{what} is not a JSON object: {value}"))
 }
 
 /// One array field of an object.
@@ -473,9 +510,15 @@ fn assert_compact_shape(tool: &str, payload: &JsonValue, expected: &[&str]) -> R
 }
 
 /// The compact reply's measured size, printed for the report.
-#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured size goes into the run's log for the report"
+)]
 fn assert_under_the_cap(tool: &str, measured: &Measured) -> Result<(), String> {
-    println!("measure {tool} compact reply: result_bytes={}", measured.result_bytes);
+    println!(
+        "measure {tool} compact reply: result_bytes={}",
+        measured.result_bytes
+    );
     if measured.result_bytes >= COMPACT_LIMIT_BYTES {
         return Err(format!(
             "the compact {tool} reply is {} bytes; goal 07 requires under {COMPACT_LIMIT_BYTES}",
@@ -487,9 +530,15 @@ fn assert_under_the_cap(tool: &str, measured: &Measured) -> Result<(), String> {
 
 /// The default reply's measured size, printed and checked to be over the cap, so
 /// the compact test above it is not vacuously passing on a small fixture.
-#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured size goes into the run's log for the report"
+)]
 fn assert_default_over_the_cap(tool: &str, measured: &Measured) -> Result<(), String> {
-    println!("measure {tool} default reply: result_bytes={}", measured.result_bytes);
+    println!(
+        "measure {tool} default reply: result_bytes={}",
+        measured.result_bytes
+    );
     if measured.result_bytes <= COMPACT_LIMIT_BYTES {
         return Err(format!(
             "the {tool} default reply is only {} bytes, so its compact-size assertion proves nothing",
@@ -501,7 +550,10 @@ fn assert_default_over_the_cap(tool: &str, measured: &Measured) -> Result<(), St
 
 /// The demo's documented unsupported live-document reply, whatever the flag says:
 /// the call must be answered (not rejected) and the error text must be unchanged.
-#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured size goes into the run's log for the report"
+)]
 fn assert_unsupported(tool: &str, result: &JsonValue) -> Result<(), String> {
     if result.get("isError").and_then(JsonValue::as_bool) != Some(true) {
         return Err(format!(
@@ -583,7 +635,9 @@ async fn get_ui_tree_ids_only_returns_the_same_nodes_plus_their_count() -> Resul
         let roots = strings_at(&full.payload, "roots", "get_ui_tree")?;
         let generation = u64_at(&full.payload, "generation", "get_ui_tree")?;
 
-        let compact = server.call_measured("get_ui_tree", json!({ "ids_only": true })).await?;
+        let compact = server
+            .call_measured("get_ui_tree", json!({ "ids_only": true }))
+            .await?;
         assert_compact_shape(
             "get_ui_tree",
             &compact.payload,
@@ -599,22 +653,30 @@ async fn get_ui_tree_ids_only_returns_the_same_nodes_plus_their_count() -> Resul
             roots,
             "the compact reply must carry the same roots"
         );
-        let ids: BTreeSet<String> =
-            strings_at(&compact.payload, "ids", "get_ui_tree ids_only")?.into_iter().collect();
-        assert!(!ids.is_empty(), "the demo renders nodes, so ids must not be empty");
+        let ids: BTreeSet<String> = strings_at(&compact.payload, "ids", "get_ui_tree ids_only")?
+            .into_iter()
+            .collect();
+        assert!(
+            !ids.is_empty(),
+            "the demo renders nodes, so ids must not be empty"
+        );
         assert_eq!(
             u64::try_from(ids.len())
                 .map_err(|error| format!("could not compare the node count: {error}"))?,
             u64_at(&compact.payload, "node_count", "get_ui_tree ids_only")?,
             "node_count must be the number of ids"
         );
-        assert_eq!(ids, full_ids, "ids must be exactly the nodes the full reply would carry");
+        assert_eq!(
+            ids, full_ids,
+            "ids must be exactly the nodes the full reply would carry"
+        );
         assert_under_the_cap("get_ui_tree", &compact)?;
 
         // The existing selection still applies first (T2): selecting the
         // descendant-free leaf with ids_only returns that node alone.
-        let leaf =
-            server.call_measured("get_ui_tree", json!({ "root": LEAF, "ids_only": true })).await?;
+        let leaf = server
+            .call_measured("get_ui_tree", json!({ "root": LEAF, "ids_only": true }))
+            .await?;
         assert_compact_shape(
             "get_ui_tree root+ids_only",
             &leaf.payload,
@@ -648,9 +710,13 @@ async fn load_ui_snapshot_ids_only_returns_the_saved_tree_ids() -> Result<(), St
     with_fixture(WINDOW.lock().await, async |server: &mut Server| {
         // The measured default: loading T1's saved snapshot was 12,004 bytes.
         const SNAPSHOT: &str = "compact-results-t3";
-        server.call_json("save_ui_snapshot", json!({ "name": SNAPSHOT })).await?;
+        server
+            .call_json("save_ui_snapshot", json!({ "name": SNAPSHOT }))
+            .await?;
 
-        let full = server.call_measured("load_ui_snapshot", json!({ "name": SNAPSHOT })).await?;
+        let full = server
+            .call_measured("load_ui_snapshot", json!({ "name": SNAPSHOT }))
+            .await?;
         assert_default_over_the_cap("load_ui_snapshot", &full)?;
         let full_ids: BTreeSet<String> = object(&full.payload, "load_ui_snapshot")?
             .get("nodes")
@@ -663,7 +729,10 @@ async fn load_ui_snapshot_ids_only_returns_the_saved_tree_ids() -> Result<(), St
         let generation = u64_at(&full.payload, "generation", "load_ui_snapshot")?;
 
         let compact = server
-            .call_measured("load_ui_snapshot", json!({ "name": SNAPSHOT, "ids_only": true }))
+            .call_measured(
+                "load_ui_snapshot",
+                json!({ "name": SNAPSHOT, "ids_only": true }),
+            )
             .await?;
         assert_compact_shape(
             "load_ui_snapshot",
@@ -681,8 +750,13 @@ async fn load_ui_snapshot_ids_only_returns_the_saved_tree_ids() -> Result<(), St
             "the compact reply must carry the snapshot's roots"
         );
         let ids: BTreeSet<String> =
-            strings_at(&compact.payload, "ids", "load_ui_snapshot ids_only")?.into_iter().collect();
-        assert!(!ids.is_empty(), "the saved snapshot has nodes, so ids must not be empty");
+            strings_at(&compact.payload, "ids", "load_ui_snapshot ids_only")?
+                .into_iter()
+                .collect();
+        assert!(
+            !ids.is_empty(),
+            "the saved snapshot has nodes, so ids must not be empty"
+        );
         assert_eq!(
             u64::try_from(ids.len())
                 .map_err(|error| format!("could not compare the node count: {error}"))?,
@@ -696,7 +770,10 @@ async fn load_ui_snapshot_ids_only_returns_the_saved_tree_ids() -> Result<(), St
 }
 
 #[tokio::test]
-#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured size goes into the run's log for the report"
+)]
 async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());
@@ -731,27 +808,45 @@ async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> 
             frames.len()
         );
 
-        let compact =
-            server.call_measured("get_frame_report", json!({ "summary_only": true })).await?;
+        let compact = server
+            .call_measured("get_frame_report", json!({ "summary_only": true }))
+            .await?;
         assert_compact_shape(
             "get_frame_report",
             &compact.payload,
-            &["after_frame_count", "latest_frame_count", "truncated", "summary", "views"],
+            &[
+                "after_frame_count",
+                "latest_frame_count",
+                "truncated",
+                "summary",
+                "views",
+            ],
         )?;
         assert_eq!(
-            u64_at(&compact.payload, "after_frame_count", "get_frame_report summary_only")?,
+            u64_at(
+                &compact.payload,
+                "after_frame_count",
+                "get_frame_report summary_only"
+            )?,
             u64_at(&full.payload, "after_frame_count", "get_frame_report")?,
             "the compact report must describe the same measurement window"
         );
-        let compact_latest =
-            u64_at(&compact.payload, "latest_frame_count", "get_frame_report summary_only")?;
+        let compact_latest = u64_at(
+            &compact.payload,
+            "latest_frame_count",
+            "get_frame_report summary_only",
+        )?;
         let full_latest = u64_at(&full.payload, "latest_frame_count", "get_frame_report")?;
         if compact_latest < full_latest {
             return Err(format!(
                 "latest_frame_count must not move backwards: {compact_latest} < {full_latest}"
             ));
         }
-        bool_at(&compact.payload, "truncated", "get_frame_report summary_only")?;
+        bool_at(
+            &compact.payload,
+            "truncated",
+            "get_frame_report summary_only",
+        )?;
         let summary = object(
             field(&compact.payload, "summary", "get_frame_report summary_only")?,
             "get_frame_report summary",
@@ -775,7 +870,10 @@ async fn get_frame_report_summary_only_keeps_the_scalars_summary_and_views() -> 
 }
 
 #[tokio::test]
-#[expect(clippy::print_stdout, reason = "the measured size goes into the run's log for the report")]
+#[expect(
+    clippy::print_stdout,
+    reason = "the measured size goes into the run's log for the report"
+)]
 async fn record_performance_summary_only_stays_well_formed_and_bounded() -> Result<(), String> {
     if skip_without_a_desktop() {
         return Ok(());
@@ -801,15 +899,30 @@ async fn record_performance_summary_only_stays_well_formed_and_bounded() -> Resu
         assert_compact_shape(
             "record_performance",
             &compact.payload,
-            &["duration_ms", "before", "after", "observed_frame_delta", "frames", "cadence_note"],
+            &[
+                "duration_ms",
+                "before",
+                "after",
+                "observed_frame_delta",
+                "frames",
+                "cadence_note",
+            ],
         )?;
         assert_eq!(
-            u64_at(&compact.payload, "duration_ms", "record_performance summary_only")?,
+            u64_at(
+                &compact.payload,
+                "duration_ms",
+                "record_performance summary_only"
+            )?,
             200,
             "duration_ms must be the requested interval"
         );
         let before = u64_at(
-            field(&compact.payload, "before", "record_performance summary_only")?,
+            field(
+                &compact.payload,
+                "before",
+                "record_performance summary_only",
+            )?,
             "frame_count",
             "record_performance before",
         )?;
@@ -819,19 +932,37 @@ async fn record_performance_summary_only_stays_well_formed_and_bounded() -> Resu
             "record_performance after",
         )?;
         assert_eq!(
-            u64_at(&compact.payload, "observed_frame_delta", "record_performance summary_only")?,
+            u64_at(
+                &compact.payload,
+                "observed_frame_delta",
+                "record_performance summary_only"
+            )?,
             after.saturating_sub(before),
             "observed_frame_delta must be the frames completed in the interval"
         );
-        let note = string_at(&compact.payload, "cadence_note", "record_performance summary_only")?;
+        let note = string_at(
+            &compact.payload,
+            "cadence_note",
+            "record_performance summary_only",
+        )?;
         if note.is_empty() {
             return Err("the cadence note must not be empty".to_owned());
         }
         // The embedded frames report stays, reduced exactly like get_frame_report.
         assert_compact_shape(
             "record_performance frames",
-            field(&compact.payload, "frames", "record_performance summary_only")?,
-            &["after_frame_count", "latest_frame_count", "truncated", "summary", "views"],
+            field(
+                &compact.payload,
+                "frames",
+                "record_performance summary_only",
+            )?,
+            &[
+                "after_frame_count",
+                "latest_frame_count",
+                "truncated",
+                "summary",
+                "views",
+            ],
         )?;
         assert_under_the_cap("record_performance", &compact)
     })
@@ -851,7 +982,9 @@ async fn get_live_document_summary_only_is_accepted_on_the_unsupported_path() ->
         // shape to assert here. What is pinned: with the flag the call is still
         // accepted (it answers a tools/call result, not a schema rejection) and the
         // documented reply is unchanged.
-        let result = server.call_raw("get_live_document", json!({ "summary_only": true })).await?;
+        let result = server
+            .call_raw("get_live_document", json!({ "summary_only": true }))
+            .await?;
         assert_unsupported("get_live_document", &result)
     })
     .await

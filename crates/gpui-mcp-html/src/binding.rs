@@ -1,6 +1,6 @@
+use std::collections::HashSet;
 use std::fmt;
 
-use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 /// Current on-disk binding document version.
@@ -189,7 +189,10 @@ impl BindingDocument {
     /// Create an empty document using the current schema version.
     #[must_use]
     pub const fn new() -> Self {
-        Self { version: BINDING_DOCUMENT_VERSION, bindings: Vec::new() }
+        Self {
+            version: BINDING_DOCUMENT_VERSION,
+            bindings: Vec::new(),
+        }
     }
 
     /// Add a binding.
@@ -219,8 +222,8 @@ impl BindingDocument {
             });
         }
 
-        let mut events = FxHashSet::default();
-        let mut properties = FxHashSet::default();
+        let mut events = HashSet::new();
+        let mut properties = HashSet::new();
         for (index, binding) in self.bindings.iter().enumerate().take(MAX_BINDINGS) {
             validate_identifier(
                 index,
@@ -230,13 +233,22 @@ impl BindingDocument {
                 &mut violations,
             );
             match binding {
-                Binding::Event { target, event, handler } => {
+                Binding::Event {
+                    target,
+                    event,
+                    handler,
+                } => {
                     validate_symbol(index, "handler", handler.as_str(), &mut violations);
                     if !events.insert((target.clone(), *event)) {
                         violations.push(BindingViolation::DuplicateEvent { index });
                     }
                 }
-                Binding::Property { target, property, source, .. } => {
+                Binding::Property {
+                    target,
+                    property,
+                    source,
+                    ..
+                } => {
                     validate_symbol(index, "state source", source.as_str(), &mut violations);
                     if !properties.insert((target.clone(), *property)) {
                         violations.push(BindingViolation::DuplicateProperty { index });
@@ -316,7 +328,11 @@ fn validate_identifier(
             character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | ':')
         });
     if value.is_empty() || value.len() > maximum || !valid {
-        violations.push(BindingViolation::InvalidIdentifier { index, field, maximum });
+        violations.push(BindingViolation::InvalidIdentifier {
+            index,
+            field,
+            maximum,
+        });
     }
 }
 
@@ -371,12 +387,19 @@ impl fmt::Display for BindingViolation {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedVersion { found, supported } => {
-                write!(formatter, "unsupported binding version {found}; expected {supported}")
+                write!(
+                    formatter,
+                    "unsupported binding version {found}; expected {supported}"
+                )
             }
             Self::TooManyBindings { found, maximum } => {
                 write!(formatter, "binding count {found} exceeds maximum {maximum}")
             }
-            Self::InvalidIdentifier { index, field, maximum } => write!(
+            Self::InvalidIdentifier {
+                index,
+                field,
+                maximum,
+            } => write!(
                 formatter,
                 "binding {index} has invalid {field}; expected at most {maximum} bytes of identifier characters"
             ),
@@ -461,7 +484,9 @@ mod tests {
             event: UiEvent::Click,
             handler: HandlerId::new("save_document"),
         };
-        let document = BindingDocument::new().with_binding(binding.clone()).with_binding(binding);
+        let document = BindingDocument::new()
+            .with_binding(binding.clone())
+            .with_binding(binding);
 
         assert!(matches!(
             document.validate(),

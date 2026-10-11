@@ -1,8 +1,7 @@
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use cow_utils::CowUtils as _;
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, Entity, FocusHandle, FrameAction,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role as AccessibleRole,
@@ -14,7 +13,6 @@ use htmlswap::{
     RenderElement, RenderNode, RenderPlan, RenderStyleCondition, RenderStyleVariant,
     StyleDeclaration, UiRole,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::cascade::{self, Environment, Interaction, StateNeeds};
 use crate::components::{ComponentNode, ComponentRegistry};
@@ -51,7 +49,13 @@ struct ElementState {
 
 impl Default for ElementState {
     fn default() -> Self {
-        Self { visible: true, enabled: true, checked: None, selected: None, expanded: None }
+        Self {
+            visible: true,
+            enabled: true,
+            checked: None,
+            selected: None,
+            expanded: None,
+        }
     }
 }
 
@@ -137,7 +141,9 @@ impl SemanticNamespace {
         let value = value.into();
         let valid_length = !value.is_empty() && value.len() <= 64;
         let mut characters = value.chars();
-        let valid_start = characters.next().is_some_and(|character| character.is_ascii_lowercase());
+        let valid_start = characters
+            .next()
+            .is_some_and(|character| character.is_ascii_lowercase());
         let valid_rest = characters.all(|character| {
             character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
         });
@@ -168,21 +174,21 @@ pub struct LiveHtml {
     automation: Automation,
     hooks: HookRegistry,
     components: ComponentRegistry,
-    bindings: FxHashMap<ElementId, Rc<[Binding]>>,
+    bindings: HashMap<ElementId, Rc<[Binding]>>,
     diagnostics: Vec<RenderDiagnostic>,
-    focus_handles: Rc<RefCell<FxHashMap<ElementId, FocusHandle>>>,
-    scroll_handles: Rc<RefCell<FxHashMap<ElementId, ScrollHandle>>>,
-    text_inputs: Rc<RefCell<FxHashMap<ElementId, Entity<RuntimeTextInput>>>>,
+    focus_handles: Rc<RefCell<HashMap<ElementId, FocusHandle>>>,
+    scroll_handles: Rc<RefCell<HashMap<ElementId, ScrollHandle>>>,
+    text_inputs: Rc<RefCell<HashMap<ElementId, Entity<RuntimeTextInput>>>>,
     hovered_element: Rc<RefCell<Option<ElementId>>>,
-    disclosures: Rc<RefCell<FxHashMap<ElementId, bool>>>,
+    disclosures: Rc<RefCell<HashMap<ElementId, bool>>>,
     embedded_namespace: Option<SemanticNamespace>,
     /// Media-query dimensions for the render in progress, when overridden.
     viewport_override: Cell<Option<(f32, f32)>>,
-    available_fonts: RefCell<Option<Rc<FxHashSet<String>>>>,
+    available_fonts: RefCell<Option<Rc<HashSet<String>>>>,
     /// Computed styles, reused while an element's context is unchanged.
     styles: Rc<RefCell<StyleCache>>,
     /// Elements whose descendants' styles depend on their interaction state.
-    state_anchors: Rc<FxHashMap<ElementId, StateNeeds>>,
+    state_anchors: Rc<HashMap<ElementId, StateNeeds>>,
     /// Scopes of the elements being rendered, innermost last.
     scopes: RefCell<Vec<ComputedScope>>,
     /// Interaction states of the elements being rendered, innermost last.
@@ -193,14 +199,14 @@ pub struct LiveHtml {
     /// The preferred color scheme, or `None` to follow the window.
     color_scheme: Option<ColorScheme>,
     /// Elements under the pointer, for elements whose interaction styles transition.
-    pointer_hovered: Rc<RefCell<FxHashSet<ElementId>>>,
+    pointer_hovered: Rc<RefCell<HashSet<ElementId>>>,
     /// The element the primary button is pressed on.
     pressed: Rc<RefCell<Option<ElementId>>>,
     /// Per-render clock and motion settings.
     frame: Cell<FrameContext>,
     transitions: DocumentTransitions,
     /// Elements that may carry a `view-transition-name`.
-    named_elements: Rc<FxHashSet<ElementId>>,
+    named_elements: Rc<HashSet<ElementId>>,
 }
 
 /// What drawing the outgoing document of a view transition needs.
@@ -212,14 +218,14 @@ struct Inert<'a> {
     /// Named elements, which the root image leaves out.
     is_named: &'a dyn Fn(&[usize]) -> bool,
     environment: Environment<'a>,
-    fonts: &'a FxHashSet<String>,
+    fonts: &'a HashSet<String>,
 }
 
 /// Elements drawn by the previous and the current render pass.
 #[derive(Default)]
 struct DrawnElements {
-    previous: FxHashSet<ElementId>,
-    current: FxHashSet<ElementId>,
+    previous: HashSet<ElementId>,
+    current: HashSet<ElementId>,
 }
 
 impl DrawnElements {
@@ -248,7 +254,7 @@ struct FrameContext {
 struct ElementRuntime<'a> {
     element_id: &'a ElementId,
     bindings: &'a [Binding],
-    properties: &'a FxHashMap<UiProperty, StateValue>,
+    properties: &'a HashMap<UiProperty, StateValue>,
     enabled: bool,
 }
 
@@ -262,7 +268,7 @@ struct Finish<'a, 'e> {
     runtime_id: &'a str,
     element_id: &'a ElementId,
     bindings: &'a [Binding],
-    property_values: &'a FxHashMap<UiProperty, StateValue>,
+    property_values: &'a HashMap<UiProperty, StateValue>,
     state: &'a ElementState,
     needs: cascade::StateNeeds,
     computed: &'a Rc<cascade::Computed>,
@@ -291,7 +297,7 @@ impl LiveHtml {
         let state_anchors = Rc::new(collect_state_anchors(ui.plan()));
         let ui = Rc::new(ui);
         let transitions = DocumentTransitions::default();
-        transitions.set_document(Rc::clone(&ui));
+        transitions.set_document(ui.clone());
         Ok(Self {
             ui,
             revision: 1,
@@ -316,7 +322,10 @@ impl LiveHtml {
             color_scheme: None,
             pointer_hovered: Rc::default(),
             pressed: Rc::default(),
-            frame: Cell::new(FrameContext { reduce_motion: false, moving: false }),
+            frame: Cell::new(FrameContext {
+                reduce_motion: false,
+                moving: false,
+            }),
             transitions,
             named_elements,
         })
@@ -373,7 +382,10 @@ impl LiveHtml {
     /// Returns an error without changing the active document when a candidate
     /// binding references an unavailable hook or the revision counter is exhausted.
     pub fn reload(&mut self, ui: HtmlUi) -> Result<ReloadReport, ReloadError> {
-        let revision = self.revision.checked_add(1).ok_or(ReloadError::RevisionExhausted)?;
+        let revision = self
+            .revision
+            .checked_add(1)
+            .ok_or(ReloadError::RevisionExhausted)?;
         self.hooks.validate(ui.bindings())?;
         let bindings = index_bindings(ui.bindings().bindings.iter());
         let diagnostics = collect_render_diagnostics(ui.plan());
@@ -395,13 +407,21 @@ impl LiveHtml {
         }
 
         let previous_focus_handles = self.focus_handles.borrow().len();
-        self.focus_handles.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
-        self.scroll_handles.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
+        self.focus_handles
+            .borrow_mut()
+            .retain(|element_id, _| element_ids.contains(element_id));
+        self.scroll_handles
+            .borrow_mut()
+            .retain(|element_id, _| element_ids.contains(element_id));
         let retained_focus_handles = self.focus_handles.borrow().len();
-        self.text_inputs.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
+        self.text_inputs
+            .borrow_mut()
+            .retain(|element_id, _| element_ids.contains(element_id));
 
         let previous_disclosures = self.disclosures.borrow().len();
-        self.disclosures.borrow_mut().retain(|element_id, _| element_ids.contains(element_id));
+        self.disclosures
+            .borrow_mut()
+            .retain(|element_id, _| element_ids.contains(element_id));
         let retained_disclosures = self.disclosures.borrow().len();
 
         let hovered_element_retained = self
@@ -414,10 +434,12 @@ impl LiveHtml {
         }
 
         self.styles.borrow_mut().elements.clear();
-        self.pointer_hovered.borrow_mut().retain(|element_id| element_ids.contains(element_id));
+        self.pointer_hovered
+            .borrow_mut()
+            .retain(|element_id| element_ids.contains(element_id));
         let previous_revision = self.revision;
         self.ui = Rc::new(ui);
-        self.transitions.set_document(Rc::clone(&self.ui));
+        self.transitions.set_document(self.ui.clone());
         self.bindings = bindings;
         self.diagnostics = diagnostics;
         self.named_elements = named_elements;
@@ -458,12 +480,17 @@ impl LiveHtml {
             .bindings
             .iter()
             .map(|(element_id, bindings)| {
-                (element_id.clone(), read_properties(bindings, &self.hooks, window, cx))
+                (
+                    element_id.clone(),
+                    read_properties(bindings, &self.hooks, window, cx),
+                )
             })
             .filter(|(_, values)| !values.is_empty())
             .collect();
-        let types =
-            types.into_iter().map(|kind| SharedString::from(kind.as_ref().to_owned())).collect();
+        let types = types
+            .into_iter()
+            .map(|kind| SharedString::from(kind.as_ref().to_owned()))
+            .collect();
         let started = self.begin_view_transition(types, Some(properties));
         if started {
             window.refresh();
@@ -489,7 +516,7 @@ impl LiveHtml {
         properties: Option<PropertySnapshot>,
     ) -> bool {
         let old = OldState {
-            ui: Rc::clone(&self.ui),
+            ui: self.ui.clone(),
             bindings: self.bindings.clone(),
             properties,
             disclosures: self.disclosures.borrow().clone(),
@@ -548,7 +575,10 @@ impl LiveHtml {
         self.automation.attach(window);
         self.viewport_override.set(viewport);
         let now = cx.background_executor().now();
-        self.frame.set(FrameContext { reduce_motion: cx.reduce_motion(), moving: false });
+        self.frame.set(FrameContext {
+            reduce_motion: cx.reduce_motion(),
+            moving: false,
+        });
         self.drawn.borrow_mut().begin();
         // A running transition's types match `:active-view-transition-type()`.
         let types = self.transitions.types();
@@ -627,12 +657,12 @@ impl LiveHtml {
         rendered
     }
 
-    fn available_fonts(&self, cx: &App) -> Rc<FxHashSet<String>> {
+    fn available_fonts(&self, cx: &App) -> Rc<HashSet<String>> {
         if let Some(fonts) = self.available_fonts.borrow().as_ref() {
-            return Rc::clone(fonts);
+            return fonts.clone();
         }
         let fonts = Rc::new(available_fonts(cx));
-        *self.available_fonts.borrow_mut() = Some(Rc::clone(&fonts));
+        *self.available_fonts.borrow_mut() = Some(fonts.clone());
         fonts
     }
 
@@ -688,7 +718,7 @@ impl LiveHtml {
         node: &RenderNode,
         path: &[usize],
         disclosure_owner: Option<&ElementId>,
-        available_fonts: &FxHashSet<String>,
+        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
@@ -713,12 +743,14 @@ impl LiveHtml {
             }
         }
     }
+
+    #[allow(clippy::too_many_lines)]
     fn render_element(
         &self,
         element: &RenderElement,
         path: &[usize],
         disclosure_owner: Option<&ElementId>,
-        available_fonts: &FxHashSet<String>,
+        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
@@ -794,10 +826,11 @@ impl LiveHtml {
     /// into the children, so its style temporaries are not on the stack for
     /// every level of the document (the main thread has 1 MiB on Windows).
     #[inline(never)]
+    #[allow(clippy::too_many_lines)]
     fn finish_element(
         &self,
         finish: Finish<'_, '_>,
-        available_fonts: &FxHashSet<String>,
+        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
@@ -904,10 +937,16 @@ impl LiveHtml {
         if !state.visible {
             host = host.hidden();
         }
-        let translate = style.translate.filter(|translate| !motion::is_zero(*translate));
+        let translate = style
+            .translate
+            .filter(|translate| !motion::is_zero(*translate));
         let scroll_axes = ScrollAxes::of(style);
         let scroll_handle = scroll_axes.any().then(|| {
-            self.scroll_handles.borrow_mut().entry(element_id.clone()).or_default().clone()
+            self.scroll_handles
+                .borrow_mut()
+                .entry(element_id.clone())
+                .or_default()
+                .clone()
         });
         let toggle = semantic_toggle(element, state, bindings);
         let mut host = install_pointer_hooks(
@@ -925,7 +964,7 @@ impl LiveHtml {
         if state.enabled
             && let Some(disclosure_id) = disclosure_owner.cloned()
         {
-            let disclosures = Rc::clone(&self.disclosures);
+            let disclosures = self.disclosures.clone();
             host = host.on_click(move |_, window, _| {
                 toggle_disclosure(&disclosures, &disclosure_id);
                 window.refresh();
@@ -937,14 +976,14 @@ impl LiveHtml {
             host = host.track_focus(focus_handle);
         }
         if needs.active {
-            let pressed = Rc::clone(&self.pressed);
+            let pressed = self.pressed.clone();
             let pressed_id = element_id.clone();
             host = host.on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
                 *pressed.borrow_mut() = Some(pressed_id.clone());
                 window.refresh();
             });
             for release in [false, true] {
-                let pressed = Rc::clone(&self.pressed);
+                let pressed = self.pressed.clone();
                 let release_listener =
                     move |_: &gpui::MouseUpEvent, window: &mut Window, _: &mut App| {
                         if pressed.borrow_mut().take().is_some() {
@@ -962,8 +1001,8 @@ impl LiveHtml {
             // Interaction styles are resolved while rendering, from one hover
             // state shared by pointer input, MCP platform input and semantic
             // automation, so every path resolves the same CSS :hover.
-            let hovered_element = Rc::clone(&self.hovered_element);
-            let pointer_hovered = Rc::clone(&self.pointer_hovered);
+            let hovered_element = self.hovered_element.clone();
+            let pointer_hovered = self.pointer_hovered.clone();
             let hovered_id = element_id.clone();
             host = host.on_hover(move |hovered, window, _| {
                 update_hovered_element(&hovered_element, &hovered_id, *hovered);
@@ -988,7 +1027,11 @@ impl LiveHtml {
             host = host.aria_level(level.into());
         }
         if let Some(checked) = state.checked {
-            host = host.aria_toggled(if checked { Toggled::True } else { Toggled::False });
+            host = host.aria_toggled(if checked {
+                Toggled::True
+            } else {
+                Toggled::False
+            });
         }
         if let Some(selected) = state.selected {
             host = host.aria_selected(selected);
@@ -1012,7 +1055,10 @@ impl LiveHtml {
             host = host.aria_description(title);
             let tooltip_text = SharedString::from(title.to_owned());
             host = host.tooltip(move |_window, cx| {
-                cx.new(|_| TitleTooltip { text: tooltip_text.clone() }).into()
+                cx.new(|_| TitleTooltip {
+                    text: tooltip_text.clone(),
+                })
+                .into()
             });
         }
         if let Some(text) = element_text(element, property_values, bindings) {
@@ -1052,7 +1098,7 @@ impl LiveHtml {
         old: &OldState,
         is_named: &dyn Fn(&[usize]) -> bool,
         environment: Environment<'_>,
-        available_fonts: &FxHashSet<String>,
+        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> Div {
@@ -1062,7 +1108,13 @@ impl LiveHtml {
         let root_scope = initial.document_root(root_declarations.iter().copied());
         let root_style = cascade::typed(&root_scope, &initial, &root_declarations);
         self.scopes.borrow_mut().push(root_scope);
-        let inert = Inert { old, keep: None, is_named, environment, fonts: available_fonts };
+        let inert = Inert {
+            old,
+            keep: None,
+            is_named,
+            environment,
+            fonts: available_fonts,
+        };
         let mut path = Vec::new();
         let children = old_plan
             .nodes
@@ -1125,7 +1177,13 @@ impl LiveHtml {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        let Inert { old, keep, is_named, environment: viewport, fonts: available_fonts } = *inert;
+        let Inert {
+            old,
+            keep,
+            is_named,
+            environment: viewport,
+            fonts: available_fonts,
+        } = *inert;
         let element_id = ElementId::new(
             attribute(element, "id").map_or_else(|| generated_id(path), str::to_owned),
         );
@@ -1139,14 +1197,16 @@ impl LiveHtml {
                 .map(|bindings| read_properties(bindings, &self.hooks, window, cx));
             live.as_ref()
         };
-        let empty = FxHashMap::default();
+        let empty = HashMap::new();
         let properties = properties.unwrap_or(&empty);
         let state = element_state(element, properties);
         let parent = self.scopes.borrow().last().cloned().unwrap_or_default();
         let declarations = cascade::declarations(element, &viewport, Interaction::default(), &[]);
         let scope = parent.child(declarations.iter().copied());
         let style = cascade::typed(&scope, &parent, &declarations);
-        let text = properties.get(&UiProperty::Text).or_else(|| properties.get(&UiProperty::Value));
+        let text = properties
+            .get(&UiProperty::Text)
+            .or_else(|| properties.get(&UiProperty::Value));
         let children = if let Some(value) = text {
             vec![value.display().into_any_element()]
         } else if is_text_editable(element) {
@@ -1184,10 +1244,16 @@ impl LiveHtml {
         if !state.visible {
             host = host.hidden();
         }
-        if let Some(width) = properties.get(&UiProperty::Width).and_then(StateValue::as_pixels) {
+        if let Some(width) = properties
+            .get(&UiProperty::Width)
+            .and_then(StateValue::as_pixels)
+        {
             host = host.w(px(width));
         }
-        if let Some(height) = properties.get(&UiProperty::Height).and_then(StateValue::as_pixels) {
+        if let Some(height) = properties
+            .get(&UiProperty::Height)
+            .and_then(StateValue::as_pixels)
+        {
             host = host.h(px(height));
         }
         if keep == Some(path.as_slice()) {
@@ -1220,13 +1286,15 @@ impl LiveHtml {
             .as_ref()
             .map_or_else(|| id.to_owned(), |namespace| namespace.scope(id))
     }
+
+    #[allow(clippy::too_many_arguments)]
     fn render_children(
         &self,
         element: &RenderElement,
         path: &[usize],
         text: Option<&StateValue>,
         disclosure_open: Option<bool>,
-        available_fonts: &FxHashSet<String>,
+        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<AnyElement> {
@@ -1246,8 +1314,9 @@ impl LiveHtml {
             .map(|(index, child)| {
                 let mut child_path = path.to_vec();
                 child_path.push(index);
-                let child_disclosure_owner =
-                    disclosure_owner.as_ref().filter(|_| is_summary_element(child));
+                let child_disclosure_owner = disclosure_owner
+                    .as_ref()
+                    .filter(|_| is_summary_element(child));
                 self.render_node(
                     child,
                     &child_path,
@@ -1286,7 +1355,9 @@ impl LiveHtml {
                     String::new()
                 }
             });
-        let placeholder = attribute(element, "placeholder").unwrap_or_default().to_owned();
+        let placeholder = attribute(element, "placeholder")
+            .unwrap_or_default()
+            .to_owned();
         let multiline = element.source_tag == "textarea";
         let masked = is_password(element);
         let disabled = !runtime.enabled;
@@ -1298,7 +1369,9 @@ impl LiveHtml {
             .cloned();
         if let Some(input) = cached_input {
             let needs_sync =
-                input.read(cx).needs_sync(self.revision, &value, &placeholder, disabled, cx);
+                input
+                    .read(cx)
+                    .needs_sync(self.revision, &value, &placeholder, disabled, cx);
             if needs_sync {
                 let options = RuntimeTextInputOptions {
                     value,
@@ -1327,16 +1400,20 @@ impl LiveHtml {
             hooks: self.hooks.clone(),
         };
         let input = cx.new(|cx| RuntimeTextInput::new(options, window, cx));
-        self.text_inputs.borrow_mut().insert(runtime.element_id.clone(), input.clone());
+        self.text_inputs
+            .borrow_mut()
+            .insert(runtime.element_id.clone(), input.clone());
         input
     }
+
+    #[allow(clippy::too_many_arguments)]
     fn render_element_children(
         &self,
         element: &RenderElement,
         path: &[usize],
         runtime: ElementRuntime<'_>,
         disclosure_open: Option<bool>,
-        available_fonts: &FxHashSet<String>,
+        available_fonts: &HashSet<String>,
         window: &mut Window,
         cx: &mut App,
     ) -> (Vec<AnyElement>, Option<Entity<RuntimeTextInput>>) {
@@ -1367,19 +1444,26 @@ impl LiveHtml {
         cx: &mut App,
     ) -> Option<FocusHandle> {
         let focusable = focus_styles
-            || runtime
-                .bindings
-                .iter()
-                .any(|binding| matches!(binding, Binding::Event { event: UiEvent::Focus, .. }));
-        text_input.map(|input| input.read(cx).focus_handle(cx)).or_else(|| {
-            focusable.then(|| {
-                self.focus_handles
-                    .borrow_mut()
-                    .entry(runtime.element_id.clone())
-                    .or_insert_with(|| cx.focus_handle())
-                    .clone()
+            || runtime.bindings.iter().any(|binding| {
+                matches!(
+                    binding,
+                    Binding::Event {
+                        event: UiEvent::Focus,
+                        ..
+                    }
+                )
+            });
+        text_input
+            .map(|input| input.read(cx).focus_handle(cx))
+            .or_else(|| {
+                focusable.then(|| {
+                    self.focus_handles
+                        .borrow_mut()
+                        .entry(runtime.element_id.clone())
+                        .or_insert_with(|| cx.focus_handle())
+                        .clone()
+                })
             })
-        })
     }
 
     /// The element's interaction state as of this frame, before its
@@ -1421,20 +1505,28 @@ impl LiveHtml {
         } else {
             0
         };
-        let key = (parent.fingerprint(), environment.key(), interaction.bits(), ancestors_key);
+        let key = (
+            parent.fingerprint(),
+            environment.key(),
+            interaction.bits(),
+            ancestors_key,
+        );
         if let Some(cached) = self.styles.borrow().elements.get(element_id)
             && cached.key == key
         {
-            return Rc::clone(&cached.computed);
+            return cached.computed.clone();
         }
         let declarations = cascade::declarations(element, environment, interaction, &ancestors);
         let starting =
             cascade::starting_declarations(element, environment, interaction, &ancestors);
         let computed = Rc::new(cascade::compute(parent, &declarations, starting.as_deref()));
-        self.styles
-            .borrow_mut()
-            .elements
-            .insert(element_id.clone(), CachedStyle { key, computed: Rc::clone(&computed) });
+        self.styles.borrow_mut().elements.insert(
+            element_id.clone(),
+            CachedStyle {
+                key,
+                computed: computed.clone(),
+            },
+        );
         computed
     }
 
@@ -1493,10 +1585,15 @@ fn apply_native_state(host: Div, element: &RenderElement, state: &ElementState) 
         return host;
     }
     match attribute(element, "type") {
-        Some("checkbox") => {
-            host.bg(rgba(0x4f7d_ffff)).text_color(rgba(0xffff_ffff)).text_size(px(12.)).child("✓")
-        }
-        Some("radio") => host.text_color(rgba(0x4f7d_ffff)).text_size(px(10.)).child("●"),
+        Some("checkbox") => host
+            .bg(rgba(0x4f7d_ffff))
+            .text_color(rgba(0xffff_ffff))
+            .text_size(px(12.))
+            .child("✓"),
+        Some("radio") => host
+            .text_color(rgba(0x4f7d_ffff))
+            .text_size(px(10.))
+            .child("●"),
         _ => host,
     }
 }
@@ -1505,10 +1602,7 @@ fn is_summary_element(node: &RenderNode) -> bool {
     matches!(node, RenderNode::Element(element) if element.source_tag == "summary")
 }
 
-fn toggle_disclosure(
-    disclosures: &Rc<RefCell<FxHashMap<ElementId, bool>>>,
-    element_id: &ElementId,
-) {
+fn toggle_disclosure(disclosures: &Rc<RefCell<HashMap<ElementId, bool>>>, element_id: &ElementId) {
     let mut disclosures = disclosures.borrow_mut();
     let open = disclosures.entry(element_id.clone()).or_default();
     *open = !*open;
@@ -1516,21 +1610,31 @@ fn toggle_disclosure(
 
 fn index_bindings<'a>(
     bindings: impl Iterator<Item = &'a Binding>,
-) -> FxHashMap<ElementId, Rc<[Binding]>> {
-    let mut index = FxHashMap::<ElementId, Vec<Binding>>::default();
+) -> HashMap<ElementId, Rc<[Binding]>> {
+    let mut index = HashMap::<ElementId, Vec<Binding>>::new();
     for binding in bindings {
-        index.entry(binding.element_id().clone()).or_default().push(binding.clone());
+        index
+            .entry(binding.element_id().clone())
+            .or_default()
+            .push(binding.clone());
     }
-    index.into_iter().map(|(element_id, bindings)| (element_id, Rc::from(bindings))).collect()
+    index
+        .into_iter()
+        .map(|(element_id, bindings)| (element_id, Rc::from(bindings)))
+        .collect()
 }
 
 pub(crate) fn generated_id(path: &[usize]) -> String {
-    let suffix = path.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
+    let suffix = path
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join("-");
     format!("html-node-{suffix}")
 }
 
-fn collect_element_ids(plan: &RenderPlan) -> FxHashSet<ElementId> {
-    fn collect(nodes: &[RenderNode], parent_path: &[usize], ids: &mut FxHashSet<ElementId>) {
+fn collect_element_ids(plan: &RenderPlan) -> HashSet<ElementId> {
+    fn collect(nodes: &[RenderNode], parent_path: &[usize], ids: &mut HashSet<ElementId>) {
         for (index, node) in nodes.iter().enumerate() {
             let RenderNode::Element(element) = node else {
                 continue;
@@ -1543,13 +1647,13 @@ fn collect_element_ids(plan: &RenderPlan) -> FxHashSet<ElementId> {
         }
     }
 
-    let mut ids = FxHashSet::default();
+    let mut ids = HashSet::new();
     collect(&plan.nodes, &[], &mut ids);
     ids
 }
 
-fn collect_named_elements(plan: &RenderPlan) -> FxHashSet<ElementId> {
-    fn collect(nodes: &[RenderNode], parent_path: &[usize], ids: &mut FxHashSet<ElementId>) {
+fn collect_named_elements(plan: &RenderPlan) -> HashSet<ElementId> {
+    fn collect(nodes: &[RenderNode], parent_path: &[usize], ids: &mut HashSet<ElementId>) {
         for (index, node) in nodes.iter().enumerate() {
             let RenderNode::Element(element) = node else {
                 continue;
@@ -1565,7 +1669,7 @@ fn collect_named_elements(plan: &RenderPlan) -> FxHashSet<ElementId> {
         }
     }
 
-    let mut ids = FxHashSet::default();
+    let mut ids = HashSet::new();
     collect(&plan.nodes, &[], &mut ids);
     ids
 }
@@ -1575,26 +1679,36 @@ fn read_properties(
     hooks: &HookRegistry,
     window: &mut Window,
     cx: &mut App,
-) -> FxHashMap<UiProperty, StateValue> {
+) -> HashMap<UiProperty, StateValue> {
     bindings
         .iter()
         .filter_map(|binding| {
-            let Binding::Property { property, source, .. } = binding else {
+            let Binding::Property {
+                property, source, ..
+            } = binding
+            else {
                 return None;
             };
-            hooks.read(source, window, cx).map(|value| (*property, value))
+            hooks
+                .read(source, window, cx)
+                .map(|value| (*property, value))
         })
         .collect()
 }
 
 fn element_state(
     element: &RenderElement,
-    properties: &FxHashMap<UiProperty, StateValue>,
+    properties: &HashMap<UiProperty, StateValue>,
 ) -> ElementState {
     let disabled = properties
         .get(&UiProperty::Disabled)
         .and_then(StateValue::as_boolean)
-        .unwrap_or_else(|| element.form_control.as_ref().is_some_and(|control| control.disabled));
+        .unwrap_or_else(|| {
+            element
+                .form_control
+                .as_ref()
+                .is_some_and(|control| control.disabled)
+        });
     ElementState {
         visible: properties
             .get(&UiProperty::Visible)
@@ -1667,7 +1781,7 @@ fn accessible_role(element: &RenderElement) -> Option<AccessibleRole> {
 }
 
 fn aria_role(role: &str) -> Option<AccessibleRole> {
-    Some(match role.trim().cow_to_ascii_lowercase().as_ref() {
+    Some(match role.trim().to_ascii_lowercase().as_str() {
         "application" => AccessibleRole::Application,
         "alert" => AccessibleRole::Alert,
         "button" => AccessibleRole::Button,
@@ -1708,14 +1822,21 @@ fn aria_role(role: &str) -> Option<AccessibleRole> {
 
 fn accessible_label(
     element: &RenderElement,
-    properties: &FxHashMap<UiProperty, StateValue>,
+    properties: &HashMap<UiProperty, StateValue>,
 ) -> Option<String> {
     element
         .accessibility
         .as_ref()
         .and_then(|accessibility| accessibility.label.as_ref())
         .map(ToString::to_string)
-        .or_else(|| element.form_control.as_ref()?.label.as_ref().map(ToString::to_string))
+        .or_else(|| {
+            element
+                .form_control
+                .as_ref()?
+                .label
+                .as_ref()
+                .map(ToString::to_string)
+        })
         .or_else(|| attribute(element, "alt").map(str::to_owned))
         .or_else(|| {
             matches!(element.role, UiRole::Button | UiRole::Link | UiRole::Option)
@@ -1731,12 +1852,16 @@ fn accessible_label(
 
 fn element_text(
     element: &RenderElement,
-    properties: &FxHashMap<UiProperty, StateValue>,
+    properties: &HashMap<UiProperty, StateValue>,
     bindings: &[Binding],
 ) -> Option<ElementText> {
     let editable = is_text_editable(element) && has_writable_text_binding(bindings);
     if is_password(element) {
-        return Some(ElementText { text: String::new(), redacted: true, editable });
+        return Some(ElementText {
+            text: String::new(),
+            redacted: true,
+            editable,
+        });
     }
 
     let text = properties
@@ -1763,7 +1888,7 @@ fn element_text(
 
 fn element_value(
     element: &RenderElement,
-    properties: &FxHashMap<UiProperty, StateValue>,
+    properties: &HashMap<UiProperty, StateValue>,
     bindings: &[Binding],
 ) -> Option<ElementValue> {
     if is_password(element) {
@@ -1776,10 +1901,15 @@ fn element_value(
             editable: is_text_editable(element) && has_writable_text_binding(bindings),
         })
         .or_else(|| {
-            element.form_control.as_ref()?.value.as_ref().map(|value| ElementValue {
-                value: bounded_utf8(value.to_string(), MAX_TEXT_BYTES),
-                editable: is_text_editable(element) && has_writable_text_binding(bindings),
-            })
+            element
+                .form_control
+                .as_ref()?
+                .value
+                .as_ref()
+                .map(|value| ElementValue {
+                    value: bounded_utf8(value.to_string(), MAX_TEXT_BYTES),
+                    editable: is_text_editable(element) && has_writable_text_binding(bindings),
+                })
         })
 }
 
@@ -1787,12 +1917,14 @@ fn has_writable_text_binding(bindings: &[Binding]) -> bool {
     bindings.iter().any(|binding| {
         matches!(
             binding,
-            Binding::Event { event: UiEvent::Input | UiEvent::Change, .. }
-                | Binding::Property {
-                    property: UiProperty::Text | UiProperty::Value,
-                    mode: BindingMode::TwoWay,
-                    ..
-                }
+            Binding::Event {
+                event: UiEvent::Input | UiEvent::Change,
+                ..
+            } | Binding::Property {
+                property: UiProperty::Text | UiProperty::Value,
+                mode: BindingMode::TwoWay,
+                ..
+            }
         )
     })
 }
@@ -1890,8 +2022,12 @@ fn install_pointer_hooks(
             }
             if let Some(toggle) = toggle {
                 for binding in &bindings {
-                    let Binding::Property { property, source, mode: BindingMode::TwoWay, .. } =
-                        binding
+                    let Binding::Property {
+                        property,
+                        source,
+                        mode: BindingMode::TwoWay,
+                        ..
+                    } = binding
                     else {
                         continue;
                     };
@@ -2004,7 +2140,9 @@ pub(crate) fn dispatch_input_change(
     if handled {
         HookOutcome::Handled
     } else {
-        HookOutcome::Rejected { reason: "no compatible binding handled the action".to_owned() }
+        HookOutcome::Rejected {
+            reason: "no compatible binding handled the action".to_owned(),
+        }
     }
 }
 
@@ -2021,14 +2159,11 @@ fn update_hovered_element(
     }
 }
 
-fn available_fonts(cx: &App) -> FxHashSet<String> {
+fn available_fonts(cx: &App) -> HashSet<String> {
     cx.text_system()
         .all_font_names()
         .into_iter()
-        .map(|mut family| {
-            family.make_ascii_lowercase();
-            family
-        })
+        .map(|family| family.to_ascii_lowercase())
         .collect()
 }
 
@@ -2047,7 +2182,10 @@ impl ScrollAxes {
         use htmlswap::computed::Overflow;
         let scrolls =
             |value: Option<Overflow>| matches!(value, Some(Overflow::Scroll | Overflow::Auto));
-        Self { x: scrolls(style.overflow_x), y: scrolls(style.overflow_y) }
+        Self {
+            x: scrolls(style.overflow_x),
+            y: scrolls(style.overflow_y),
+        }
     }
 }
 
@@ -2060,17 +2198,17 @@ struct CachedStyle {
 /// Computed styles of the rendered elements of one document.
 #[derive(Default)]
 struct StyleCache {
-    elements: FxHashMap<ElementId, CachedStyle>,
+    elements: HashMap<ElementId, CachedStyle>,
 }
 
 /// Elements whose descendants' styles depend on their interaction state,
 /// with the states they depend on.
-fn collect_state_anchors(plan: &RenderPlan) -> FxHashMap<ElementId, StateNeeds> {
+fn collect_state_anchors(plan: &RenderPlan) -> HashMap<ElementId, StateNeeds> {
     fn collect(
         nodes: &[RenderNode],
         path: &mut Vec<usize>,
         ancestors: &mut Vec<ElementId>,
-        anchors: &mut FxHashMap<ElementId, StateNeeds>,
+        anchors: &mut HashMap<ElementId, StateNeeds>,
     ) {
         for (index, node) in nodes.iter().enumerate() {
             let RenderNode::Element(element) = node else {
@@ -2082,7 +2220,9 @@ fn collect_state_anchors(plan: &RenderPlan) -> FxHashMap<ElementId, StateNeeds> 
             );
             for variant in &element.style_variants {
                 for condition in &variant.conditions {
-                    if let RenderStyleCondition::ElementState { pseudo, ancestor, .. } = condition
+                    if let RenderStyleCondition::ElementState {
+                        pseudo, ancestor, ..
+                    } = condition
                         && *ancestor > 0
                         && let Some(anchor) = ancestors
                             .len()
@@ -2100,7 +2240,7 @@ fn collect_state_anchors(plan: &RenderPlan) -> FxHashMap<ElementId, StateNeeds> 
         }
     }
 
-    let mut anchors = FxHashMap::default();
+    let mut anchors = HashMap::new();
     collect(&plan.nodes, &mut Vec::new(), &mut Vec::new(), &mut anchors);
     anchors
 }
@@ -2124,7 +2264,13 @@ fn collect_render_diagnostics(plan: &RenderPlan) -> Vec<RenderDiagnostic> {
     let root = ComputedScope::root(&MediaEnvironment::default());
     let root_declarations = plan.root.styles.iter().collect::<Vec<_>>();
     let scope = root.document_root(root_declarations.iter().copied());
-    diagnose_declarations("html-root", &root_declarations, &scope, &root, &mut diagnostics);
+    diagnose_declarations(
+        "html-root",
+        &root_declarations,
+        &scope,
+        &root,
+        &mut diagnostics,
+    );
     for variant in &plan.root.style_variants {
         diagnose_variant("html-root", variant, &scope, &root, &mut diagnostics);
     }
@@ -2144,8 +2290,11 @@ fn collect_node_diagnostics(
         };
         path.push(index);
         let id = attribute(element, "id").map_or_else(|| generated_id(path), str::to_owned);
-        let declarations =
-            element.stylesheet_declarations.iter().chain(&element.styles).collect::<Vec<_>>();
+        let declarations = element
+            .stylesheet_declarations
+            .iter()
+            .chain(&element.styles)
+            .collect::<Vec<_>>();
         let scope = parent.child(declarations.iter().copied());
         diagnose_declarations(&id, &declarations, &scope, parent, diagnostics);
         for variant in &element.style_variants {
@@ -2194,8 +2343,11 @@ fn diagnose_declarations(
     diagnostics: &mut Vec<RenderDiagnostic>,
 ) {
     let mut push = |feature: &str, message: String| {
-        let diagnostic =
-            RenderDiagnostic { node_id: node_id.to_owned(), feature: feature.to_owned(), message };
+        let diagnostic = RenderDiagnostic {
+            node_id: node_id.to_owned(),
+            feature: feature.to_owned(),
+            message,
+        };
         if !diagnostics.contains(&diagnostic) {
             diagnostics.push(diagnostic);
         }
@@ -2232,9 +2384,8 @@ fn diagnose_declarations(
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::rc::Rc;
-
-    use rustc_hash::FxHashMap;
 
     use gpui::Role as AccessibleRole;
     use gpui_mcp::Automation;
@@ -2271,7 +2422,10 @@ mod tests {
     fn aria_roles_preserve_tree_and_floating_surface_semantics() {
         assert_eq!(aria_role("tree"), Some(AccessibleRole::Tree));
         assert_eq!(aria_role("TREEITEM"), Some(AccessibleRole::TreeItem));
-        assert_eq!(aria_role("menuitemcheckbox"), Some(AccessibleRole::MenuItemCheckBox));
+        assert_eq!(
+            aria_role("menuitemcheckbox"),
+            Some(AccessibleRole::MenuItemCheckBox)
+        );
         assert_eq!(aria_role("combobox"), Some(AccessibleRole::ComboBox));
         assert_eq!(aria_role("option"), Some(AccessibleRole::ListBoxOption));
         assert_eq!(aria_role("presentation"), None);
@@ -2306,15 +2460,20 @@ mod tests {
     #[test]
     fn bound_button_text_is_the_current_accessible_label() -> Result<(), Box<dyn std::error::Error>>
     {
-        let ui =
-            HtmlUi::compile("<button id='theme'>Foundry dark</button>", BindingDocument::new())?;
+        let ui = HtmlUi::compile(
+            "<button id='theme'>Foundry dark</button>",
+            BindingDocument::new(),
+        )?;
         let Some(RenderNode::Element(button)) = ui.plan().nodes.first() else {
             return Err("button render element is missing".into());
         };
         let properties =
-            FxHashMap::from_iter([(UiProperty::Text, StateValue::Text("Paper light".to_owned()))]);
+            HashMap::from([(UiProperty::Text, StateValue::Text("Paper light".to_owned()))]);
 
-        assert_eq!(accessible_label(button, &properties).as_deref(), Some("Paper light"));
+        assert_eq!(
+            accessible_label(button, &properties).as_deref(),
+            Some("Paper light")
+        );
         Ok(())
     }
 
@@ -2354,7 +2513,10 @@ mod tests {
         ]);
         assert!(supported.is_empty(), "{supported:#?}");
 
-        let rejected = diagnose(&[("grid-column", "0 / span 2"), ("grid-auto-flow", "diagonal")]);
+        let rejected = diagnose(&[
+            ("grid-column", "0 / span 2"),
+            ("grid-auto-flow", "diagonal"),
+        ]);
         assert_eq!(rejected.len(), 2, "{rejected:#?}");
     }
 
@@ -2405,8 +2567,10 @@ mod tests {
             ("height", "50%"),
             ("padding-top", "4px"),
         ]);
-        let properties =
-            diagnostics.iter().map(|diagnostic| diagnostic.feature.as_str()).collect::<Vec<_>>();
+        let properties = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.feature.as_str())
+            .collect::<Vec<_>>();
 
         assert_eq!(
             properties,
@@ -2433,8 +2597,12 @@ mod tests {
             BindingDocument::new(),
         )?;
         let mut live = super::LiveHtml::new(initial, Automation::for_test(), HookRegistry::new())?;
-        live.disclosures.borrow_mut().insert(ElementId::new("kept"), true);
-        live.disclosures.borrow_mut().insert(ElementId::new("gone"), false);
+        live.disclosures
+            .borrow_mut()
+            .insert(ElementId::new("kept"), true);
+        live.disclosures
+            .borrow_mut()
+            .insert(ElementId::new("gone"), false);
         *live.hovered_element.borrow_mut() = Some(ElementId::new("kept"));
 
         let candidate = HtmlUi::compile(
@@ -2448,8 +2616,16 @@ mod tests {
         assert_eq!(report.retained_disclosures, 1);
         assert_eq!(report.pruned_disclosures, 1);
         assert!(report.hovered_element_retained);
-        assert_eq!(live.disclosures.borrow().get(&ElementId::new("kept")), Some(&true));
-        assert!(!live.disclosures.borrow().contains_key(&ElementId::new("gone")));
+        assert_eq!(
+            live.disclosures.borrow().get(&ElementId::new("kept")),
+            Some(&true)
+        );
+        assert!(
+            !live
+                .disclosures
+                .borrow()
+                .contains_key(&ElementId::new("gone"))
+        );
         Ok(())
     }
 

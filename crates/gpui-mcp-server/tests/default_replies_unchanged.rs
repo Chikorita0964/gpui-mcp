@@ -91,8 +91,13 @@ const LEFT: &str = "probe-left-target";
 
 /// Controls that must be in the rendered tree before the session starts, so
 /// the fixtures always capture a fully drawn window.
-const READY_NODES: [&str; 5] =
-    [PARKING, "increment", "count", "probe-left-target", "probe-right-target"];
+const READY_NODES: [&str; 5] = [
+    PARKING,
+    "increment",
+    "count",
+    "probe-left-target",
+    "probe-right-target",
+];
 
 /// The tools whose default replies the snapshots freeze, in session order.
 const FIXTURE_TOOLS: [&str; 7] = [
@@ -129,9 +134,20 @@ impl Server {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("could not spawn the server: {error}"))?;
-        let stdin = child.stdin.take().ok_or_else(|| "the server has no stdin".to_owned())?;
-        let stdout = child.stdout.take().ok_or_else(|| "the server has no stdout".to_owned())?;
-        Ok(Self { child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1 })
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "the server has no stdin".to_owned())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "the server has no stdout".to_owned())?;
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout).lines(),
+            next_id: 1,
+        })
     }
 
     async fn send(&mut self, message: &JsonValue) -> Result<(), String> {
@@ -177,7 +193,11 @@ impl Server {
     /// The raw `result` of a `tools/call`, `isError` included, because two of
     /// the fixtures capture the demo's error replies.
     async fn call_raw(&mut self, tool: &str, arguments: JsonValue) -> Result<JsonValue, String> {
-        self.request("tools/call", json!({ "name": tool, "arguments": arguments })).await
+        self.request(
+            "tools/call",
+            json!({ "name": tool, "arguments": arguments }),
+        )
+        .await
     }
 
     /// The structured payload of a tool that answers with JSON; a call that
@@ -194,7 +214,9 @@ impl Server {
             .get("content")
             .and_then(JsonValue::as_array)
             .and_then(|content| {
-                content.iter().find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
+                content
+                    .iter()
+                    .find_map(|entry| entry.get("text").and_then(JsonValue::as_str))
             })
             .ok_or_else(|| format!("{tool} returned no JSON payload: {result}"))?;
         serde_json::from_str(text)
@@ -215,7 +237,10 @@ impl Server {
                 .and_then(JsonValue::as_f64)
                 .ok_or_else(|| format!("the bounds of {id} carry no {name}"))
         };
-        Ok((field("x")? + field("width")? / 2.0, field("y")? + field("height")? / 2.0))
+        Ok((
+            field("x")? + field("width")? / 2.0,
+            field("y")? + field("height")? / 2.0,
+        ))
     }
 
     async fn stop(mut self) {
@@ -256,13 +281,17 @@ impl Fixture {
 /// beside this test's own server binary rather than through `CARGO_BIN_EXE`.
 fn fixture_executable() -> Result<PathBuf, String> {
     let server = PathBuf::from(env!("CARGO_BIN_EXE_gpui-mcp"));
-    let directory =
-        server.parent().ok_or_else(|| "the server binary has no parent directory".to_owned())?;
+    let directory = server
+        .parent()
+        .ok_or_else(|| "the server binary has no parent directory".to_owned())?;
     let path = directory.join(format!("gpui-mcp-demo{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!("the demo fixture is not built at {}", path.display()))
+        Err(format!(
+            "the demo fixture is not built at {}",
+            path.display()
+        ))
     }
 }
 
@@ -419,10 +448,18 @@ fn is_volatile(key: &str) -> bool {
 async fn capture_session(server: &mut Server) -> Result<Vec<(&'static str, String)>, String> {
     let mut captured = Vec::new();
 
-    server.call_json("save_ui_snapshot", json!({ "name": "t4-baseline" })).await?;
+    server
+        .call_json("save_ui_snapshot", json!({ "name": "t4-baseline" }))
+        .await?;
     capture(server, "find_elements", json!({}), &mut captured).await?;
     capture(server, "get_ui_tree", json!({}), &mut captured).await?;
-    capture(server, "load_ui_snapshot", json!({ "name": "t4-baseline" }), &mut captured).await?;
+    capture(
+        server,
+        "load_ui_snapshot",
+        json!({ "name": "t4-baseline" }),
+        &mut captured,
+    )
+    .await?;
     capture(server, "get_live_document", json!({}), &mut captured).await?;
     capture(
         server,
@@ -441,15 +478,25 @@ async fn capture_session(server: &mut Server) -> Result<Vec<(&'static str, Strin
     // region so the report covers exactly the frame that hover drew.
     let parking = server.center(PARKING).await?;
     let left = server.center(LEFT).await?;
-    server.call_json("pointer_move", json!({ "x": parking.0, "y": parking.1 })).await?;
+    server
+        .call_json("pointer_move", json!({ "x": parking.0, "y": parking.1 }))
+        .await?;
     server.call_json("mark_frames", json!({})).await?;
-    server.call_json("pointer_move", json!({ "x": left.0, "y": left.1 })).await?;
+    server
+        .call_json("pointer_move", json!({ "x": left.0, "y": left.1 }))
+        .await?;
     capture(server, "get_frame_report", json!({}), &mut captured).await?;
 
     // An idle window: the statistics cover no frames and the frame list stays
     // empty, which is the deterministic baseline for this tool.
     server.call_json("mark_frames", json!({})).await?;
-    capture(server, "record_performance", json!({ "duration_ms": 200 }), &mut captured).await?;
+    capture(
+        server,
+        "record_performance",
+        json!({ "duration_ms": 200 }),
+        &mut captured,
+    )
+    .await?;
 
     Ok(captured)
 }
