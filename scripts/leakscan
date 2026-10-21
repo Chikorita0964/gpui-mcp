@@ -6,19 +6,20 @@ With paths: show those files, flagged lines and JSON values masked, so they can 
 """
 import base64, json, re, subprocess, sys
 
-PAT = re.compile(base64.b64decode("PHRoaW5raW5nPnw8cmVhc29uaW5nPnxzY3JhdGNocGFkfGNoYWluWy0gX11vZlstIF9ddGhvdWdodHxzdGVwWy0gX11ieVstIF9dc3RlcHx2ZXJiYXRpbXx0aG91Z2h0Wy0gX11wcm9jZXNzfG1vbm9sb2d8cmVhc29uaW5nfHRoaW5raW5n").decode(), re.I)
+PAT = re.compile(base64.b64decode("PHRoaW5raW5nPnw8cmVhc29uaW5nPnxzY3JhdGNocGFkfGNoYWluWy0gX11vZlstIF9ddGhvdWdodHxzdGVwWy0gX11ieVstIF9dc3RlcHx2ZXJiYXRpbXx0aG91Z2h0Wy0gX11wcm9jZXNzfG1vbm9sb2d8cmVhc29uaW5nfHRoaW5raW5nfHdvcmtpbmdbLSBfXW1lbW9yeXwocHJpdmF0ZXxpbnRlcm5hbClbLSBfXW5vdGVzfGhpZGRlblstIF9ddGhvdWdodHM/").decode(), re.I)
+KEY = re.compile(base64.b64decode("Xih0cmFjZXx0aG91Z2h0cz98bm90ZXNbLV9dP3RvWy1fXT9zZWxmKSQ=").decode(), re.I)
 SKIP = {"CLAUDE.md", "scripts/leakscan"}
 
 
 def walk(o, path, masked=False):
     if isinstance(o, dict):
         for k, v in o.items():
-            hit = bool(PAT.search(k))
+            hit = bool(PAT.search(k) or KEY.match(k))
             yield from walk(v, path + ["<flagged key>" if hit else k], masked or hit)
     elif isinstance(o, list):
         for i, v in enumerate(o):
             yield from walk(v, path + [str(i)], masked)
-    elif isinstance(o, str) and (masked or PAT.search(o)):
+    elif isinstance(o, str) and (masked or PAT.search(o) or KEY.match(o)):
         yield ".".join(path), f"<flagged, {len(o)} chars>"
     else:
         yield ".".join(path), json.dumps(o)
@@ -47,13 +48,14 @@ for f in files:
         text = open(f, encoding="utf-8").read()
     except (OSError, UnicodeDecodeError):
         continue
-    if not PAT.search(text):
+    if not (PAT.search(text) or (f.endswith(".json") and any(KEY.match(k) for k in re.findall(r'"([^"]+)"\s*:', text)))):
         continue
     hits += 1
     if paths:
         show(f, text)
     else:
-        print(f, [i for i, l in enumerate(text.splitlines(), 1) if PAT.search(l)])
+        print(f, [i for i, l in enumerate(text.splitlines(), 1)
+                  if PAT.search(l) or any(KEY.match(k) for k in re.findall(r'"([^"]+)"', l))])
 if not hits:
     print(f"No flagged wording in {len(files)} tracked file(s).")
 elif not paths:
