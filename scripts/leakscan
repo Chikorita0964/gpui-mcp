@@ -29,25 +29,32 @@ def show(f, text):
     if f.endswith(".json"):
         for p, v in walk(json.loads(text), []):
             print(f"{p} = {v}")
+    elif f.endswith(".jsonl"):
+        for i, line in enumerate(text.splitlines(), 1):
+            for p, v in walk(json.loads(line), [str(i)]) if line.strip() else ():
+                print(f"{p} = {v}")
     else:
         for i, line in enumerate(text.splitlines(), 1):
             print(f"{i}: {'<flagged line>' if PAT.search(line) else line}")
 
 
-paths, found = sys.argv[1:], False
-for f in paths or subprocess.run(["git", "ls-files"], capture_output=True, text=True).stdout.split():
-    if f in SKIP:
-        continue
+paths = sys.argv[1:]
+files = [f for f in subprocess.run(["git", "ls-files", "--", *paths], capture_output=True, text=True).stdout.split()
+         if f not in SKIP]
+hits = 0
+for f in files:
     try:
         text = open(f, encoding="utf-8").read()
     except (OSError, UnicodeDecodeError):
         continue
     if not PAT.search(text):
         continue
+    hits += 1
     if paths:
         show(f, text)
     else:
-        found = True
         print(f, [i for i, l in enumerate(text.splitlines(), 1) if PAT.search(l)])
-if found:
-    print("Do not open these files any other way. View one masked: scripts/leakscan <path>")
+if not hits:
+    print(f"No flagged wording in {len(files)} tracked file(s).")
+elif not paths:
+    print("Do not open these files any other way. View them masked: scripts/leakscan <file or dir>")
