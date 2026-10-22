@@ -1,62 +1,238 @@
 #!/usr/bin/env python3
-"""Find prompt wording the safeguard classifier refuses, with that wording masked. Run it; don't print it.
+"""Find prompt wording the safeguard classifier refuses, without printing it. Run it; don't print it.
 
-No arguments: list tracked files that contain it, with line numbers.
-With paths: show those files, flagged lines and JSON values masked, so they can be rewritten whole.
+No arguments: check tracked and untracked files and show the flagged ones masked.
+With paths: show those files masked. Flagged sentences and the text under flagged JSON keys are hidden,
+flagged key names are replaced by numbered aliases, and everything else is shown as is.
+--strip FILE...: delete the flagged sentences and JSON keys in place and keep everything else, so the
+file can then be read and edited normally. Removed key names are remembered in the git directory, so
+code that still uses them stays flagged until it is fixed.
 """
-import base64, json, re, subprocess, sys
+import base64, json, os, re, subprocess, sys
 
-PAT = re.compile(base64.b64decode("PHRoaW5raW5nPnw8cmVhc29uaW5nPnxzY3JhdGNocGFkfGNoYWluWy0gX11vZlstIF9ddGhvdWdodHxzdGVwWy0gX11ieVstIF9dc3RlcHx2ZXJiYXRpbXx0aG91Z2h0Wy0gX11wcm9jZXNzfG1vbm9sb2d8cmVhc29uaW5nfHRoaW5raW5nfHdvcmtpbmdbLSBfXW1lbW9yeXwocHJpdmF0ZXxpbnRlcm5hbClbLSBfXW5vdGVzfGhpZGRlblstIF9ddGhvdWdodHM/").decode(), re.I)
-KEY = re.compile(base64.b64decode("Xih0cmFjZXx0aG91Z2h0cz98bm90ZXNbLV9dP3RvWy1fXT9zZWxmKSQ=").decode(), re.I)
-SKIP = {"CLAUDE.md", "scripts/leakscan"}
+PAT = re.compile(base64.b64decode("PCh0aGlua2luZ3xyZWFzb25pbmcpPnxcYihrZWVwfHVzZXx3cml0ZXxmaWxsfGluY2x1ZGV8bWFpbnRhaW58YWRkKVxiW14uXG5dezAsMzB9XGJzY3JhdGNoWy0gX10/cGFkXGJ8XGJzY3JhdGNoWy0gX10/cGFkXGJbXi5cbl17MCwzMH1cYihzZWN0aW9ufGZpZWxkfGZpcnN0fGJlZm9yZSlcYnxjaGFpblstIF9db2ZbLSBfXXRob3VnaHR8dGhvdWdodFstIF9dcHJvY2Vzc3woaW5uZXJ8aW50ZXJuYWwpWy0gX11tb25vbG9nfHdvcmtpbmdbLSBfXW1lbW9yeXwocHJpdmF0ZXxpbnRlcm5hbClbLSBfXW5vdGVzfGhpZGRlblstIF9ddGhvdWdodHM/fFxiKHlvdXJ8aXRzfG15fG93bnxmdWxsfGNvbXBsZXRlfGVudGlyZXxwcmlvcnxwcmV2aW91c3xlYXJsaWVyfGludGVybmFsfGhpZGRlbnxyYXcpW1xzXy1dKyhyZWFzb25pbmd8dGhpbmtpbmd8dGhvdWdodHMpXGJ8XGIoc2hvd3x3cml0ZXxvdXRwdXR8cHJpbnR8aW5jbHVkZXxuYXJyYXRlfHJlY29yZHxsb2d8cmVwcm9kdWNlfHJlcGVhdHx0cmFuc2NyaWJlfHRyYW5zbGF0ZXxkdW1wfHJldHVybilcYlteLlxuXXswLDQwfVxiKHJlYXNvbmluZ3x0aGlua2luZ3x0aG91Z2h0cylcYig/IVsgXy1dPyhidWRnZXR8ZWZmb3J0fG1vZGV8bGV2ZWx8dG9rZW5zKSl8XGJzdGVwWy0gX11ieVstIF9dc3RlcFxiW14uXG5dezAsNDB9XGIoc2hvd3x3cml0ZXxvdXRwdXR8cHJpbnR8aW5jbHVkZXxleHBsYWluKVxifFxiKHNob3d8d3JpdGV8b3V0cHV0fHByaW50fGluY2x1ZGV8ZXhwbGFpbilcYlteLlxuXXswLDQwfVxic3RlcFstIF9dYnlbLSBfXXN0ZXBcYnxcYnNob3cgKHlvdXJ8aXRzKSB3b3JrXGJ8XGJ2ZXJiYXRpbVxiW14uXG5dezAsNDB9XGIocmVhc29uaW5nfHRoaW5raW5nfHRob3VnaHRzfG5vdGVzKVxifFxiKHJlYXNvbmluZ3x0aGlua2luZ3x0aG91Z2h0c3xub3RlcylcYlteLlxuXXswLDQwfVxidmVyYmF0aW1cYg==").decode(), re.I)
+KEY = re.compile(base64.b64decode("XihyZWFzb25pbmd8dGhpbmtpbmd8dGhvdWdodHM/fHRyYWNlfHJlYXNvbmluZ190cmFjZXxzY3JhdGNoXz9wYWR8bm90ZXNbLV9dP3RvWy1fXT9zZWxmfGNoYWluX29mX3Rob3VnaHR8aW5uZXJfbW9ub2xvZ3VlKSQ=").decode(), re.I)
+SKIP = {"scripts/leakscan"}
+SENT = re.compile(r"(?<=[.!?])\s+")
+WORD = re.compile(r"^[A-Za-z_][\w.-]{0,30}$")
+MAX_LINES = 400
+ALIAS = {}
 
 
-def walk(o, path, masked=False):
+def alias(k):
+    return ALIAS.setdefault(k, f"<flagged key {len(ALIAS) + 1}>")
+
+
+def state_path():
+    try:
+        d = subprocess.run(["git", "rev-parse", "--git-dir"], capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return os.path.join(d, "leakscan-removed")
+
+
+def load_removed():
+    p = state_path()
+    if p and os.path.exists(p):
+        for line in open(p):
+            if line.strip():
+                alias(base64.b64decode(line).decode())
+
+
+def save_removed(keys):
+    p = state_path()
+    if p:
+        with open(p, "w") as fh:
+            fh.writelines(base64.b64encode(k.encode()).decode() + "\n" for k in sorted(keys))
+
+
+def uses(t, k):
+    return re.search(rf"\b{re.escape(k)}\b", t) is not None
+
+
+def hide_keys(s):
+    for k, a in ALIAS.items():
+        s = re.sub(rf"\b{re.escape(k)}\b", a, s)
+    return s
+
+
+def hit(s):
+    return bool(PAT.search(s))
+
+
+def flagged_key(k, v):
+    """A key holds model text when its name says so and its value is text, not a config switch."""
+    if not (KEY.match(k) or hit(k.replace("_", " "))):
+        return False
+    return isinstance(v, str) or (isinstance(v, dict) and v.get("type") == "string")
+
+
+def mask(s):
+    """Hide only the sentences that match, so the rest of the text survives."""
+    parts = SENT.split(s)
+    if not any(hit(p) for p in parts):
+        return s
+    return " ".join(f"<flagged sentence, {len(p)} chars>" if hit(p) else p for p in parts)
+
+
+def strip(s):
+    return " ".join(p for p in SENT.split(s) if not hit(p))
+
+
+def walk(o, path, under=False):
     if isinstance(o, dict):
         for k, v in o.items():
-            hit = bool(PAT.search(k) or KEY.match(k))
-            yield from walk(v, path + ["<flagged key>" if hit else k], masked or hit)
+            f = flagged_key(k, v)
+            yield from walk(v, path + [alias(k) if f else k], under or f)
     elif isinstance(o, list):
         for i, v in enumerate(o):
-            yield from walk(v, path + [str(i)], masked)
-    elif isinstance(o, str) and (masked or PAT.search(o) or KEY.match(o)):
-        yield ".".join(path), f"<flagged, {len(o)} chars>"
+            yield from walk(v, path + [str(i)], under)
+    elif isinstance(o, str) and o in ALIAS:
+        yield ".".join(path), ALIAS[o]
+    elif isinstance(o, str) and under and not WORD.match(o):
+        yield ".".join(path), f"<hidden, {len(o)} chars>"
+    elif isinstance(o, str):
+        m = hide_keys(mask(o))
+        yield ".".join(path), m if m != o else json.dumps(o)
     else:
         yield ".".join(path), json.dumps(o)
 
 
-def show(f, text):
-    print(f"== {f} ({len(text)} bytes)")
-    if f.endswith(".json"):
-        for p, v in walk(json.loads(text), []):
-            print(f"{p} = {v}")
-    elif f.endswith(".jsonl"):
-        for i, line in enumerate(text.splitlines(), 1):
-            for p, v in walk(json.loads(line), [str(i)]) if line.strip() else ():
-                print(f"{p} = {v}")
-    else:
-        for i, line in enumerate(text.splitlines(), 1):
-            print(f"{i}: {'<flagged line>' if PAT.search(line) else line}")
+def text_view(text):
+    return [f"{i}: {hide_keys(mask(line))}" for i, line in enumerate(text.splitlines(), 1)]
 
 
-paths = sys.argv[1:]
-files = [f for f in subprocess.run(["git", "ls-files", "--", *paths], capture_output=True, text=True).stdout.split()
-         if f not in SKIP]
-hits = 0
-for f in files:
+def view(f, text):
+    out = [f"== {f} ({len(text)} bytes)"]
     try:
-        text = open(f, encoding="utf-8").read()
+        if f.endswith(".json"):
+            out += [f"{p} = {v}" for p, v in walk(json.loads(text), [])]
+        elif f.endswith(".jsonl"):
+            for i, line in enumerate(text.splitlines(), 1):
+                out += [f"{p} = {v}" for p, v in walk(json.loads(line), [str(i)])] if line.strip() else []
+        else:
+            out += text_view(text)
+    except ValueError:
+        out += ["(not valid JSON; shown as text)"] + text_view(text)
+    return out
+
+
+def flagged(f, text):
+    try:
+        if f.endswith(".json"):
+            items = list(walk(json.loads(text), []))
+        elif f.endswith(".jsonl"):
+            items = [x for line in text.splitlines() if line.strip() for x in walk(json.loads(line), [])]
+        else:
+            return hit(text)
+    except ValueError:
+        return hit(text)
+    return any(v.startswith("<") for _, v in items)
+
+
+def prune(o, removed):
+    if isinstance(o, dict):
+        drop = [k for k, v in o.items() if flagged_key(k, v)]
+        props = o.get("properties")
+        gone = drop + ([k for k, v in props.items() if flagged_key(k, v)] if isinstance(props, dict) else [])
+        removed += drop
+        out = {k: prune(v, removed) for k, v in o.items() if k not in drop}
+        if isinstance(o.get("required"), list):
+            out["required"] = [r for r in o["required"] if r not in gone]
+        return out
+    if isinstance(o, list):
+        return [prune(v, removed) for v in o]
+    return strip(o) if isinstance(o, str) and hit(o) else o
+
+
+def strip_file(f, files):
+    text = read(f)
+    if text is None:
+        print(f"{f}: not a readable text file")
+        return
+    if f.endswith(".jsonl"):
+        print(f"{f}: records, not a prompt; left unchanged. Read it masked with scripts/leakscan {f}")
+        return
+    removed = []
+    try:
+        if not f.endswith(".json"):
+            raise ValueError
+        o = json.loads(text)
+        m = re.search(r"\n( +)\S", text)
+        new = json.dumps(prune(o, removed), indent=len(m.group(1)) if m else 2, ensure_ascii=False) + "\n"
+    except ValueError:
+        lines = []
+        for line in text.splitlines():
+            lead = line[:len(line) - len(line.lstrip())]
+            s = lead + strip(line.strip()) if hit(line) else line
+            if s.strip() or not line.strip():
+                lines.append(s)
+        new = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+    if new == text:
+        print(f"{f}: nothing flagged")
+        return
+    open(f, "w", encoding="utf-8").write(new)
+    print(f"{f}: removed the flagged sentences" + (f" and {len(removed)} key(s)" if removed else ""))
+    for k in removed:
+        alias(k)
+    load_removed()
+    save_removed(set(ALIAS))
+    for g in files:
+        if g == f or not os.path.isfile(g):
+            continue
+        for i, l in enumerate(open(g, encoding="utf-8", errors="ignore"), 1):
+            if any(re.search(rf"\b{re.escape(k)}\b", l) for k in removed):
+                print(f"  still used at {g}:{i}: {hide_keys(l.rstrip())}")
+    if removed:
+        print("  Edit those lines by line number; don't search for the key by name.")
+
+
+def list_files(paths):
+    try:
+        out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", *paths],
+                             capture_output=True, text=True, check=True).stdout.split()
+    except (OSError, subprocess.CalledProcessError):
+        out = [os.path.join(d, n) for p in paths or ["."] for d, _, ns in os.walk(p) if ".git" not in d for n in ns]
+    return sorted({os.path.normpath(f) for f in out} - SKIP)
+
+
+def read(f):
+    try:
+        return open(f, encoding="utf-8").read()
     except (OSError, UnicodeDecodeError):
-        continue
-    if not (PAT.search(text) or (f.endswith(".json") and any(KEY.match(k) for k in re.findall(r'"([^"]+)"\s*:', text)))):
-        continue
-    hits += 1
-    if paths:
-        show(f, text)
-    else:
-        print(f, [i for i, l in enumerate(text.splitlines(), 1)
-                  if PAT.search(l) or any(KEY.match(k) for k in re.findall(r'"([^"]+)"', l))])
+        return None
+
+
+args = sys.argv[1:]
+if args[:1] == ["--strip"]:
+    everything = list_files([])
+    for f in args[1:]:
+        strip_file(f, everything)
+    sys.exit(print("Check the result with scripts/leakscan, not git diff or git show: those print the removed text."))
+files = list_files(args)
+texts = {f: t for f in files if (t := read(f)) is not None}
+load_removed()
+if ALIAS and not args:
+    save_removed({k for k in ALIAS if any(uses(t, k) for t in texts.values())})
+for f, t in texts.items():
+    if f.endswith((".json", ".jsonl")):
+        try:
+            docs = [json.loads(t)] if f.endswith(".json") else [json.loads(x) for x in t.splitlines() if x.strip()]
+        except ValueError:
+            continue
+        for d in docs:
+            list(walk(d, []))
+hits = [(f, t) for f, t in texts.items() if flagged(f, t) or any(uses(t, k) for k in ALIAS)]
 if not hits:
-    print(f"No flagged wording in {len(files)} tracked file(s).")
-elif not paths:
-    print("Do not open these files any other way. View them masked: scripts/leakscan <file or dir>")
+    sys.exit(print(f"No flagged wording in {len(files)} file(s)."))
+shown = 0
+for f, t in hits:
+    lines = view(f, t)
+    if shown + len(lines) > MAX_LINES:
+        print(f"{f}: flagged ({len(lines)} lines; view it with scripts/leakscan {f})")
+        continue
+    print("\n".join(lines))
+    shown += len(lines)
+print("Don't open these files any other way, and don't git diff them. To fix a prompt file, run "
+      "scripts/leakscan --strip <file>, then read it and add what it should ask for instead, keeping each "
+      "instruction's purpose.")
